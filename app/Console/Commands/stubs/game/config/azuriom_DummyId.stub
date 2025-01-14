@@ -1,5 +1,0 @@
-<?php
-
-return [
-    // 'custom_config' => env('CUSTOM_ENV_KEY', 'default_value'),
-];

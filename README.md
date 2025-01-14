@@ -1,70 +1,238 @@
-<p align="center"><img src="https://azuriom.com/assets/svg/logo-text.svg" width="400" alt="Azuriom"></p>
 
-# Azuriom
+# TENSA Plugin
 
-[![PHP CI](https://img.shields.io/github/actions/workflow/status/Azuriom/Azuriom/tests.yml?branch=master&style=flat-square)](https://github.com/Azuriom/Azuriom/actions/workflows/tests.yml)
-[![Style](https://github.styleci.io/repos/237486333/shield)](https://github.styleci.io/repos/237486333)
-[![CodeFactor](https://www.codefactor.io/repository/github/azuriom/azuriom/badge?style=flat-square)](https://www.codefactor.io/repository/github/azuriom/azuriom)
-[![Latest release](https://img.shields.io/github/v/release/Azuriom/Azuriom?style=flat-square)](http://github.com/Azuriom/Azuriom/releases)
-[![Chat](https://img.shields.io/discord/625774284823986183?color=5865f2&label=Discord&logo=discord&logoColor=fff&style=flat-square)](https://azuriom.com/discord)
+TENSA Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
+## Commands
+- `/tensa`: Help command to display all available commands.
+- `/tensareload`: Reloads the plugin configuration file.
+- `/tensamodules`: Displays a list of all available modules.
+- `/vpl -v`: Display plugin list.
+- `/psend <player/all> <server>`: Sends the specified player to the specified server.
 
-**Azuriom** is a complete open-source web solution for game servers. Enjoy dozens of extensions for endless possibilities. Already trusted by over **1,800 servers**, cumulating more than two **millions users**.
+## Modules
+### PlayerTime:
+Tracks the total playing time of each player on the server, providing the ability to view the time played by a specific player or the entire server.
+- `/vptime`: Returns the player's total playing time.
+- `/vptime <player>`: Returns the specified player's total playing time.
+- `/vptop:` Returns the top 10 players with the most playing time.
 
-![Screenshot](https://azuriom.com/assets/img/home.png)
+### RconManager:
+Enables execution of RCON commands on remote servers, utilizing a configuration file for server data storage.
+- `/rcon <server/all/reload> <commad>`: Sends the specified command to the specified server or all servers.
+```yaml
+# Rcon servers
+# To allow the use of a separate server for a player, use permission:
+# tensa.rcon.serve_name
+# Examples: tensa.rcon.lobby, tensa.rcon.vanilla
 
-## Supported Games
+servers:
+  lobby:
+    ip: 0.0.0.0
+    port: 25575
+    pass: asdasdadsasadadsdasdasdasdasd
+  vanilla:
+    ip: 0.0.0.0
+    port: 25576
+    pass: ksdfkldkldadurjfsdjkjasdksasdasdasds
+# List of rcon server command arguments
+tab-complete-list:
+  - alert
+  - list
+  - tps
 
-Azuriom natively supports the following games:
-* [Minecraft](https://www.minecraft.net/)
-* [Garry's Mod](https://gmod.facepunch.com/)
-* [ARK: Survival Evolved](https://playark.com/ark-survival-evolved/)
-* [ARK: Survival Ascended](https://playark.com/)
-* [Rust](https://rust.facepunch.com/)
-* [FiveM](https://fivem.net/)
-* [Unturned](https://smartlydressedgames.com/)
-* [Counter-Strike: Global Offensive](https://blog.counter-strike.net/)
-* [7 Days to Die](https://7daystodie.com/)
-* [Team Fortress 2](https://www.teamfortress.com/)
+```
 
-You can implement your own game like it was done for [Flyff](https://github.com/AzuriomCommunity/Game-Flyff) or [Dofus 1.29](https://github.com/Javdu10/Game-Dofus129).
+### RconServer:
+Establishes an RCON for Velocity server capable of receiving commands from remote clients, facilitating external server management.
+```yaml
+# Rcon server settings
+# Rcon port
+port: 25570
+# Rcon password
+password: gdashgdashdfasghdfasghdfa
+# The response is colored or not
+colored: true
+```
 
-You can find the how-to in [the documentation](https://azuriom.com/en/docs/games)
+### PhpModule:
+Offers the ability to execute PHP scripts, extending the server's functionality with PHP's scripting capabilities. Each script can be called through a command in chat or console.
+- `/php <script/reload> <args>`: Executes the specified PHP script.
+```php
+<?php
+// index.php
+$argv_line = "";
 
-## Documentation
+foreach ($argv as $key => $value) {
+  if ($key == 0) {
+    continue;
+  }
+  $argv_line .= " " . $value;
+}
+echo "&6--------------------------------------------------------------";
+echo "\n&7You have run the script: &3&l$argv[0]\n&7With arguments:&3&l$argv_line";
+echo "\n&6--------------------------------------------------------------\n";
 
-Azuriom's documentation is available [on our website](https://azuriom.com/docs).
+// echo json_encode($argv);
+```
 
-## Installation
+### BashModule:
+Provides a direct interface for server administrators to execute Bash scripts via in-game chat or console. Each script can be called through a command in chat or console.
+- `/bash <script/reload> <args>`: Executes the specified Bash script.
+```shell
+#!/bin/bash
+# run.sh
+# Command: bash run shell <command>
+str=""
+for arg in "$@"; do
+  str="$str $arg"
+done
+echo "&6--------------------------------------------------------------"
+if [[ $1 == "shell" ]]; then
+  find="shell"
+  replace=""
+  result=${str//$find/$replace}
+  $result
+  echo "&6--------------------------------------------------------------"
+  exit
+fi
+echo "&7You have run the script: &3&l$0
+&7With arguments:&3&l$str"
+echo "&6--------------------------------------------------------------"
+```
 
-You can find system requirements and installation guide on our [documentation](https://azuriom.com/docs/installation).
+### TextReader:
+Reads and outputs the contents of text files located in the "text" folder to players, providing a way to share information directly through the server.
+- `/<file>`: File name to read and output its contents.
+```txt
+# rules.txt
+[center]<gray>--------------[<green>Server Rules<gray>]--------------<reset>
 
-## Community
+[center]<green>This is a test version of text centering</green>
+[center]<yellow>Text centering may not work correctly</yellow>
 
-You can ask for support and talk on our [Discord server](https://azuriom.com/discord).
+[center]<gold>We can use as standard formatting</gold>
+[center]<gold>text and MiniMessage</gold>
 
-## Contributing
+<gold>To open this file in the chat, just write the name of this file</gold>
 
-Contributions are always welcome!
+<yellow>You can create many such files and their names will be registered as commands to open the file in the chat</yellow>
 
-See [the contribution guidelines](CONTRIBUTING.md) for ways to get started.
+<gold>To allow players to use the command grant the right: tensa.text.{filename}</gold>
+```
 
-Please adhere to this project's [code of conduct](CODE_OF_CONDUCT.md).
+### HttpRequest:
+Performs HTTP requests to specified URLs, supporting both GET and POST requests. Configuration files are used to manage request parameters. Allows you to execute commands depending on the HTTP request response. Each individual configuration file corresponds to a single request.
+```yaml
+# The URL of the API to be queried.
+# Available placeholders: %player_name%, %player_uuid%, %player_ip%, %server%, %arg1%, %arg2%, %arg[n]%
+url: "https://api.mojang.com/users/profiles/minecraft/%player_name%"
 
-## Translations
+# HTTP request method. Can be "GET" or "POST".
+method: "GET"
 
-You can contribute to translating Azuriom on our [Crowdin](https://translate.azuriom.com/).
+# Query parameters. They will be sent to the API with the request. If the parameters are not used, this field can be deleted.
+# You can use placeholders that will be automatically replaced with the appropriate values when the query is executed.
+# Available placeholders: %player_name%, %player_uuid%, %player_ip%, %server%, %arg1%, %arg2%, %arg[n]%
+parameters:
+  secret: "lmksfdjlfjsffsdfjkljklgjkljsieiweiefdls"
+  player: "%player_name%"
+  server: "%server%"
+  user_code: "%arg1%"
 
-## Security
+# Commands that cause the request to be executed. When one of these commands is entered, a request to the API will be executed.
+triggers:
+  - accountlink
+  - linkaccount
+  - sitelink
 
-If you discover any security related issues within Azuriom, please send an e-mail to [security@azuriom.com](mailto:security@azuriom.com) instead of using the issue tracker. All security vulnerabilities will be promptly addressed.
+# Permission required to use the command. If you want to allow all users to use the command, clear this field.
+permission: "account.link"
 
-> [!NOTE]
-> JavaScript injections from the admin dashboard are not classified as XSS vulnerabilities. Of course, XSS found in user-facing areas of the site, as well as all other vulnerabilities throughout the entire application, will be recognized and addressed accordingly.
+# Commands to be executed after receiving a response from the API. They are divided into two categories: "success" and "failure".
+# "Success" is used when the HTTP response status is 200, and "failure" when the HTTP response status is not 200.
+# The response from the API must be in JSON format, and you can use JSON-response keys as placeholders in these commands.
+response:
+  # Reply with successful status (200)
+  success:
+    - "alert Player %player_name% is uuid %id%"
+    - "Player %player_name% has successfully linked his account to the site %json_resp_key_1%"
+    - "msg %player_name% You have successfully linked your account to site. %json_resp_key_2%"
+  # Response in case of failed status (not 200)
+  failure:
+    - "msg %player_name% It was not possible to link the account to the site."
 
-## Support us
+# If this option is enabled, all response options from the api/site will be sent to the sender
+debug: true
+```
 
-If you like this project, please consider supporting us on [GitHub sponsors](https://github.com/sponsors/Azuriom).
+### EventsManager:
+Allows you to execute commands when certain events occur on the server. The module supports the following events:
+```yaml
+# Events settings 
+# Placeholders: {player}, {server}, {fromServer}
+# [console] - run console command
+# [delay] (seconds) - delay seconds command
 
-## License
+events:
+  on_join_commands:
+    enabled: false
+    commands:
+      - '[delay] 3'
+      - '[console] g test {player}'
+  on_leave_commands:
+    enabled: false
+    commands:
+      - '[console] alert &6Player {player} left the game'
+  on_server_switch:
+    enabled: false
+    commands:
+      - '[console] alert &6Player {player} connected to server {server} from server
+        {fromServer}'
+  on_server_kick:
+    enabled: false
+    commands:
+      - '[console] alert &6Player {player} kick the server {server}'
+  on_server_running:
+    enabled: false
+    commands:
+      - '[console] limbostart first'
+  on_server_stop:
+    enabled: false
+    commands:
+      - '[console] alert &6Server {server} is stop'
 
-Azuriom is licensed under the [GNU General Public License v3.0 or later](LICENSE).
+```
+
+### ChatManager:
+Provides the ability to manage chat messages.
+```yaml
+# Chat Manager 
+# Placeholders: {player}, {server}, {message}
+
+# Global chat
+global:
+  enabled: true
+  alias: '!'
+  command: g
+  # If empty, everyone can use this chat and see the messages
+  permission: tensa.chat.global
+  see_all: true
+  format: '&8[&6G&8] &a{player} &6=> &f{message}'
+# Staff chat
+staff:
+  enabled: true
+  alias: '@'
+  command: s
+  permission: tensa.chat.staff
+  see_all: false
+  format: '&8&l[&4&lS&8&l] &b&l{server} &a&l{player} &6&l=> &f&l{message}'
+# Alert chat
+alert:
+  enabled: true
+  alias: ''
+  command: alert
+  permission: tensa.chat.alert
+  see_all: true
+  format: '&8[&4ALERT&8] &f{message}'
+```
+
