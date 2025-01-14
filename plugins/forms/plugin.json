@@ -1,0 +1,16 @@
+{
+    "id": "forms",
+    "name": "Forms",
+    "description": "Plugin for Azuriom",
+    "version": "1.0.0",
+    "url": "https://azuriom.com",
+    "authors": [
+        "xGIGABAITx"
+    ],
+    "azuriom_api": "1.1.0",
+    "providers": [
+        "Azuriom\\Plugin\\Forms\\Providers\\FormsServiceProvider",
+        "Azuriom\\Plugin\\Forms\\Providers\\RouteServiceProvider"
+    ],
+    "apiId": 28
+}

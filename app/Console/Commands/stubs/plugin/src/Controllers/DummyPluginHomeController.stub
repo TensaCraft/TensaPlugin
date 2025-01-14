@@ -1,0 +1,16 @@
+<?php
+
+namespace DummyNamespace\Controllers;
+
+use Azuriom\Http\Controllers\Controller;
+
+class DummyPluginHomeController extends Controller
+{
+    /**
+     * Show the home plugin page.
+     */
+    public function index()
+    {
+        return view('DummyId::index');
+    }
+}
