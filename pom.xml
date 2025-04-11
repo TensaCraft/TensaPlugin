@@ -29,7 +29,8 @@
         <simple.yaml.version>1.8.4</simple.yaml.version>
         <mariadb.version>3.3.1</mariadb.version>
         <h2.version>2.2.224</h2.version>
-        <httpclient.version>4.5.13</httpclient.version>
+        <httpclient.version>4.5.14</httpclient.version>
+        <httpcore.version>4.4.16</httpcore.version>
     </properties>
 
     <repositories>
@@ -96,6 +97,16 @@
             <artifactId>httpclient</artifactId>
             <version>${httpclient.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>${httpcore.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>commons-logging</groupId>
+            <artifactId>commons-logging</artifactId>
+            <version>1.2</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -135,6 +146,8 @@
                                     <include>io.netty:netty-transport</include>
                                     <include>io.netty:netty-codec</include>
                                     <include>org.apache.httpcomponents:httpclient</include>
+                                    <include>org.apache.httpcomponents:httpcore</include>
+                                    <include>commons-logging:commons-logging</include>
                                     <include>com.github.Carleslc.Simple-YAML:Simple-Yaml</include>
                                     <include>org.mariadb.jdbc:mariadb-java-client</include>
                                     <include>com.h2database:h2</include>
