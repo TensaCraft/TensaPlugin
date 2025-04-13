@@ -75,6 +75,9 @@ public class LangYAML extends BaseYAMLConfig {
         setConfigValue("send_success", "&aPlayer {player} sent to server {server}");
         setConfigValue("server_not_found", "&cServer {server} not found");
 
+        yamlFile.setComment("chat_usage", "Chat Module");
+        setConfigValue("chat_usage", "&6Usage: /{command} (player) (message)");
+
         yamlFile.setComment("help", "Help");
         setConfigValue("help", "&6Available commands:"
                 + "\n&6/tensa &7- &6Show help."

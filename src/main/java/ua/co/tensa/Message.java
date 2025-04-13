@@ -1,5 +1,6 @@
 package ua.co.tensa;
 
+import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.plugin.Plugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -29,6 +30,12 @@ public class Message {
     private static void send(String message) {
         for (String string : message.split("\n")) {
             Tensa.server.getConsoleCommandSource().sendMessage(convert(string));
+        }
+    }
+
+    public static void privateMessage(CommandSource recipient, String message) {
+        for (String line : message.split("\n")) {
+            recipient.sendMessage(convert(line));
         }
     }
 

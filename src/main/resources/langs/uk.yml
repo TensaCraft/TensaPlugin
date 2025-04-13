@@ -49,6 +49,8 @@ player_time_top_entry: '&a{position}. &6{player} - &a{time}'
 send_usage: '&6Використання: /psend &6{player} {server}'
 send_success: '&aГравець {player} надіслано на сервер {server}'
 server_not_found: '&cСервер {server} не знайдено'
+# Chat Module
+chat_usage: '&6Використання: /{command} (гравець) (повідомлення)'
 # Help
 help: |-
   &6Доступні команди:

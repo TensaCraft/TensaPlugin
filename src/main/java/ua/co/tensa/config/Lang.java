@@ -18,7 +18,7 @@ public enum Lang {
 	player_time("player_time"), player_not_found("player_not_found"), player_time_other("player_time_other"), player_time_usage("player_time_usage"),
 	player_time_days("player_time_days"), player_time_hours("player_time_hours"), player_time_minutes("player_time_minutes"), player_time_seconds("player_time_seconds"),
 	help("help"), player_time_top("player_time_top"), player_time_top_entry("player_time_top_entry"), send_usage("send_usage"), send_success("send_success"),
-	server_not_found("server_not_found");
+	server_not_found("server_not_found"), chat_usage("chat_usage");
 
 	private final String key;
 
