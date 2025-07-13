@@ -46,7 +46,8 @@ jobs:
           path: ${{ env.JAR_PATH }}
 
       - name: Create Release
-        if: github.event_name == 'push'
+        if: ${{ github.event_name == 'push' }}
+        id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +58,7 @@ jobs:
           prerelease: true
 
       - name: Upload Release Asset
-        if: github.event_name == 'push'
+        if: ${{ github.event_name == 'push' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
