@@ -61,8 +61,20 @@ public class Database {
     private boolean connectMySQL() {
         try {
             Class.forName("org.mariadb.jdbc.Driver");
-            String url = "jdbc:mariadb://" + Config.getDatabaseHost() + ":" + Config.getDatabasePort() + "/" + Config.getDatabaseName() + "?useSSL=" + Config.getSsl();
-            connection = DriverManager.getConnection(url, Config.getDatabaseUser(), Config.getDatabasePassword());
+            String url = "jdbc:mariadb://"
+                    + Config.getDatabaseHost() + ":"
+                    + Config.getDatabasePort() + "/"
+                    + Config.getDatabaseName()
+                    + "?useSSL=" + Config.getSsl()
+                    + "&autoReconnect=true"            // Allows you to reconnect automatically
+                    + "&maxReconnects=3"               // How many times to try
+                    + "&connectTimeout=10000"          // Timeout for connection (ms)
+                    + "&socketTimeout=20000";          // Timeout for query execution (ms)
+            connection = DriverManager.getConnection(
+                    url,
+                    Config.getDatabaseUser(),
+                    Config.getDatabasePassword()
+            );
             Message.info("Connection to the MySQL database is successful");
             enabled = true;
             return true;
@@ -84,12 +96,34 @@ public class Database {
 
     private <T> T executeSync(String query, Object[] parameters, SQLExecutor<T> executor) {
         checkConnection();
-        try (PreparedStatement preparedStatement = prepareStatement(query, parameters)) {
-            return executor.execute(preparedStatement);
+        try (PreparedStatement stmt = prepareStatement(query, parameters)) {
+            return executor.execute(stmt);
         } catch (SQLException e) {
-            Message.error(e.getMessage());
+            // If the loss of connection - we intelligent and repeat
+            if (isConnectionException(e)) {
+                Message.info("Lost DB connection — reconnecting and retrying query");
+                if (connect()) {
+                    try (PreparedStatement stmt2 = prepareStatement(query, parameters)) {
+                        return executor.execute(stmt2);
+                    } catch (SQLException ex) {
+                        Message.error("Retry failed: " + ex.getMessage());
+                    }
+                } else {
+                    Message.error("Reconnect attempt failed");
+                }
+            } else {
+                Message.error(e.getMessage());
+            }
         }
         return null;
+    }
+
+    private boolean isConnectionException(SQLException e) {
+        // We check the classes Exception or the text of the error
+        return e instanceof SQLNonTransientConnectionException
+                || e instanceof SQLTransientConnectionException
+                || e.getMessage().toLowerCase().contains("socket error")
+                || e.getMessage().toLowerCase().contains("communicati");
     }
 
 
@@ -201,8 +235,12 @@ public class Database {
     }
 
     public boolean exists(String tableName, String where, Object... values) {
-        try (ResultSet resultSet = select(tableName, "*", where, values)) {
-            return resultSet.next();
+        try (ResultSet rs = select(tableName, "*", where, values)) {
+            if (rs == null) {
+                // Failed to complete the request - we believe that there is no record
+                return false;
+            }
+            return rs.next();
         } catch (SQLException e) {
             Message.error(e.getMessage());
         }
