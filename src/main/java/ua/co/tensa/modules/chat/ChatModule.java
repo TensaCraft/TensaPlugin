@@ -25,16 +25,14 @@ public class ChatModule {
     }
 
     public static void sendMessageToPermittedPlayers(String message, String permission) {
-        Component messageFormat = Message.convert(message);
-        if (permission.isEmpty()){
+        final Component messageFormat = Message.convert(message);
+        if (permission == null || permission.isBlank()) {
             Tensa.server.sendMessage(messageFormat);
-            return;
+        } else {
+            Tensa.server.getAllPlayers().stream()
+                    .filter(p -> p.hasPermission(permission))
+                    .forEach(p -> p.sendMessage(messageFormat));
+            Tensa.server.getConsoleCommandSource().sendMessage(messageFormat);
         }
-        Tensa.server.getAllPlayers().stream()
-                .filter(player -> player.hasPermission(permission))
-                .forEach(player -> player.sendMessage(messageFormat));
-        Tensa.server.getConsoleCommandSource().sendMessage(messageFormat);
-
     }
-
 }
