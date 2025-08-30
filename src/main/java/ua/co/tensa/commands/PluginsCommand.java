@@ -19,12 +19,11 @@ public class PluginsCommand implements SimpleCommand {
             source.sendMessage(Lang.no_perms.get());
             return;
         }
-        // отримуємо всі плагіни як PluginContainer
+
         Collection<PluginContainer> plugins = Tensa.server.getPluginManager().getPlugins();
         int pluginCount = plugins.size();
 
         if (args.length == 1 && args[0].equals("-v")) {
-            // із версіями
             String pluginList = plugins.stream()
                     .map(plugin -> {
                         boolean loaded = plugin.getInstance().isPresent();
@@ -38,7 +37,6 @@ public class PluginsCommand implements SimpleCommand {
             return;
         }
 
-        // без версій
         String pluginList = plugins.stream()
                 .map(plugin -> {
                     boolean loaded = plugin.getInstance().isPresent();
