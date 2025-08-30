@@ -19,19 +19,35 @@ public class PluginsCommand implements SimpleCommand {
             source.sendMessage(Lang.no_perms.get());
             return;
         }
+        // отримуємо всі плагіни як PluginContainer
         Collection<PluginContainer> plugins = Tensa.server.getPluginManager().getPlugins();
         int pluginCount = plugins.size();
+
         if (args.length == 1 && args[0].equals("-v")) {
+            // із версіями
             String pluginList = plugins.stream()
-                    .map(plugin -> "&6" + plugin.getDescription().getName().orElse("Unknown") + " &7" + plugin.getDescription().getVersion().orElse("Unknown"))
+                    .map(plugin -> {
+                        boolean loaded = plugin.getInstance().isPresent();
+                        String name = plugin.getDescription().getName().orElse("Unknown");
+                        String version = plugin.getDescription().getVersion().orElse("Unknown");
+                        String color = loaded ? "&6" : "&c";
+                        return color + name + " &7" + version;
+                    })
                     .collect(Collectors.joining(", "));
             source.sendMessage(Message.convert("&aPlugins: " + pluginList));
             return;
         }
+
+        // без версій
         String pluginList = plugins.stream()
-                .map(plugin -> "&6" + plugin.getDescription().getName().orElse("Unknown"))
-                .collect(java.util.stream.Collectors.joining(", "));
-        source.sendMessage(Message.convert("&aPlugins (" + pluginCount + "): &6" + pluginList));
+                .map(plugin -> {
+                    boolean loaded = plugin.getInstance().isPresent();
+                    String name = plugin.getDescription().getName().orElse("Unknown");
+                    String color = loaded ? "&6" : "&c";
+                    return color + name;
+                })
+                .collect(Collectors.joining(", "));
+        source.sendMessage(Message.convert("&aPlugins (" + pluginCount + "): " + pluginList));
     }
 
     @Override
