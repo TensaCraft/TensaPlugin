@@ -82,15 +82,14 @@ public class RequestCommand implements SimpleCommand {
                 }
                 if (!responseParams.isEmpty()) {
                     dbg.append("<green>Response placeholders:\n");
-                    responseParams.forEach((k,v) -> dbg.append("  <gray>").append(k).append("<yellow>=").append(v)
-                            .append(" <dark_gray>(%" + k + "%)\n"));
+                    // Avoid any placeholder engines touching sample tokens by doubling '%'
+                    responseParams.forEach((k,v) -> dbg.append("  <gray>").append(k)
+                            .append("<yellow>=</yellow>").append(v)
+                            .append(" <dark_gray>(%%" + k + "%%)</dark_gray>\n"));
                 }
                 String out = dbg.toString().trim();
-                if (sender instanceof Player) {
-                    Message.send(sender, out);
-                } else {
-                    Message.info(out);
-                }
+                // Always use Message.send to ensure consistent formatting
+                Message.send(sender, out);
             }
 
         // First apply response placeholders only
@@ -102,15 +101,17 @@ public class RequestCommand implements SimpleCommand {
         List<String> filteredSuccess = new ArrayList<>();
         for (String cmd : successTemplates) {
             if (!isPlayer && cmd.contains("%player_name%")) {
-                Message.info("[TENSA] [WARNING] Requests: skipped player-targeted command in console context: " + cmd, true);
+                ua.co.tensa.Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
                 continue;
             }
             filteredSuccess.add(cmd);
         }
 
         List<String> successCommands = parsePlaceholdersInList(filteredSuccess, params);
+        boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
         for (String command : successCommands) {
-            Util.executeCommand(command);
+            String cmd = translate ? command.replace('&', '§') : command;
+            Util.executeCommand(cmd);
         }
         } else {
             ua.co.tensa.Message.warn("Requests: null/invalid JSON response from URL: " + url);
@@ -121,14 +122,16 @@ public class RequestCommand implements SimpleCommand {
             List<String> filteredFailure = new ArrayList<>();
             for (String cmd : failureTemplates) {
                 if (!isPlayer && cmd.contains("%player_name%")) {
-                    Message.info("[TENSA] [WARNING] Requests: skipped player-targeted command in console context: " + cmd, true);
+                    ua.co.tensa.Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
                     continue;
                 }
                 filteredFailure.add(cmd);
             }
             List<String> errorCmd = parsePlaceholdersInList(filteredFailure, params);
+            boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
             for (String command : errorCmd) {
-                Util.executeCommand(command);
+                String cmd = translate ? command.replace('&', '§') : command;
+                Util.executeCommand(cmd);
             }
         }
     }
