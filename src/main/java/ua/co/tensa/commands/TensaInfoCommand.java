@@ -48,9 +48,15 @@ public class TensaInfoCommand implements SimpleCommand {
             Message.privateMessage(source, "<yellow>•</yellow> <white>" + capitalizeWords(mod.replace('-', ' ')) + "</white> <gray>(" + list.size() + ")</gray>");
             list.sort(Comparator.comparing(c -> c.primary));
             for (var c : list) {
-                boolean showAlias = c.alias != null && !c.alias.isBlank() && !c.alias.equalsIgnoreCase(c.primary);
-                String alias = showAlias ? (" <gray>(alias:</gray> <yellow>" + c.alias + "</yellow><gray>)</gray>") : "";
-                Message.privateMessage(source, "  <yellow>/" + c.primary + "</yellow>" + alias);
+                String primary = c.primary == null ? "" : c.primary.trim();
+                String aliasVal = c.alias == null ? "" : c.alias.trim();
+                boolean showAlias = !aliasVal.isBlank() && !aliasVal.equalsIgnoreCase(primary);
+                if (primary.isBlank()) {
+                    // Skip unnamed commands (e.g., chat routes that have no explicit command binding)
+                    continue;
+                }
+                String alias = showAlias ? (" <gray>(alias:</gray> <yellow>" + aliasVal + "</yellow><gray>)</gray>") : "";
+                Message.privateMessage(source, "  <yellow>/" + primary + "</yellow>" + alias);
             }
         }
     }

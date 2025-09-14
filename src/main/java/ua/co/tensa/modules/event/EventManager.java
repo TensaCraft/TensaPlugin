@@ -20,16 +20,13 @@ import static ua.co.tensa.modules.event.EventsModule.Events.*;
 
 public class EventManager {
 
-    private static boolean eventsEnabled = false;
-    static {
-        try { eventsEnabled = Config.getModules("events-manager"); } catch (Throwable ignored) {}
+    private static boolean isEnabled() {
+        try { return !Config.getModules("events-manager"); } catch (Throwable ignored) { return true; }
     }
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";
 
-    public static void reload() {
-        try { eventsEnabled = Config.getModules("events-manager"); } catch (Throwable ignored) {}
-    }
+    public static void reload() { /* dynamic check via isEnabled() */ }
 
     private static void sendCommand(Player player, String command, boolean console) {
         if (console) {
@@ -99,7 +96,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onPlayerJoin(PostLoginEvent event) {
-        if (!eventsEnabled || !on_join_commands.enabled()) {
+        if (isEnabled() || !on_join_commands.enabled()) {
             return;
         }
         runnable(event.getPlayer(), on_join_commands.commands(), getCurrentServerName(event.getPlayer()), "");
@@ -107,7 +104,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onPlayerLeave(DisconnectEvent event) {
-        if (!eventsEnabled || !on_leave_commands.enabled()) {
+        if (isEnabled() || !on_leave_commands.enabled()) {
             return;
         }
         runnable(event.getPlayer(), on_leave_commands.commands(), getCurrentServerName(event.getPlayer()), "");
@@ -115,7 +112,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onPlayerKick(KickedFromServerEvent event) {
-        if (!eventsEnabled || !on_server_kick.enabled()) {
+        if (isEnabled() || !on_server_kick.enabled()) {
             return;
         }
         runnable(event.getPlayer(), on_server_kick.commands(), event.getServer().getServerInfo().getName(), "");
@@ -123,7 +120,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onServerSwitch(ServerConnectedEvent event) {
-        if (!eventsEnabled || !on_server_switch.enabled() || event.getPreviousServer().isEmpty()) {
+        if (isEnabled() || !on_server_switch.enabled() || event.getPreviousServer().isEmpty()) {
             return;
         }
         String currentServerName = event.getServer().getServerInfo().getName();
@@ -134,7 +131,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onServerRunning(ProxyInitializeEvent event) {
-        if (!eventsEnabled || !on_server_running.enabled()) {
+        if (isEnabled() || !on_server_running.enabled()) {
             return;
         }
         executeCommands(on_server_running.commands());
@@ -142,7 +139,7 @@ public class EventManager {
 
     @SuppressWarnings("unchecked")
     public static void onServerStop(ProxyShutdownEvent event) {
-        if (!eventsEnabled || !on_server_stop.enabled()) {
+        if (isEnabled() || !on_server_stop.enabled()) {
             return;
         }
         executeCommands(on_server_stop.commands());

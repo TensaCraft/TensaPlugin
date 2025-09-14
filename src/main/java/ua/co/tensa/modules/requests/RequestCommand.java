@@ -110,8 +110,7 @@ public class RequestCommand implements SimpleCommand {
         List<String> successCommands = parsePlaceholdersInList(filteredSuccess, params);
         boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
         for (String command : successCommands) {
-            String cmd = translate ? command.replace('&', '§') : command;
-            Util.executeCommand(cmd);
+            dispatchCommand(sender, command, translate);
         }
         } else {
             ua.co.tensa.Message.warn("Requests: null/invalid JSON response from URL: " + url);
@@ -130,8 +129,7 @@ public class RequestCommand implements SimpleCommand {
             List<String> errorCmd = parsePlaceholdersInList(filteredFailure, params);
             boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
             for (String command : errorCmd) {
-                String cmd = translate ? command.replace('&', '§') : command;
-                Util.executeCommand(cmd);
+                dispatchCommand(sender, command, translate);
             }
         }
     }
@@ -240,6 +238,33 @@ public class RequestCommand implements SimpleCommand {
 
     private boolean hasPermission(final CommandSource sender, String permission) {
         return sender.hasPermission(permission) || sender.hasPermission("TENSA.requests.*");
+    }
+
+    // Smart dispatcher: handle in-plugin private messages with proper formatting, else fall back to command execution
+    private void dispatchCommand(CommandSource sender, String command, boolean translateLegacy) {
+        if (command == null || command.isBlank()) return;
+        String cmd = command.trim();
+        String lower = cmd.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("pm ")) {
+            String rest = cmd.substring(3).trim();
+            int sp = rest.indexOf(' ');
+            if (sp > 0) {
+                String target = rest.substring(0, sp).trim();
+                String message = rest.substring(sp + 1).trim();
+                // Send directly through Message to preserve formatting (MiniMessage/legacy)
+                java.util.Optional<Player> p = Tensa.server.getPlayer(target);
+                if (p.isPresent()) {
+                    Message.send(p.get(), message);
+                    return;
+                } else {
+                    // If target not online, warn and skip
+                    Message.warn("Requests: target not found for pm: " + target);
+                    return;
+                }
+            }
+        }
+        String toRun = translateLegacy ? cmd.replace('&', '§') : cmd;
+        Util.executeCommand(toRun);
     }
 
     public static void unregister() {

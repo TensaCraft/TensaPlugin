@@ -32,7 +32,7 @@ public class Util {
         }
     }
 
-    private static final ArrayList<RegisteredCommand> REGISTERED = new ArrayList<>();
+    private static final java.util.LinkedHashMap<String, RegisteredCommand> REGISTERED = new java.util.LinkedHashMap<>();
 
     public static void executeCommand(final String command) {
         server.getCommandManager().executeAsync(server.getConsoleCommandSource(), command);
@@ -44,22 +44,26 @@ public class Util {
 
     public static void registerCommand(String command, String alias, SimpleCommand CommandClass) {
         CommandManager commandManager = server.getCommandManager();
-        CommandMeta commandMeta = commandManager.metaBuilder(command)
-                .aliases(alias)
-                .plugin(Tensa.pluginContainer)
-                .build();
+        var builder = commandManager.metaBuilder(command)
+                .plugin(Tensa.pluginContainer);
+        if (alias != null && !alias.isBlank()) {
+            builder = builder.aliases(alias);
+        }
+        CommandMeta commandMeta = builder.build();
         commandManager.register(commandMeta, CommandClass);
         String className = CommandClass.getClass().getName();
         String module = inferModuleFromClass(className);
-        REGISTERED.add(new RegisteredCommand(command, alias, className, module));
+        // Track in registry (deduplicate by primary name)
+        REGISTERED.put(command, new RegisteredCommand(command, alias, className, module));
     }
     
     public static void unregisterCommand(String string) {
         server.getCommandManager().unregister(string);
+        REGISTERED.remove(string);
     }
 
     public static ArrayList<RegisteredCommand> getRegisteredCommands() {
-        return new ArrayList<>(REGISTERED);
+        return new ArrayList<>(REGISTERED.values());
     }
 
     private static String inferModuleFromClass(String className) {

@@ -67,15 +67,13 @@ public abstract class AbstractModule implements ModuleEntry {
     protected abstract void onDisable();
     protected void onReload() { /* optional soft reload */ }
 
-    // Improved reload: prefer soft reload when module is enabled
+    // Reload: perform full disable -> enable cycle to ensure configs/state reinitialize
     @Override
     public void reload() {
         if (isEnabled()) {
-            try { onReload(); }
-            catch (Throwable t) { ua.co.tensa.Message.warn("Reload failed for module '" + id + "': " + t.getMessage()); }
-        } else {
-            enable();
+            disable();
         }
+        enable();
     }
 
     // Helpers (static where instance state isn't required)

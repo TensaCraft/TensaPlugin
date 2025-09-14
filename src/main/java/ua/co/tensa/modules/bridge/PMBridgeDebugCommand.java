@@ -16,6 +16,12 @@ public class PMBridgeDebugCommand implements SimpleCommand {
             Message.send(src, "<red>No permission.</red>");
             return;
         }
+        // Only allow when PM-Bridge module is enabled
+        var entry = ua.co.tensa.modules.Modules.getEntries().get("pm-bridge");
+        if (entry == null || !entry.isEnabled()) {
+            Message.send(src, "<red>PM-Bridge module is disabled.</red>");
+            return;
+        }
         // Console only
         if (!src.equals(ua.co.tensa.Tensa.server.getConsoleCommandSource())) {
             Message.send(src, "<red>Console-only command.</red>");

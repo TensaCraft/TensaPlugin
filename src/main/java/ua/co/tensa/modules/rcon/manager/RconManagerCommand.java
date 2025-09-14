@@ -56,11 +56,11 @@ public class RconManagerCommand implements SimpleCommand {
 
 	@Override
 	public boolean hasPermission(final Invocation invocation) {
-		return invocation.source().hasPermission("TENSA.rcon");
+		return invocation.source().hasPermission("tensa.rcon");
 	}
 
 	public boolean hasPermission(final Invocation invocation, String server) {
-		return invocation.source().hasPermission("TENSA.rcon." + server);
+		return invocation.source().hasPermission("tensa.rcon." + server);
 	}
 
 	@Override
@@ -85,7 +85,7 @@ public class RconManagerCommand implements SimpleCommand {
 
 	public static void unregister() {
 		CommandManager manager = Tensa.server.getCommandManager();
-        String[] commands = { "vurcon", "rcon", "velocityrcon" };
+        String[] commands = { "rcon", "trcon" };
 		for (String command : commands) {
 			manager.unregister(command);
 		}

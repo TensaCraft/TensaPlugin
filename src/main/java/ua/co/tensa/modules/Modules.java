@@ -3,6 +3,7 @@ package ua.co.tensa.modules;
 import ua.co.tensa.Util;
 import ua.co.tensa.commands.*;
 import ua.co.tensa.config.Config;
+import ua.co.tensa.modules.bridge.PMBridgeDebugCommand;
 import ua.co.tensa.modules.bridge.PMBridgeModule;
 import ua.co.tensa.modules.chat.ChatModule;
 import ua.co.tensa.modules.event.EventsModule;
@@ -65,7 +66,7 @@ public class Modules {
         return java.util.Collections.unmodifiableMap(REGISTRY);
     }
 
-    private void loadModules(String module) { /* deprecated: replaced by applyConfig() */ }
+    // no-op: modules are applied via applyConfig()
 
     private void registerCommands() {
         Util.registerCommand("tensareload", "treload", new ReloadCommand());
@@ -75,8 +76,7 @@ public class Modules {
         Util.registerCommand("psend", "tpsend", new PlayerSendCommand());
         Util.registerCommand("tparse", "tph", new PlaceholderParseCommand());
         Util.registerCommand("tinfo", "tinfo", new TensaInfoCommand());
-        // Debug for PM bridge
-        Util.registerCommand("tpmdebug", "tpmdbg", new ua.co.tensa.modules.bridge.PMBridgeDebugCommand());
+        Util.registerCommand("tpmdebug", "tpmdbg", new PMBridgeDebugCommand());
     }
 
     // wrappers replaced by module-provided ENTRY

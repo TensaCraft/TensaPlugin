@@ -16,7 +16,7 @@ public class RconManagerModule {
         @Override protected void onEnable() {
             // Ensure config file exists and populated
             ua.co.tensa.modules.AbstractModule.ensureConfig(RconManagerYAML.getInstance());
-            ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "", new RconManagerCommand());
+            ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "trcon", new RconManagerCommand());
             ua.co.tensa.Message.info("Rcon Manager module enabled");
         }
         @Override protected void onDisable() {
