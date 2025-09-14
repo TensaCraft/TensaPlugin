@@ -9,7 +9,6 @@ import ua.co.tensa.config.Database;
 import ua.co.tensa.config.data.UserMetaYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
-import ua.co.tensa.modules.meta.command.UserMetaCommand;
 import ua.co.tensa.placeholders.PlaceholderManager;
 
 public class UserMetaModule {
@@ -72,7 +71,6 @@ public class UserMetaModule {
         PlaceholderManager.unregisterAnglePrefixResolver("meta_");
         PlaceholderManager.unregisterAnglePrefixResolver("tensa_meta_");
         store = null;
-        ua.co.tensa.Message.warn("UserMeta module disabled");
     }
 
     public static void enable() { IMPL.enable(); }

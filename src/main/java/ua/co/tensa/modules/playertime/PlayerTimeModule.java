@@ -27,7 +27,6 @@ public class PlayerTimeModule {
     private static void disableImpl() {
         PlayerTimeCommand.unregister();
         PlayerTimeTopCommand.unregister();
-        ua.co.tensa.Message.warn("PlayerTime module disabled");
     }
 
     public static void enable() { IMPL.enable(); }

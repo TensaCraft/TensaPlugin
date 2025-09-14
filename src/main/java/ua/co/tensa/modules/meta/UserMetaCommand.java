@@ -1,4 +1,4 @@
-package ua.co.tensa.modules.meta.command;
+package ua.co.tensa.modules.meta;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
@@ -6,8 +6,6 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.modules.meta.UserMetaModule;
-import ua.co.tensa.modules.meta.UserMetaStore;
 
 import java.util.Arrays;
 import java.util.List;

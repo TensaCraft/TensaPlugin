@@ -8,17 +8,26 @@ import ua.co.tensa.Tensa;
 import java.io.File;
 import java.io.IOException;
 
+/**
+ * Base YAML config holder.
+ * Ensures the file is loaded on construction and keeps a cached YamlConfiguration view.
+ */
 public abstract class BaseYAMLConfig {
     protected YamlFile yamlFile;
+    private YamlConfiguration view; // cached, reflects last successful load/save
     protected final String FILE_PATH;
 
     protected BaseYAMLConfig(String relativePath) {
         this.FILE_PATH = Tensa.pluginPath + File.separator + relativePath;
         this.yamlFile = new YamlFile(FILE_PATH);
+
+        // Load immediately so adapter/getters see actual data
+        reload();
+
         ua.co.tensa.config.ConfigRegistry.register(this);
     }
 
-    public void reload() {
+    public synchronized void reload() {
         try {
             if (!yamlFile.exists()) {
                 yamlFile.createNewFile(true);
@@ -27,19 +36,19 @@ public abstract class BaseYAMLConfig {
                 yamlFile.save();
             } else {
                 yamlFile.load();
-                // Ensure new defaults are written when plugin updates add keys
-                populateConfigFile();
+                populateConfigFile(); // write any new defaults
                 yamlFile.save();
             }
         } catch (Exception e) {
-            // Attempt to backup corrupt file and recreate fresh
+            // Backup corrupt file and recreate
             try {
-                java.io.File f = new java.io.File(FILE_PATH);
+                File f = new File(FILE_PATH);
                 if (f.exists()) {
-                    java.io.File bak = new java.io.File(FILE_PATH + ".corrupt." + System.currentTimeMillis());
+                    File bak = new File(FILE_PATH + ".corrupt." + System.currentTimeMillis());
                     // noinspection ResultOfMethodCallIgnored
                     f.renameTo(bak);
-                    Message.warn("Config parse error for " + FILE_PATH + ": " + e.getMessage() + ". Backed up to " + bak.getName());
+                    Message.warn("Config parse error for " + FILE_PATH + ": " + e.getMessage()
+                            + ". Backed up to " + bak.getName());
                 }
                 yamlFile = new YamlFile(FILE_PATH);
                 yamlFile.createNewFile(true);
@@ -48,6 +57,12 @@ public abstract class BaseYAMLConfig {
                 yamlFile.save();
             } catch (Exception ex) {
                 Message.error("Failed to recover config " + FILE_PATH + ": " + ex.getMessage());
+            }
+        } finally {
+            try {
+                this.view = new YamlConfiguration(yamlFile);
+            } catch (Throwable t) {
+                this.view = new YamlConfiguration(); // never null
             }
         }
     }
@@ -60,27 +75,29 @@ public abstract class BaseYAMLConfig {
         }
     }
 
+    /** Fresh view after reload. */
     public YamlConfiguration getReloadedFile() {
         reload();
-        return new YamlConfiguration(yamlFile);
+        return view;
     }
 
+    /** Cached view (last loaded). */
     public YamlConfiguration getConfig() {
-        return new YamlConfiguration(yamlFile);
+        return view;
     }
 
-    // Unified adapter view for consumers wanting a stable interface
+    /** Stable adapter over the cached view. */
     public ua.co.tensa.config.core.ConfigAdapter adapter() {
         return new ua.co.tensa.config.core.YamlConfigAdapter(getConfig());
     }
 
-    // Convenience getters with defaults
+    // Convenience getters
     public String getString(String path, String def) {
         return getConfig().getString(path, def);
     }
 
     public boolean getBoolean(String path, boolean def) {
-        return getConfig().getBoolean(path, def);
+        return getConfig().contains(path) ? getConfig().getBoolean(path) : def;
     }
 
     public int getInt(String path, int def) {
@@ -108,7 +125,6 @@ public abstract class BaseYAMLConfig {
         return getConfig().contains(path);
     }
 
-    // Persist current in-memory file if needed
     public void save() {
         try {
             yamlFile.save();
@@ -117,8 +133,7 @@ public abstract class BaseYAMLConfig {
         }
     }
 
-    // Utility: copy missing flat keys from a template YamlConfiguration
-    public void syncMissingKeysFrom(org.simpleyaml.configuration.file.YamlConfiguration template) {
+    public void syncMissingKeysFrom(YamlConfiguration template) {
         if (template == null) return;
         try {
             boolean changed = false;
