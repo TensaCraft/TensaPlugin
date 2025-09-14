@@ -1,34 +1,27 @@
 package ua.co.tensa.modules.event;
 
-import ua.co.tensa.Message;
-import org.simpleyaml.configuration.ConfigurationSection;
-import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.config.data.EventsYAML;
+import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.ModuleEntry;
+
 import java.util.Collections;
 import java.util.List;
 
 
-public class EventsModule extends YamlConfiguration {
+public class EventsModule extends org.simpleyaml.configuration.file.YamlConfiguration {
 
-	private static YamlConfiguration config;
+    private static final ModuleEntry IMPL = new AbstractModule(
+            "events-manager", "Events Manager") {
+        @Override protected void onEnable() {
+            ua.co.tensa.modules.AbstractModule.ensureConfig(EventsYAML.getInstance());
+            ua.co.tensa.Message.info("Events Manager module enabled");
+        }
+        @Override protected void onDisable() { /* stateless */ }
+    };
+    public static final ModuleEntry ENTRY = IMPL;
 
-	public static void initialise() {
-		config = EventsYAML.getInstance().getReloadedFile();
-	}
-
-	public static void reload() {
-		initialise();
-	}
-
-	public static void enable() {
-		initialise();
-		Message.info("Events Manager module enabled");
-	}
-
-	public static void disable() {
-		initialise();
-		config = null;
-	}
+    public static void enable() { IMPL.enable(); }
+    public static void disable() { IMPL.disable(); }
 
 	public enum Events {
 		on_join_commands("on_join_commands"), on_leave_commands("on_leave_commands"),
@@ -41,14 +34,16 @@ public class EventsModule extends YamlConfiguration {
 			this.key = key;
 		}
 
-		public boolean enabled() {
-			return config != null && config.getBoolean("events." + this.key + ".enabled");
-		}
+        public boolean enabled() {
+            var a = EventsYAML.getInstance().adapter();
+            return a.getBoolean("events." + this.key + ".enabled", false);
+        }
 
-		@SuppressWarnings("rawtypes")
-		public List commands() {
-			ConfigurationSection section = config != null ? config.getConfigurationSection("events") : null;
-			return section != null ? section.getList(this.key + ".commands") : Collections.emptyList();
-		}
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        public List commands() {
+            var a = EventsYAML.getInstance().adapter();
+            java.util.List<Object> list = a.getList("events." + this.key + ".commands");
+            return list == null ? Collections.emptyList() : list;
+        }
 	}
 }

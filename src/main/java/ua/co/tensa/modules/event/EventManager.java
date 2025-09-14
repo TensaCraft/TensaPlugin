@@ -1,8 +1,5 @@
 package ua.co.tensa.modules.event;
 
-import ua.co.tensa.Message;
-import ua.co.tensa.config.Config;
-import ua.co.tensa.Util;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.player.KickedFromServerEvent;
@@ -10,24 +7,28 @@ import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.proxy.Player;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
+import ua.co.tensa.config.Config;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static ua.co.tensa.modules.event.EventsModule.Events.*;
 
 public class EventManager {
 
-    private static boolean eventsEnabled = Config.getModules("events-manager");
+    private static boolean eventsEnabled = false;
+    static {
+        try { eventsEnabled = Config.getModules("events-manager"); } catch (Throwable ignored) {}
+    }
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";
-    private static final ExecutorService executorService = Executors.newFixedThreadPool(10);
 
     public static void reload() {
-        eventsEnabled = Config.getModules("events-manager");
+        try { eventsEnabled = Config.getModules("events-manager"); } catch (Throwable ignored) {}
     }
 
     private static void sendCommand(Player player, String command, boolean console) {
@@ -39,45 +40,56 @@ public class EventManager {
     }
 
     private static List<String> commandsPrepare(List<String> commands, String player, String server, String preServer) {
-        List<String> cmd = new ArrayList<>();
+        List<String> out = new ArrayList<>();
+        java.util.Map<String,String> ctx = new java.util.HashMap<>();
+        ctx.put("player", player);
+        ctx.put("server", server);
+        ctx.put("fromServer", preServer);
         for (Object command : commands) {
-            cmd.add(command.toString().replace("{player}", player).replace("{server}", server).replace("{fromServer}",
-                    preServer));
+            String templ = String.valueOf(command);
+            out.add(ua.co.tensa.Message.renderTemplateString(templ, ctx));
         }
-        return cmd;
+        return out;
     }
 
     private static void runnable(Player player, List<String> commands, String currentServerName, String preServer) {
-        executorService.submit(() -> {
-            for (String command : commandsPrepare(commands, player.getUsername(), currentServerName, preServer)) {
-                if (command.contains(DELAY)) {
-                    try {
-                        TimeUnit.SECONDS.sleep(Integer.parseInt(command.replace(DELAY, "").trim()));
-                    } catch (InterruptedException e1) {
-                        Message.error(e1.getMessage());
-                    }
-                    continue;
-                }
-                if (command.contains(CONSOLE)) {
-                    sendCommand(player, command.replace(CONSOLE, "").trim(), true);
-                } else {
-                    sendCommand(player, command, false);
-                }
-            }
-        });
-    }
-
-    private static void executeCommands(List<String> commands) {
-        for (String command : commandsPrepare(commands, "", "", "")) {
+        AtomicLong delayAccum = new AtomicLong(0);
+        for (String command : commandsPrepare(commands, player.getUsername(), currentServerName, preServer)) {
             if (command.contains(DELAY)) {
+                String raw = command.replace(DELAY, "").trim();
                 try {
-                    TimeUnit.SECONDS.sleep(Integer.parseInt(command.replace(DELAY, "").trim()));
-                } catch (InterruptedException e) {
-                    Message.error(e.getMessage());
+                    long add = Long.parseLong(raw);
+                    delayAccum.addAndGet(add);
+                } catch (NumberFormatException e) {
+                    ua.co.tensa.Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
                 }
                 continue;
             }
-            Util.executeCommand(command.replace(CONSOLE, "").trim());
+            final String cmd = command.contains(CONSOLE) ? command.replace(CONSOLE, "").trim() : command;
+            final boolean asConsole = command.contains(CONSOLE);
+            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> sendCommand(player, cmd, asConsole))
+                    .delay(delayAccum.get(), TimeUnit.SECONDS)
+                    .schedule();
+        }
+    }
+
+    private static void executeCommands(List<String> commands) {
+        AtomicLong delayAccum = new AtomicLong(0);
+        for (String command : commandsPrepare(commands, "", "", "")) {
+            if (command.contains(DELAY)) {
+                String raw = command.replace(DELAY, "").trim();
+                try {
+                    long add = Long.parseLong(raw);
+                    delayAccum.addAndGet(add);
+                } catch (NumberFormatException e) {
+                    ua.co.tensa.Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
+                }
+                continue;
+            }
+            final String cmd = command.replace(CONSOLE, "").trim();
+            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> Util.executeCommand(cmd))
+                    .delay(delayAccum.get(), TimeUnit.SECONDS)
+                    .schedule();
         }
     }
 

@@ -1,38 +1,40 @@
 package ua.co.tensa.modules;
 
+import ua.co.tensa.Util;
 import ua.co.tensa.commands.*;
 import ua.co.tensa.config.Config;
-import ua.co.tensa.Message;
-import ua.co.tensa.Util;
-import ua.co.tensa.modules.bash.BashModule;
+import ua.co.tensa.modules.bridge.PMBridgeModule;
 import ua.co.tensa.modules.chat.ChatModule;
 import ua.co.tensa.modules.event.EventsModule;
-import ua.co.tensa.modules.php.PhpModule;
+import ua.co.tensa.modules.meta.UserMetaModule;
 import ua.co.tensa.modules.playertime.PlayerTimeModule;
 import ua.co.tensa.modules.rcon.manager.RconManagerModule;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
 import ua.co.tensa.modules.requests.RequestsModule;
 import ua.co.tensa.modules.text.TextReaderModule;
+
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class Modules {
-    private static final Map<String, ModuleConfig> MODULES = Map.of(
-            "rcon-manager", new ModuleConfig(RconManagerModule::enable, RconManagerModule::disable),
-            "rcon-server", new ModuleConfig(RconServerModule::enable, RconServerModule::disable),
-            "php-runner", new ModuleConfig(PhpModule::enable, PhpModule::disable),
-            "bash-runner", new ModuleConfig(BashModule::enable, BashModule::disable),
-            "events-manager", new ModuleConfig(EventsModule::enable, EventsModule::disable),
-            "request-module",  new ModuleConfig(RequestsModule::enable, RequestsModule::disable),
-            "player-time",  new ModuleConfig(PlayerTimeModule::enable, PlayerTimeModule::disable),
-            "text-reader",  new ModuleConfig(TextReaderModule::enable, TextReaderModule::disable),
-            "chat-manager",  new ModuleConfig(ChatModule::enable, ChatModule::disable)
-    );
+    private static final Map<String, ModuleEntry> REGISTRY = new LinkedHashMap<>();
+
+    static {
+        REGISTRY.put("rcon-manager", RconManagerModule.ENTRY);
+        REGISTRY.put("rcon-server", RconServerModule.ENTRY);
+        REGISTRY.put("events-manager", EventsModule.ENTRY);
+        REGISTRY.put("pm-bridge", PMBridgeModule.ENTRY);
+        REGISTRY.put("request-module", RequestsModule.ENTRY);
+        REGISTRY.put("player-time", PlayerTimeModule.ENTRY);
+        REGISTRY.put("text-reader", TextReaderModule.ENTRY);
+        REGISTRY.put("chat-manager", ChatModule.ENTRY);
+        REGISTRY.put("user-meta", UserMetaModule.ENTRY);
+    }
 
     public Modules() {
-        Message.info("...");
-        Message.info("TENSA loading modules...");
+        ua.co.tensa.Message.info("TENSA loading modules...");
         Config.databaseInitializer();
-        Config.getModules().forEach(this::loadModules);
+        applyConfig();
         registerCommands();
     }
 
@@ -40,43 +42,42 @@ public class Modules {
         new Modules();
     }
 
-    private void loadModules(String module) {
-        if (Config.getModules(module)) {
-            MODULES.get(module).enable();
-        } else {
-            MODULES.get(module).disableIfEnabled();
+    public static void applyConfig() {
+        for (Map.Entry<String, ModuleEntry> e : REGISTRY.entrySet()) {
+            String id = e.getKey();
+            ModuleEntry m = e.getValue();
+            boolean desired = Config.getModules(id);
+            if (desired && !m.isEnabled()) m.enable();
+            if (!desired && m.isEnabled()) m.disable();
         }
     }
+
+    public static void reloadAll() {
+        for (ModuleEntry m : REGISTRY.values()) {
+            if (m.isEnabled()) {
+                try { m.reload(); } catch (Throwable t) { ua.co.tensa.Message.warn("Module reload failed: " + m.id() + " - " + t.getMessage()); }
+            }
+        }
+    }
+
+    // Snapshot view for info commands or admin tools
+    public static java.util.Map<String, ModuleEntry> getEntries() {
+        return java.util.Collections.unmodifiableMap(REGISTRY);
+    }
+
+    private void loadModules(String module) { /* deprecated: replaced by applyConfig() */ }
 
     private void registerCommands() {
         Util.registerCommand("tensareload", "treload", new ReloadCommand());
         Util.registerCommand("tensa", "tensahelp", new HelpCommand());
         Util.registerCommand("tensamodules", "tmodules", new ModulesCommand());
-        Util.registerCommand("vpl", "vplugins", new PluginsCommand());
-        Util.registerCommand("psend", "vpsend", new PlayerSendCommand());
+        Util.registerCommand("tpl", "tplugins", new PluginsCommand());
+        Util.registerCommand("psend", "tpsend", new PlayerSendCommand());
+        Util.registerCommand("tparse", "tph", new PlaceholderParseCommand());
+        Util.registerCommand("tinfo", "tinfo", new TensaInfoCommand());
+        // Debug for PM bridge
+        Util.registerCommand("tpmdebug", "tpmdbg", new ua.co.tensa.modules.bridge.PMBridgeDebugCommand());
     }
 
-    private static class ModuleConfig {
-        private final Runnable enableAction;
-        private final Runnable disableAction;
-        private boolean isEnabled = false;
-
-        ModuleConfig(Runnable enableAction, Runnable disableAction) {
-            this.enableAction = enableAction;
-            this.disableAction = disableAction;
-        }
-
-        void enable() {
-            enableAction.run();
-            isEnabled = true;
-        }
-
-        void disableIfEnabled() {
-            if (isEnabled) {
-                disableAction.run();
-                isEnabled = false;
-            }
-        }
-    }
+    // wrappers replaced by module-provided ENTRY
 }
-

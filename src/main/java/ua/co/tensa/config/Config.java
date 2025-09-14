@@ -2,9 +2,11 @@ package ua.co.tensa.config;
 
 import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.config.data.ConfigYAML;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+
 import static ua.co.tensa.Tensa.database;
 
 public class Config extends YamlConfiguration {
@@ -21,7 +23,7 @@ public class Config extends YamlConfiguration {
 	}
 
 	public static List<String> getModules() {
-		Set<String> keys = config.getConfigurationSection("modules").getKeys(true);
+		Set<String> keys = config.getConfigurationSection("modules").getKeys(false);
 		return new ArrayList<>(keys);
 	}
 

@@ -1,31 +1,41 @@
 package ua.co.tensa.modules.playertime;
 
-import ua.co.tensa.Message;
-import ua.co.tensa.Util;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.DatabaseInitializer;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.ModuleEntry;
 
 import java.util.concurrent.TimeUnit;
 
 public class PlayerTimeModule {
 
-    public static void enable() {
-        Message.info("PlayerTime module enabled");
+    private static final ModuleEntry IMPL = new AbstractModule(
+            "player-time", "Player Time") {
+        @Override protected void onEnable() { PlayerTimeModule.enableImpl(); }
+        @Override protected void onDisable() { PlayerTimeModule.disableImpl(); }
+    };
+    public static final ModuleEntry ENTRY = IMPL;
+
+    private static void enableImpl() {
+        ua.co.tensa.Message.info("PlayerTime module enabled");
         initialize();
     }
 
-    public static void disable() {
+    private static void disableImpl() {
         PlayerTimeCommand.unregister();
         PlayerTimeTopCommand.unregister();
-        Message.warn("PlayerTime module disabled");
+        ua.co.tensa.Message.warn("PlayerTime module disabled");
     }
+
+    public static void enable() { IMPL.enable(); }
+    public static void disable() { IMPL.disable(); }
 
     public static void initialize() {
         if (!Config.databaseEnable()){
-            Message.warn("The PlayerTime module requires the use of a database, enable it in the configuration file");
+            ua.co.tensa.Message.warn("The PlayerTime module requires the use of a database, enable it in the configuration file");
             return;
         }
         Database database = Tensa.database;
@@ -36,9 +46,9 @@ public class PlayerTimeModule {
             }
             PlayerTimeTracker timeTracker = new PlayerTimeTracker(database);
             PlayerEventListener eventListener = new PlayerEventListener(timeTracker);
-            Tensa.server.getEventManager().register(Tensa.pluginContainer, eventListener);
-            Util.registerCommand("vplayertime", "vptime", new PlayerTimeCommand(timeTracker));
-            Util.registerCommand("vplayertop", "vptop", new PlayerTimeTopCommand(timeTracker));
+            ((AbstractModule) IMPL).registerListener(eventListener);
+            AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
+            AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
 
 
             Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, timeTracker::updateAllOnlineTimes)
@@ -46,7 +56,7 @@ public class PlayerTimeModule {
                     .repeat(1, TimeUnit.MINUTES)
                     .schedule();
         } else {
-            Message.warn("PlayerTime module. A database connection could not be established");
+            ua.co.tensa.Message.warn("PlayerTime module. A database connection could not be established");
             disable();
         }
     }
@@ -62,18 +72,34 @@ public class PlayerTimeModule {
         hours %= 24;
 
         StringBuilder timeBuilder = new StringBuilder();
+        String sDay = unitSuffix(ua.co.tensa.config.Lang.player_time_days, "d");
+        String sHour = unitSuffix(ua.co.tensa.config.Lang.player_time_hours, "h");
+        String sMin = unitSuffix(ua.co.tensa.config.Lang.player_time_minutes, "m");
+        String sSec = unitSuffix(ua.co.tensa.config.Lang.player_time_seconds, "s");
         if (days > 0) {
-            timeBuilder.append(days).append(Lang.player_time_days.getClean());
+            timeBuilder.append(days).append(sDay);
         }
         if (hours > 0) {
-            timeBuilder.append(hours).append(Lang.player_time_hours.getClean());
+            timeBuilder.append(hours).append(sHour);
         }
         if (minutes > 0) {
-            timeBuilder.append(minutes).append(Lang.player_time_minutes.getClean());
+            timeBuilder.append(minutes).append(sMin);
         }
-        if (seconds > 0 || timeBuilder.length() == 0) {
-            timeBuilder.append(seconds).append(Lang.player_time_seconds.getClean());
+        if (seconds > 0 || timeBuilder.isEmpty()) {
+            timeBuilder.append(seconds).append(sSec);
         }
         return timeBuilder.toString();
+    }
+
+    private static String unitSuffix(ua.co.tensa.config.Lang key, String fallback) {
+        try {
+            String v = key.getClean();
+            if (v == null) return fallback;
+            // When Lang is not initialized, getClean returns enum key (with underscores). Fallback then.
+            if (v.contains("_")) return fallback;
+            return v;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
     }
 }

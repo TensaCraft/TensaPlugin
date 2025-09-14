@@ -1,40 +1,37 @@
 package ua.co.tensa.modules.chat;
 
-import ua.co.tensa.config.Config;
-import ua.co.tensa.config.data.ChatYAML;
-import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.player.PlayerChatEvent;
 import com.velocitypowered.api.proxy.Player;
-import org.simpleyaml.configuration.file.YamlConfiguration;
-import java.util.Set;
+import ua.co.tensa.config.Config;
+import ua.co.tensa.config.data.ChatYAML;
 
 public class ChatEventListener {
     private static boolean chatEnabled = Config.getModules("chat-manager");
-    private static YamlConfiguration chatConfig = ChatYAML.getInstance().getConfig();
-
+    private static ua.co.tensa.config.core.ConfigAdapter chatCfg = ChatYAML.getInstance().adapter();
 
     public static void reload() {
         chatEnabled = Config.getModules("chat-manager");
         if (chatEnabled) {
-            chatConfig = ChatYAML.getInstance().getReloadedFile();
+            ChatYAML.getInstance().reload();
+            chatCfg = ChatYAML.getInstance().adapter();
         }
     }
 
-    @Subscribe
+    // Called from Tensa.onPlayerMessage; annotation not needed here
     public static void onPlayerMessage(PlayerChatEvent event) {
-        if (!chatEnabled || chatConfig == null) return;
+        if (!chatEnabled) return;
 
         final Player player = event.getPlayer();
-        final String incoming = String.valueOf(event.getMessage());
+        final String incoming = event.getMessage();
         if (incoming == null || incoming.isEmpty()) return;
 
-        for (String key : chatConfig.getKeys(false)) {
-            if (!chatConfig.getBoolean(key + ".enabled", false)) continue;
+        for (String key : chatCfg.getKeys(false)) {
+            if (!chatCfg.getBoolean(key + ".enabled", false)) continue;
 
-            final String permission = chatConfig.getString(key + ".permission", "").trim();
+            final String permission = chatCfg.getString(key + ".permission", "").trim();
             if (!permission.isBlank() && !player.hasPermission(permission)) continue;
 
-            final String alias = chatConfig.getString(key + ".alias", "").trim();
+            final String alias = chatCfg.getString(key + ".alias", "").trim();
             if (alias.isBlank()) continue;
 
             if (!incoming.startsWith(alias)) continue;
@@ -45,15 +42,17 @@ public class ChatEventListener {
                     .map(s -> s.getServerInfo().getName())
                     .orElse("");
 
-            final String format = chatConfig.getString(key + ".format", "{server} {player}: {message}");
-            final String body = incoming.substring(alias.length()).stripLeading();
+            final String format = chatCfg.getString(key + ".format", "{server} {player}: {message}");
+            final String body = incoming.substring(Math.min(alias.length(), incoming.length())).stripLeading();
 
-            final String out = format
-                    .replace("{server}", serverName)
-                    .replace("{player}", player.getUsername())
-                    .replace("{message}", body);
+            java.util.Map<String, String> ctx = new java.util.HashMap<>();
+            ctx.put("server", serverName);
+            ctx.put("player", player.getUsername());
+            ctx.put("message", body);
 
-            if (chatConfig.getBoolean(key + ".see_all", false)) {
+            final String out = ua.co.tensa.Message.renderTemplateString(format, ctx);
+
+            if (chatCfg.getBoolean(key + ".see_all", false)) {
                 ChatModule.sendMessageToPermittedPlayers(out, "");
             } else {
                 ChatModule.sendMessageToPermittedPlayers(out, permission);

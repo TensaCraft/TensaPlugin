@@ -1,9 +1,11 @@
 package ua.co.tensa.commands;
 
-import ua.co.tensa.config.Lang;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import ua.co.tensa.Message;
 import ua.co.tensa.config.Config;
+import ua.co.tensa.config.Lang;
+
 import java.util.List;
 
 public class ModulesCommand implements SimpleCommand {
@@ -11,7 +13,7 @@ public class ModulesCommand implements SimpleCommand {
     public void execute(Invocation invocation) {
         CommandSource source = invocation.source();
         if (!hasPermission(invocation)) {
-            source.sendMessage(Lang.no_perms.get());
+            Message.sendLang(source, Lang.no_perms);
             return;
         }
 
@@ -19,7 +21,7 @@ public class ModulesCommand implements SimpleCommand {
         allModules.forEach(module -> {
             String moduleName = capitalizeWords(module.toUpperCase().replace('-', ' '));
             String status = Config.getModules(module) ? Lang.enabled.getClean() : Lang.disabled.getClean();
-            source.sendMessage(Lang.module_status.replace("{module}", moduleName, "{status}", status));
+            Message.sendLang(source, Lang.module_status, "{module}", moduleName, "{status}", status);
         });
     }
 

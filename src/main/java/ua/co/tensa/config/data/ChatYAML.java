@@ -28,7 +28,7 @@ public class ChatYAML extends BaseYAMLConfig {
         yamlFile.setComment("global.permission", "If empty, everyone can use this chat and see the messages");
         setConfigValue("global.permission", "");
         setConfigValue("global.see_all", true);
-        setConfigValue("global.format", "&8[&6G&8] &a{player} &6=> &f{message}");
+        setConfigValue("global.format", "<dark_gray>[<gold>G</gold>]</dark_gray> <green>{player}</green> <gold>=></gold> <white>{message}</white>");
 
         yamlFile.setComment("staff", "Staff chat");
         setConfigValue("staff.enabled", true);
@@ -36,7 +36,7 @@ public class ChatYAML extends BaseYAMLConfig {
         setConfigValue("staff.command", "s");
         setConfigValue("staff.permission", "tensa.chat.staff");
         setConfigValue("staff.see_all", false);
-        setConfigValue("staff.format", "&8&l[&4&lS&8&l] &b&l{server} &a&l{player} &6&l=> &f&l{message}");
+        setConfigValue("staff.format", "<dark_gray>[<dark_red><bold>S</bold></dark_red>]</dark_gray> <aqua><bold>{server}</bold></aqua> <green><bold>{player}</bold></green> <gold><bold>=></bold></gold> <white><bold>{message}</bold></white>");
 
         yamlFile.setComment("alert", "Alert chat");
         setConfigValue("alert.enabled", true);
@@ -44,6 +44,6 @@ public class ChatYAML extends BaseYAMLConfig {
         setConfigValue("alert.command", "alert");
         setConfigValue("alert.permission", "");
         setConfigValue("alert.see_all", true);
-        setConfigValue("alert.format", "&8[&4ALERT&8] &f{message}");
+        setConfigValue("alert.format", "<dark_gray>[<dark_red>ALERT</dark_red>]</dark_gray> <white>{message}</white>");
     }
 }

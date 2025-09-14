@@ -1,11 +1,12 @@
 package ua.co.tensa.commands;
 
-import ua.co.tensa.Tensa;
-import ua.co.tensa.config.Lang;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.Lang;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,18 +18,18 @@ public class PlayerSendCommand implements SimpleCommand {
     public void execute(Invocation invocation) {
         CommandSource source = invocation.source();
         if (!hasPermission(invocation)) {
-            source.sendMessage(Lang.no_perms.get());
+            Message.sendLang(source, Lang.no_perms);
             return;
         }
         String[] args = invocation.arguments();
         if (args.length < 2) {
-            source.sendMessage(Lang.send_usage.get());
+            Message.sendLang(source, Lang.send_usage);
             return;
         }
 
         Optional<RegisteredServer> toServer = Tensa.server.getServer(args[1]);
         if (toServer.isEmpty()) {
-            source.sendMessage(Lang.server_not_found.replace("{server}", args[1]));
+            Message.sendLang(source, Lang.server_not_found, "{server}", args[1]);
             return;
         }
 
@@ -36,18 +37,18 @@ public class PlayerSendCommand implements SimpleCommand {
             for (Player p : Tensa.server.getAllPlayers()) {
                 p.createConnectionRequest(toServer.get()).fireAndForget();
             }
-            source.sendMessage(Lang.send_success.replace("{player}", "all", "{server}", args[1]));
+            Message.sendLang(source, Lang.send_success, "{player}", "all", "{server}", args[1]);
             return;
         }
 
         Optional<Player> player = Tensa.server.getPlayer(args[0]);
         if (player.isEmpty()) {
-            source.sendMessage(Lang.player_not_found.replace("{player}", args[0]));
+            Message.sendLang(source, Lang.player_not_found, "{player}", args[0]);
             return;
         }
 
         player.get().createConnectionRequest(toServer.get()).fireAndForget();
-        source.sendMessage(Lang.send_success.replace("{player}", args[0], "{server}", args[1]));
+        Message.sendLang(source, Lang.send_success, "{player}", args[0], "{server}", args[1]);
     }
 
     @Override

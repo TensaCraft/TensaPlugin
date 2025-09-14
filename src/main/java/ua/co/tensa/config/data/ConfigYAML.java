@@ -37,11 +37,10 @@ public class ConfigYAML extends BaseYAMLConfig {
         yamlFile.setComment("modules.rcon-server", "Rcon server. Enables Velocity RCON server to run");
         setConfigValue("modules.rcon-server", true);
 
-        yamlFile.setComment("modules.php-runner", "PHP Runner. Allows you to download the PHP script");
-        setConfigValue("modules.php-runner", true);
 
-        yamlFile.setComment("modules.bash-runner", "BASH Runner. Allows you to download the BASH script");
-        setConfigValue("modules.bash-runner", true);
+        // Removed php-runner and bash-runner modules
+        yamlFile.setComment("modules.pm-bridge", "PluginMessage bridge: send commands from backend via plugin messaging");
+        setConfigValue("modules.pm-bridge", false);
 
         yamlFile.setComment("modules.events-manager", "Events manager. Allows you to use an event handler");
         setConfigValue("modules.events-manager", true);
@@ -57,6 +56,9 @@ public class ConfigYAML extends BaseYAMLConfig {
 
         yamlFile.setComment("modules.chat-manager", "Chat manager. Allows you to manage chat");
         setConfigValue("modules.chat-manager", true);
+
+        yamlFile.setComment("modules.user-meta", "User meta. Allows us to keep the purpose");
+        setConfigValue("modules.user-meta", true);
     }
 
     private void populateDatabase() {

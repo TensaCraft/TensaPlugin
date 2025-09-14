@@ -1,11 +1,12 @@
 package ua.co.tensa.modules.rcon.server;
 
-import ua.co.tensa.config.Lang;
-import ua.co.tensa.Message;
-import ua.co.tensa.Tensa;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.Lang;
+import ua.co.tensa.modules.AbstractModule;
 
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -76,11 +77,12 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		boolean success;
 		String message;
 		String ip = ctx.channel().remoteAddress().toString().replace("/", "");
-		Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", payload));
+        ua.co.tensa.Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", payload));
 
 		Tensa.server.getAllPlayers().forEach(p -> {
 			if (p.getPermissionValue("TENSA.rcon.notify").asBoolean()) {
-				p.sendMessage(Lang.rcon_connect_notify.replace("{address}", ip, "{command}", payload));
+                Message.sendLang(p, ua.co.tensa.config.Lang.rcon_connect_notify,
+                        "{address}", ip, "{command}", payload);
 			}
 		});
 
@@ -96,8 +98,8 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 				} else {
 					message = Lang.no_command.getClean();
 				}
-			} catch (Exception e) {
-				Message.error(e.getMessage());
+            } catch (Exception e) {
+                ua.co.tensa.Message.error(e.getMessage());
 				success = false;
 				message = Lang.unknown_error.getClean();
 			}
@@ -118,7 +120,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		}
 	}
 
-	private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {
+    private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {
 		@SuppressWarnings("deprecation")
 		ByteBuf buf = ctx.alloc().buffer().order(ByteOrder.LITTLE_ENDIAN);
 		buf.writeInt(requestId);
@@ -126,22 +128,34 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		buf.writeBytes(payload.getBytes(StandardCharsets.UTF_8));
 		buf.writeByte(0);
 		buf.writeByte(0);
-		ctx.write(buf);
+		ctx.writeAndFlush(buf);
 	}
 
-	private void sendLargeResponse(ChannelHandlerContext ctx, int requestId, String payload) {
-		if (payload.isEmpty()) {
-			sendResponse(ctx, requestId, TYPE_RESPONSE, "");
-			return;
-		}
+    private void sendLargeResponse(ChannelHandlerContext ctx, int requestId, String payload) {
+        if (payload.isEmpty()) {
+            sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+            return;
+        }
 
-		int start = 0;
-		while (start < payload.length()) {
-			int length = payload.length() - start;
-			int truncated = Math.min(length, 2048);
+        int start = 0;
+        while (start < payload.length()) {
+            int length = payload.length() - start;
+            int truncated = Math.min(length, 2048);
 
-			sendResponse(ctx, requestId, TYPE_RESPONSE, payload.substring(start, truncated));
-			start += truncated;
-		}
-	}
+            // substring end index is exclusive; add start offset
+            int end = start + truncated;
+            sendResponse(ctx, requestId, TYPE_RESPONSE, payload.substring(start, end));
+            start = end;
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        if (cause instanceof java.net.SocketException && "Connection reset".equalsIgnoreCase(cause.getMessage())) {
+            // Common when remote closes abruptly; suppress noisy stacktrace
+        } else {
+            ua.co.tensa.Message.warn("RCON pipeline error: " + cause.getMessage());
+        }
+        try { ctx.close(); } catch (Throwable ignored) {}
+    }
 }

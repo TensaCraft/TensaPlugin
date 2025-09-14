@@ -1,15 +1,15 @@
 package ua.co.tensa.modules.chat;
 
 import com.velocitypowered.api.command.CommandSource;
+import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.proxy.Player;
+import ua.co.tensa.config.core.ConfigAdapter;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.data.ChatYAML;
-import com.velocitypowered.api.command.SimpleCommand;
-import com.velocitypowered.api.proxy.Player;
-import org.simpleyaml.configuration.file.YamlConfiguration;
 
 import java.util.Arrays;
 import java.util.List;
@@ -20,10 +20,11 @@ import java.util.concurrent.CompletableFuture;
 public class ChatCommands implements SimpleCommand {
 
     private static final boolean chatEnabled = Config.getModules("chat-manager");
-    private static YamlConfiguration chatConfig = ChatYAML.getInstance().getConfig();
+    private static ConfigAdapter chatCfg = ChatYAML.getInstance().adapter();
 
     public static void reload() {
-        chatConfig = ChatYAML.getInstance().getReloadedFile();
+        ChatYAML.getInstance().reload();
+        chatCfg = ChatYAML.getInstance().adapter();
         unregister();
         register();
     }
@@ -33,11 +34,11 @@ public class ChatCommands implements SimpleCommand {
             return;
         }
         // If the module is enabled, register commands
-        chatConfig.getKeys(false)
+        chatCfg.getKeys(false)
                 .stream()
-                .filter(key -> chatConfig.getBoolean(key + ".enabled"))
+                .filter(key -> chatCfg.getBoolean(key + ".enabled", false))
                 .forEach(key -> {
-                    String command = chatConfig.getString(key + ".command");
+                    String command = chatCfg.getString(key + ".command", "");
                     Util.registerCommand(command, "", new ChatCommands());
                 });
     }
@@ -45,13 +46,13 @@ public class ChatCommands implements SimpleCommand {
     public static void unregister() {
         if (!chatEnabled) {
             // If the module is excluded, disable all commands
-            chatConfig.getKeys(false)
-                    .forEach(key -> Util.unregisterCommand(chatConfig.getString(key + ".command")));
+            chatCfg.getKeys(false)
+                    .forEach(key -> Util.unregisterCommand(chatCfg.getString(key + ".command", "")));
         } else {
-            chatConfig.getKeys(false)
+            chatCfg.getKeys(false)
                     .stream()
-                    .filter(key -> !chatConfig.getBoolean(key + ".enabled"))
-                    .forEach(key -> Util.unregisterCommand(chatConfig.getString(key + ".command")));
+                    .filter(key -> !chatCfg.getBoolean(key + ".enabled", false))
+                    .forEach(key -> Util.unregisterCommand(chatCfg.getString(key + ".command", "")));
         }
     }
 
@@ -74,10 +75,10 @@ public class ChatCommands implements SimpleCommand {
         }
 
         String command = invocation.alias();
-        Set<String> chats = chatConfig.getKeys(false);
+        Set<String> chats = chatCfg.getKeys(false);
         chats.forEach(key -> {
-            if (chatConfig.getBoolean(key + ".enabled") && command.equals(chatConfig.getString(key + ".command"))) {
-                String type = chatConfig.getString(key + ".type");
+            if (chatCfg.getBoolean(key + ".enabled", false) && command.equals(chatCfg.getString(key + ".command", ""))) {
+                String type = chatCfg.getString(key + ".type", "public");
                 if ("private".equals(type)) {
                     handlePrivateChat(invocation, key, server, playerName);
                 } else {
@@ -91,57 +92,50 @@ public class ChatCommands implements SimpleCommand {
         CommandSource sender = invocation.source();
         boolean console = !(sender instanceof Player);
         if (invocation.arguments().length < 2) {
-            sender.sendMessage(Lang.chat_usage.replace("{command}", invocation.alias()));
+            Message.sendLang(sender, Lang.chat_usage, "{command}", invocation.alias());
             return;
         }
 
         String targetPlayerName = invocation.arguments()[0];
         Optional<Player> playerOptional = Tensa.server.getPlayer(targetPlayerName);
         if (playerOptional.isEmpty()) {
-            sender.sendMessage(Lang.player_not_found.replace("{player}", targetPlayerName));
+            Message.sendLang(sender, Lang.player_not_found, "{player}", targetPlayerName);
             return;
         }
         Player targetPlayer = playerOptional.get();
 
-        String message = Arrays.stream(invocation.arguments())
-                .skip(1)
-                .map(arg -> arg + " ")
-                .reduce("", String::concat);
+        String[] args = invocation.arguments();
+        String message = args.length <= 1 ? "" : String.join(" ", Arrays.copyOfRange(args, 1, args.length));
 
         if (console) {
-            targetPlayer.sendMessage(Message.convert(message));
+            Message.send(targetPlayer, message);
             return;
         }
-        String toMessageFormat = chatConfig.getString(key + ".to_format")
-                .replace("{server}", server)
-                .replace("{from}", playerName)
-                .replace("{target}", targetPlayer.getUsername())
-                .replace("{message}", message);
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("server", server);
+        ctx.put("from", playerName);
+        ctx.put("target", targetPlayer.getUsername());
+        ctx.put("message", message);
+        String toMessageFormat = Message.renderTemplateString(chatCfg.getString(key + ".to_format", "{from}: {message}"), ctx);
         Message.privateMessage(targetPlayer, toMessageFormat);
 
-        String fromMessageFormat = chatConfig.getString(key + ".from_format")
-                .replace("{server}", server)
-                .replace("{from}", playerName)
-                .replace("{target}", targetPlayer.getUsername())
-                .replace("{message}", message);
+        String fromMessageFormat = Message.renderTemplateString(chatCfg.getString(key + ".from_format", "{to}: {message}"), ctx);
         Message.privateMessage(sender, fromMessageFormat);
     }
 
     private void handlePublicChat(Invocation invocation, String key, String server, String playerName) {
-        String permission = chatConfig.getString(key + ".permission");
+        String permission = chatCfg.getString(key + ".permission", "");
         if (!permission.isEmpty() && !invocation.source().hasPermission(permission)) {
-            invocation.source().sendMessage(Lang.no_perms.get());
+            Message.sendLang(invocation.source(), Lang.no_perms);
             return;
         }
-        String message = Arrays.stream(invocation.arguments())
-                .map(arg -> arg + " ")
-                .reduce("", String::concat);
-        String messageFormat = chatConfig.getString(key + ".format");
-        String messageFormatReplaced = messageFormat
-                .replace("{server}", server)
-                .replace("{player}", playerName)
-                .replace("{message}", message);
-        if (chatConfig.getBoolean(key + ".see_all")) {
+        String message = String.join(" ", invocation.arguments());
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("server", server);
+        ctx.put("player", playerName);
+        ctx.put("message", message);
+        String messageFormatReplaced = Message.renderTemplateString(chatCfg.getString(key + ".format", "{player}: {message}"), ctx);
+        if (chatCfg.getBoolean(key + ".see_all", false)) {
             ChatModule.sendMessageToPermittedPlayers(messageFormatReplaced, "");
         } else {
             ChatModule.sendMessageToPermittedPlayers(messageFormatReplaced, permission);
@@ -152,11 +146,11 @@ public class ChatCommands implements SimpleCommand {
     public CompletableFuture<List<String>> suggestAsync(final Invocation invocation) {
         String command = invocation.alias();
         // Check whether the team belongs to a private chat
-        boolean isPrivate = chatConfig.getKeys(false)
+        boolean isPrivate = chatCfg.getKeys(false)
                 .stream()
-                .anyMatch(key -> chatConfig.getBoolean(key + ".enabled") &&
-                        command.equals(chatConfig.getString(key + ".command")) &&
-                        "private".equals(chatConfig.getString(key + ".type")));
+                .anyMatch(key -> chatCfg.getBoolean(key + ".enabled", false) &&
+                        command.equals(chatCfg.getString(key + ".command", "")) &&
+                        "private".equals(chatCfg.getString(key + ".type", "public")));
         if (!isPrivate) {
             return CompletableFuture.completedFuture(List.of());
         }

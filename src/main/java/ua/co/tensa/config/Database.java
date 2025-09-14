@@ -1,13 +1,16 @@
 package ua.co.tensa.config;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import ua.co.tensa.Message;
+
 import java.math.BigInteger;
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;
 
 public class Database {
 
-    private volatile Connection connection;
+    private volatile HikariDataSource dataSource;
     private String tablePrefix;
 
     public boolean enabled = false;
@@ -24,35 +27,35 @@ public class Database {
     }
 
     public void close() {
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-                Message.info("Database connection closed successfully.");
-            }
-        } catch (SQLException e) {
-            Message.error("Failed to close database connection: " + e.getMessage());
+        if (dataSource != null) {
+            dataSource.close();
+            Message.info("Database pool closed successfully.");
+            dataSource = null;
         }
     }
 
     public synchronized void checkConnection() {
-        try {
-            if (connection == null || connection.isClosed()) {
-                connect();
-            }
-        } catch (SQLException e) {
-            Message.error(e.getMessage());
+        if (dataSource == null || dataSource.isClosed()) {
+            connect();
         }
     }
 
     private boolean connectH2() {
         try {
-            Class.forName("org.h2.Driver");
             String url = "jdbc:h2:file:./plugins/tensa/storage/server;MODE=MySQL;DB_CLOSE_DELAY=-1";
-            connection = DriverManager.getConnection(url, "sa", "");
+            HikariConfig cfg = new HikariConfig();
+            cfg.setJdbcUrl(url);
+            cfg.setUsername("sa");
+            cfg.setPassword("");
+            cfg.setMaximumPoolSize(5);
+            cfg.setMinimumIdle(1);
+            cfg.setConnectionTimeout(10_000);
+            cfg.setIdleTimeout(60_000);
+            dataSource = new HikariDataSource(cfg);
             Message.info("Connection to the H2 database in MySQL mode is successful");
             enabled = true;
             return true;
-        } catch (SQLException | ClassNotFoundException e) {
+        } catch (Exception e) {
             Message.error("Failed to connect to H2 Database: " + e.getMessage());
             return false;
         }
@@ -60,33 +63,91 @@ public class Database {
 
     private boolean connectMySQL() {
         try {
+            // Ensure driver and required internal classes are loaded early
             Class.forName("org.mariadb.jdbc.Driver");
+            try {
+                Class.forName("org.mariadb.jdbc.message.client.QuitPacket");
+                Class.forName("org.mariadb.jdbc.client.impl.StandardClient");
+            } catch (ClassNotFoundException ignored) {
+                // Older/newer driver versions may differ; safe to ignore
+            }
             String url = "jdbc:mariadb://"
                     + Config.getDatabaseHost() + ":"
                     + Config.getDatabasePort() + "/"
                     + Config.getDatabaseName()
                     + "?useSSL=" + Config.getSsl()
-                    + "&autoReconnect=true"            // Allows you to reconnect automatically
-                    + "&maxReconnects=3"               // How many times to try
-                    + "&connectTimeout=10000"          // Timeout for connection (ms)
-                    + "&socketTimeout=20000";          // Timeout for query execution (ms)
-            connection = DriverManager.getConnection(
-                    url,
-                    Config.getDatabaseUser(),
-                    Config.getDatabasePassword()
-            );
+                    + "&autoReconnect=true"
+                    + "&maxReconnects=3"
+                    + "&connectTimeout=10000"
+                    + "&socketTimeout=20000"
+                    + "&tcpKeepAlive=true";
+            HikariConfig cfg = new HikariConfig();
+            cfg.setJdbcUrl(url);
+            cfg.setUsername(Config.getDatabaseUser());
+            cfg.setPassword(Config.getDatabasePassword());
+            cfg.setDriverClassName("org.mariadb.jdbc.Driver");
+            cfg.setMaximumPoolSize(10);
+            cfg.setMinimumIdle(2);
+            cfg.setConnectionTimeout(10_000);
+            cfg.setPoolName("TensaDBPool");
+
+            // Discover server-side timeouts to tune Hikari and avoid stale connections
+            long serverWaitTimeoutSec = 28_800; // sane default (8h)
+            try (Connection probe = DriverManager.getConnection(url, Config.getDatabaseUser(), Config.getDatabasePassword());
+                 Statement st = probe.createStatement()) {
+                long waitTimeout = serverWaitTimeoutSec;
+                long interactiveTimeout = serverWaitTimeoutSec;
+                try (ResultSet rs = st.executeQuery("SHOW VARIABLES LIKE 'wait_timeout'")) {
+                    if (rs.next()) {
+                        waitTimeout = parseLongSafely(rs.getString(2), serverWaitTimeoutSec);
+                    }
+                }
+                try (ResultSet rs2 = st.executeQuery("SHOW VARIABLES LIKE 'interactive_timeout'")) {
+                    if (rs2.next()) {
+                        interactiveTimeout = parseLongSafely(rs2.getString(2), serverWaitTimeoutSec);
+                    }
+                }
+                serverWaitTimeoutSec = Math.max(1, Math.min(waitTimeout, interactiveTimeout));
+            } catch (SQLException ignored) {
+                // If probing fails, fall back to defaults
+            }
+
+            // Configure lifetimes relative to server timeout
+            long safetyMs = 5_000; // retire slightly before server
+            long serverTimeoutMs = serverWaitTimeoutSec * 1_000L;
+            long maxLifetimeMs = Math.max(30_000L, serverTimeoutMs - safetyMs);
+            // Keepalive ping before server may close idle sockets (half of server timeout, at least 15s)
+            long keepAliveMs = Math.max(15_000L, Math.min(maxLifetimeMs - 1_000L, serverTimeoutMs / 2));
+            // Idle timeout must be less than maxLifetime and server timeout
+            long idleTimeoutMs = Math.max(30_000L, Math.min(maxLifetimeMs - 1_000L, serverTimeoutMs - 20_000L));
+
+            cfg.setMaxLifetime(maxLifetimeMs);
+            cfg.setKeepaliveTime(keepAliveMs);
+            cfg.setIdleTimeout(idleTimeoutMs);
+            cfg.setValidationTimeout(5_000);
+            dataSource = new HikariDataSource(cfg);
             Message.info("Connection to the MySQL database is successful");
             enabled = true;
             return true;
-        } catch (SQLException | ClassNotFoundException e) {
+        } catch (Exception e) {
             Message.error("Failed to connect to MySQL: " + e.getMessage());
             return false;
         }
     }
 
+    private long parseLongSafely(String value, long fallback) {
+        if (value == null) return fallback;
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
     private boolean executeUpdateSync(String query, Object... parameters) {
         checkConnection();
-        return executeSync(query, parameters, PreparedStatement::executeUpdate) != null;
+        Integer updated = executeSync(query, parameters, PreparedStatement::executeUpdate);
+        return updated != null;
     }
 
     private ResultSet executeQuerySync(String query, Object... parameters) {
@@ -96,14 +157,15 @@ public class Database {
 
     private <T> T executeSync(String query, Object[] parameters, SQLExecutor<T> executor) {
         checkConnection();
-        try (PreparedStatement stmt = prepareStatement(query, parameters)) {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = prepareStatement(conn, query, parameters)) {
             return executor.execute(stmt);
         } catch (SQLException e) {
-            // If the loss of connection - we intelligent and repeat
             if (isConnectionException(e)) {
                 Message.info("Lost DB connection — reconnecting and retrying query");
                 if (connect()) {
-                    try (PreparedStatement stmt2 = prepareStatement(query, parameters)) {
+                    try (Connection conn2 = dataSource.getConnection();
+                         PreparedStatement stmt2 = prepareStatement(conn2, query, parameters)) {
                         return executor.execute(stmt2);
                     } catch (SQLException ex) {
                         Message.error("Retry failed: " + ex.getMessage());
@@ -119,59 +181,30 @@ public class Database {
     }
 
     private boolean isConnectionException(SQLException e) {
-        // We check the classes Exception or the text of the error
         return e instanceof SQLNonTransientConnectionException
                 || e instanceof SQLTransientConnectionException
-                || e.getMessage().toLowerCase().contains("socket error")
-                || e.getMessage().toLowerCase().contains("communicati");
+                || (e.getMessage() != null && (e.getMessage().toLowerCase().contains("socket error")
+                || e.getMessage().toLowerCase().contains("communicati")));
     }
 
-
-    private PreparedStatement prepareStatement(String query, Object... parameters) throws SQLException {
-        checkConnection();
-        PreparedStatement preparedStatement = connection.prepareStatement(query);
+    private PreparedStatement prepareStatement(Connection conn, String query, Object... parameters) throws SQLException {
+        PreparedStatement preparedStatement = conn.prepareStatement(query);
         for (int i = 0; i < parameters.length; i++) {
-            if (parameters[i] instanceof String) {
-                preparedStatement.setString(i + 1, (String) parameters[i]);
-            } else if (parameters[i] instanceof Integer) {
-                preparedStatement.setInt(i + 1, (Integer) parameters[i]);
-            } else if (parameters[i] instanceof Long) {
-                preparedStatement.setLong(i + 1, (Long) parameters[i]);
-            } else if (parameters[i] instanceof Double) {
-                preparedStatement.setDouble(i + 1, (Double) parameters[i]);
-            } else if (parameters[i] instanceof Float) {
-                preparedStatement.setFloat(i + 1, (Float) parameters[i]);
-            } else if (parameters[i] instanceof Boolean) {
-                preparedStatement.setBoolean(i + 1, (Boolean) parameters[i]);
-            } else if (parameters[i] instanceof Byte) {
-                preparedStatement.setByte(i + 1, (Byte) parameters[i]);
-            } else if (parameters[i] instanceof Short) {
-                preparedStatement.setShort(i + 1, (Short) parameters[i]);
-            } else if (parameters[i] instanceof Date) {
-                preparedStatement.setDate(i + 1, (Date) parameters[i]);
-            } else if (parameters[i] instanceof Time) {
-                preparedStatement.setTime(i + 1, (Time) parameters[i]);
-            } else if (parameters[i] instanceof Timestamp) {
-                preparedStatement.setTimestamp(i + 1, (Timestamp) parameters[i]);
-            } else {
-                preparedStatement.setObject(i + 1, parameters[i]);
-            }
+            preparedStatement.setObject(i + 1, parameters[i]);
         }
         return preparedStatement;
     }
-
 
     @FunctionalInterface
     private interface SQLExecutor<T> {
         T execute(PreparedStatement preparedStatement) throws SQLException;
     }
 
-    // Helper methods to construct queries
     private String constructInsertQuery(String tableName, String columns, int valueCount) {
         StringBuilder query = new StringBuilder();
         query.append("INSERT INTO ").append(appendPrefix(tableName)).append(" (").append(columns).append(") VALUES (");
         query.append("?,".repeat(Math.max(0, valueCount)));
-        query.deleteCharAt(query.length() - 1); // Remove last comma
+        query.deleteCharAt(query.length() - 1);
         query.append(")");
         return query.toString();
     }
@@ -184,7 +217,6 @@ public class Database {
         return "SELECT " + columns + " FROM " + appendPrefix(tableName) + " WHERE " + where;
     }
 
-    // The main methods
     public boolean createTable(String tableName, String columns) {
         String query = "CREATE TABLE IF NOT EXISTS " + appendPrefix(tableName) + " (" + columns + ")";
         return executeUpdateSync(query);
@@ -237,7 +269,6 @@ public class Database {
     public boolean exists(String tableName, String where, Object... values) {
         try (ResultSet rs = select(tableName, "*", where, values)) {
             if (rs == null) {
-                // Failed to complete the request - we believe that there is no record
                 return false;
             }
             return rs.next();
@@ -249,8 +280,8 @@ public class Database {
 
     public boolean tableExists(String tableName) {
         checkConnection();
-        try {
-            DatabaseMetaData dbm = connection.getMetaData();
+        try (Connection conn = dataSource.getConnection()) {
+            DatabaseMetaData dbm = conn.getMetaData();
             try (ResultSet tables = dbm.getTables(null, null, appendPrefix(tableName), null)) {
                 return tables.next();
             }
@@ -259,7 +290,6 @@ public class Database {
             return false;
         }
     }
-
 
     private String appendPrefix(String tableName) {
         return tablePrefix + tableName;

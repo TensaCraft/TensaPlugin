@@ -25,37 +25,37 @@ public class EventsYAML extends BaseYAMLConfig {
         );
 
         setConfigValue("events.on_join_commands.enabled", true);
-        setConfigValue("events.on_join_commands.commands", new String[]{
-                "[console] alert &6Player {player} join the game",
+        setConfigValue("events.on_join_commands.commands", java.util.List.of(
+                "[console] alert <gold>Player {player} join the game</gold>",
                 "[delay] 10",
                 "server vanilla"
-        });
+        ));
 
         setConfigValue("events.on_leave_commands.enabled", true);
-        setConfigValue("events.on_leave_commands.commands", new String[]{
-                "[console] alert &6Player {player} left the game"
-        });
+        setConfigValue("events.on_leave_commands.commands", java.util.List.of(
+                "[console] alert <gold>Player {player} left the game</gold>"
+        ));
 
         setConfigValue("events.on_server_switch.enabled", true);
-        setConfigValue("events.on_server_switch.commands", new String[]{
-                "[console] alert &6Player {player} connected to server {server} from server {fromServer}"
-        });
+        setConfigValue("events.on_server_switch.commands", java.util.List.of(
+                "[console] alert <gold>Player {player} connected to server {server} from server {fromServer}</gold>"
+        ));
 
         setConfigValue("events.on_server_kick.enabled", true);
-        setConfigValue("events.on_server_kick.commands", new String[]{
-                "[console] alert &6Player {player} kick the server {server}",
+        setConfigValue("events.on_server_kick.commands", java.util.List.of(
+                "[console] alert <gold>Player {player} kick the server {server}</gold>",
                 "[delay] 60",
                 "server {server}"
-        });
+        ));
 
         setConfigValue("events.on_server_running.enabled", true);
-        setConfigValue("events.on_server_running.commands", new String[]{
-                "[console] alert &6Server {server} is running"
-        });
+        setConfigValue("events.on_server_running.commands", java.util.List.of(
+                "[console] alert <gold>Server {server} is running</gold>"
+        ));
 
         setConfigValue("events.on_server_stop.enabled", true);
-        setConfigValue("events.on_server_stop.commands", new String[]{
-                "[console] alert &6Server {server} is stop"
-        });
+        setConfigValue("events.on_server_stop.commands", java.util.List.of(
+                "[console] alert <gold>Server {server} is stop</gold>"
+        ));
     }
 }

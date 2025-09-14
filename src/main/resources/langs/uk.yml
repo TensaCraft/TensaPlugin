@@ -1,69 +1,75 @@
-# UK localization file
+# UK localization file (MiniMessage)
 
-prefix: '&f[&3TENSA&f] &7'
-no_perms: '&cВи не маєте дозволу на використання цієї команди'
-unknown_error: '&cНевідома помилка'
-unknown_request: '&cНевідомий запит'
-error_executing: '&cПомилка виконання:'
-no_command: '&cТакої команди немає'
-reload: '&aУсі конфігурації перезавантажено'
-enabled: '&aувімкнено'
-disabled: '&cвимкнено'
-module_status: '&b{module} {status}'
+prefix: "<white>[<dark_aqua><bold>TENSA</bold></dark_aqua>]</white> <gray>"
+no_perms: "<red>Ви не маєте дозволу на використання цієї команди</red>"
+unknown_error: "<red>Невідома помилка</red>"
+unknown_request: "<red>Невідомий запит</red>"
+error_executing: "<red>Помилка виконання:</red>"
+no_command: "<red>Такої команди немає</red>"
+reload: "<green>Усі конфігурації перезавантажено</green>"
+enabled: "<green>включено</green>"
+disabled: "<red>вимкнено</red>"
+module_status: "<aqua>{module}</aqua> <gray>{status}</gray>"
+
 # Rcon Manager
-rcon_manager_reload: '&aКонфігурації Rcon Manager перезавантажено'
-rcon_auth_error: '&6{server}: &cПомилка аутентифікації. Будь ласка, перевірте конфігурацію
-  вашого сервера і переконайтеся, що сервер доступний'
-rcon_io_error: '&6{server}: &cПомилка IO. Перевірте конфігурацію свого сервера та
-  переконайтеся, що сервер доступний'
-rcon_unknown_error: '&6{server}: &cНевідома помилка хоста. Перевірте IP-адресу сервера
-  конфігурація адреси'
+rcon_manager_reload: "<green>Конфігурації Rcon Manager перезавантажено</green>"
+rcon_auth_error: "<gold>{server}</gold>: <red>Помилка автентифікації. Будь ласка, перевірте конфігурацію свого сервера та переконайтеся, що сервер доступний</red>"
+rcon_io_error: "<gold>{server}</gold>: <red>IO Помилка. Будь ласка, перевірте конфігурацію свого сервера та переконайтеся, що сервер доступний</red>"
+rcon_unknown_error: "<gold>{server}</gold>: <red>Невідома помилка хоста. Перевірте конфігурацію IP-адреси сервера</red>"
+
 # Rcon Server
-rcon_server_reload: '&aКонфігурації Rcon Server перезавантажено'
-rcon_connect_notify: '&aЗєднання Rcon з: &7[&3&l{address}&7] &aКоманда: &3&l{command}'
-rcon_usage: '&6Використання: rcon [server/all/reload] [command]'
-rcon_response: '&6{server}: &a{response}'
-rcon_response_empty: Немає відповіді від сервера
+rcon_server_reload: "<green>Конфігурації Rcon Server перезавантажено</green>"
+rcon_connect_notify: "<green>Rcon з`єднання з:</green> <gray>[</gray><dark_aqua><bold>{address}</bold></dark_aqua><gray>]</gray> <green>Команда:</green> <dark_aqua><bold>{command}</bold></dark_aqua>"
+rcon_usage: "<gold>Використання:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>"
+rcon_empty_command: "<gold>Команда порожня!</gold>"
+rcon_invalid_command_or_server: "<gold>Недійсна команда або ім`я сервера</gold>"
+rcon_response: "<gold>{server}</gold>: <green>{response}</green>"
+rcon_response_empty: "<gray>Немає відповіді від сервера</gray>"
+
 # Bash Module
-bash_usage: '&6Використання: bash [script/reload] [info/(script args)]'
-bash_runner_reload: '&aКонфігурації BASH Runner перезавантажено'
-bash_out_script: '{response}'
+
 # Php Module
-php_usage: '&6Використання: php [script/reload] [info/(script args)]'
-php_runner_reload: '&aКонфігурації PHP Runner перезавантажено'
-php_out_script: '{response}'
-rcon_empty_command: '&6Команда порожня!'
-rcon_invalid_command_or_server: '&6Недійсна команда або ім`я сервера'
+
 # PlayerTime Module
-player_time_usage: '&6Використання: vptime [Player]'
-player_time: '&aВаш ігровий час: {time}'
-player_time_other: '&aЧас гри {player}: {time}'
-player_not_found: '&c{player} не знайдено'
-player_time_days: ' дн '
-player_time_hours: ' год '
-player_time_minutes: ' хв '
-player_time_seconds: ' сек '
-player_time_top: '&aКращі гравці за часом:'
-player_time_top_entry: '&a{position}. &6{player} - &a{time}'
+player_time_usage: "<gold>Використання:</gold> <yellow>tptime</yellow> <gray>[Player]</gray>"
+player_time: "<green>Ваш час гри:</green> <white>{time}</white>"
+player_time_other: "<green>Час гри {player}:</green> <white>{time}</white>"
+player_not_found: "<red>{player} не знайдено</red>"
+player_time_days: " дн "
+player_time_hours: " год "
+player_time_minutes: " хв "
+player_time_seconds: " сек "
+player_time_top: "<green>Кращі гравці за часом:</green>"
+player_time_top_entry: "<green>{position}.</green> <gold>{player}</gold> <gray>-</gray> <white>{time}</white>"
+
 # Send Module
-send_usage: '&6Використання: /psend &6{player} {server}'
-send_success: '&aГравець {player} надіслано на сервер {server}'
-server_not_found: '&cСервер {server} не знайдено'
+send_usage: "<gold>Використання:</gold> <yellow>/psend</yellow> <gray>{гравець} {сервер}</gray>"
+send_success: "<green>Гравця <white>{player}</white> надіслано на сервер <white>{server}</white></green>"
+server_not_found: "<red>Сервер {server} не знайдено</red>"
+
 # Chat Module
-chat_usage: '&6Використання: /{command} (гравець) (повідомлення)'
+chat_usage: "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>(гравець) (повідомлення)</gray>"
+
 # Help
 help: |-
-  &6Доступні команди:
-  &6/tensa &7- &6Показати допомогу.
-  &6/tensareload &7- &6Перезавантажте всі конфігурації.
-  &6/tensamodules &7- &6Показати всі модулі.
-  &6/vpl &7- &6Показати всі плагіни.
-  &6/vptime &7- &6Повертає ваш загальний час гри.
-  &6/vptime [player] &7- &6Повертає загальний час гри вказаного гравця.
-  &6/vptop &7- &6Показує топ гравців за часом гри.
-  &6/rcon [server/all/reload] [command] &7- &6Надсилає вказану команду на вказаний сервер або на всі сервери.
-  &6/php [script/reload] [args] &7- &6Виконує вказаний скрипт PHP.
-  &6/bash [script/reload] [args] &7- &6Виконує вказаний сценарій Bash.
-  &6/rules &7- &6Читає вказаний текстовий файл.
-  &6/readme &7- &6Читає вказаний текстовий файл.
+  <gold>Доступні команди:</gold>
+  <gold>/tensa</gold> <gray>-</gray> <green>Показати допомогу.</green>
+  <gold>/tensareload</gold> <gray>-</gray> <green>Перезавантажте всі конфігурації.</green>
+  <gold>/tensamodules</gold> <gray>-</gray> <green>Показати всі модулі.</green>
+  <gold>/tpl</gold> <gray>-</gray> <green>Показати всі плагіни.</green>
+  <gold>/tptime</gold> <gray>-</gray> <green>Повертає ваш загальний час гри.</green>
+  <gold>/tptime [player]</gold> <gray>-</gray> <green>Повертає загальний час гри вказаного гравця.</green>
+  <gold>/tptop</gold> <gray>-</gray> <green>Показує топ гравців за часом гри.</green>
+  <gold>/rcon [server/all/reload] [command]</gold> <gray>-</gray> <green>Надсилає вказану команду на вказаний сервер або на всі сервери.</green>
+  <gold>/rules</gold> <gray>-</gray> <green>Читає вказаний текстовий файл.</green>
+  <gold>/readme</gold> <gray>-</gray> <green>Читає вказаний текстовий файл.</green>
+  <gold>/psend [player/all] [server]</gold> <gray>-</gray> <green>Відправляє вказаного гравця на вказаний сервер.</green>
 
+# User Meta Module
+meta_usage: "<gold>Використання:</gold> <yellow>/vmeta</yellow> <gray><set|get|del|list> [гравець] <ключ> [значення…] [--session]</gray>"
+meta_need_player: "<red>Вкажіть гравця, якщо запускаєте з консолі</red>"
+meta_set_ok: "<green>Встановлено мету </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>"
+meta_get_ok: "<green>Мета </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>"
+meta_deleted_ok: "<green>Видалено мету </green><yellow>{key}</yellow>"
+meta_no_meta: "<gray>Метаданих не знайдено</gray>"
+meta_list_header: "<yellow>Список метаданих:</yellow>"

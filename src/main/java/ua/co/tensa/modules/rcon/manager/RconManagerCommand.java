@@ -1,13 +1,13 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import ua.co.tensa.config.Lang;
-import ua.co.tensa.Util;
-import ua.co.tensa.Tensa;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
+import ua.co.tensa.config.Lang;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -23,27 +23,27 @@ public class RconManagerCommand implements SimpleCommand {
 		String[] args = invocation.arguments();
 
 		if (!hasPermission(invocation)) {
-			sendMessage(sender, Lang.no_perms.get());
+			Message.sendLang(sender, Lang.no_perms);
 			return;
 		}
 
 		if (args.length < 1) {
-			sendMessage(sender, Lang.rcon_usage.get());
+			Message.sendLang(sender, Lang.rcon_usage);
 			return;
 		}
 
 		String server = args[0];
 
-		if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
-			RconManagerModule.reload();
-			sendMessage(sender, Lang.rcon_manager_reload.get());
-			return;
-		}
+        if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
+            ua.co.tensa.config.data.RconManagerYAML.getInstance().getReloadedFile();
+            Message.sendLang(sender, Lang.rcon_manager_reload);
+            return;
+        }
 
 		String command = buildCommand(args, server);
 
 		if (command.isEmpty()) {
-			sendMessage(sender, Lang.rcon_empty_command.get());
+			Message.sendLang(sender, Lang.rcon_empty_command);
 			return;
 		}
 
@@ -85,7 +85,7 @@ public class RconManagerCommand implements SimpleCommand {
 
 	public static void unregister() {
 		CommandManager manager = Tensa.server.getCommandManager();
-		String[] commands = { "vurcon", "rcon", "velocityrcon" };
+        String[] commands = { "vurcon", "rcon", "velocityrcon" };
 		for (String command : commands) {
 			manager.unregister(command);
 		}
@@ -96,7 +96,7 @@ public class RconManagerCommand implements SimpleCommand {
 		if (hasPermission(invocation, "all") || hasPermission(invocation, server)) {
 			tryExecuteRconCommand(command, sender, server);
 		} else {
-			sendMessage(sender, Lang.no_perms.get());
+			Message.sendLang(sender, Lang.no_perms);
 		}
 	}
 
@@ -105,7 +105,7 @@ public class RconManagerCommand implements SimpleCommand {
 			if (hasPermission(invocation, "all") || hasPermission(invocation, server_name)) {
 				tryExecuteRconCommand(command, sender, server_name);
 			} else {
-				sendMessage(sender, Lang.no_perms.get());
+				Message.sendLang(sender, Lang.no_perms);
 			}
 		}
 	}
@@ -118,13 +118,13 @@ public class RconManagerCommand implements SimpleCommand {
 			if (result.isEmpty()) {
 				result = Lang.rcon_response_empty.getClean();
 			}
-			sendMessage(sender, Lang.rcon_response.replace("{server}", Util.capitalize(server), "{response}", result));
+			Message.sendLang(sender, Lang.rcon_response, "{server}", Util.capitalize(server), "{response}", result);
 		} catch (UnknownHostException e) {
-			sendMessage(sender, Lang.rcon_unknown_error.replace("{server}", Util.capitalize(server)));
+			Message.sendLang(sender, Lang.rcon_unknown_error, "{server}", Util.capitalize(server));
 		} catch (IOException e) {
-			sendMessage(sender, Lang.rcon_io_error.replace("{server}", Util.capitalize(server)));
+			Message.sendLang(sender, Lang.rcon_io_error, "{server}", Util.capitalize(server));
 		} catch (AuthenticationException e) {
-			sendMessage(sender, Lang.rcon_auth_error.replace("{server}", Util.capitalize(server)));
+			Message.sendLang(sender, Lang.rcon_auth_error, "{server}", Util.capitalize(server));
 		}
 	}
 
@@ -136,7 +136,4 @@ public class RconManagerCommand implements SimpleCommand {
 		return sb.toString().trim();
 	}
 
-	private void sendMessage(CommandSource sender, Component message) {
-		sender.sendMessage(message);
-	}
 }

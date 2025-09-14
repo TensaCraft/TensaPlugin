@@ -1,9 +1,13 @@
 package ua.co.tensa.commands;
 
-import ua.co.tensa.config.Lang;
-import ua.co.tensa.Tensa;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.ConfigRegistry;
+import ua.co.tensa.config.Lang;
+import ua.co.tensa.modules.Modules;
+import ua.co.tensa.modules.chat.ChatCommands;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -14,14 +18,22 @@ public final class ReloadCommand implements SimpleCommand {
 	public void execute(final Invocation invocation) {
 		CommandSource source = invocation.source();
 		if (!hasPermission(invocation)) {
-			source.sendMessage(Lang.no_perms.get());
+			Message.sendLang(source, Lang.no_perms);
 			return;
 		}
 		if (Tensa.database != null) {
 			Tensa.database.close();
 		}
+		// core reload pipeline
 		Tensa.loadPlugin();
-		source.sendMessage(Lang.reload.get());
+		// Ensure any config instances registered are reloaded uniformly
+		ConfigRegistry.reloadAll();
+        // Re-register chat commands based on refreshed config
+        ChatCommands.reload();
+        // Apply module enable/disable changes and reload enabled modules
+        Modules.applyConfig();
+        Modules.reloadAll();
+		Message.sendLang(source, Lang.reload);
 	}
 
 	@Override
