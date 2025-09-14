@@ -5,7 +5,7 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.Message;
-import ua.co.tensa.config.data.BridgeYAML;
+import ua.co.tensa.modules.bridge.data.BridgeYAML;
 import ua.co.tensa.modules.Modules;
 
 public class PMBridgeDebugCommand implements SimpleCommand {

@@ -3,8 +3,7 @@ package ua.co.tensa.modules.meta;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Database;
-import ua.co.tensa.config.data.UserMetaYAML;
-import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.meta.data.UserMetaYAML;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;

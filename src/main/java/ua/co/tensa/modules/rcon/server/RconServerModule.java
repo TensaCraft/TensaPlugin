@@ -4,7 +4,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import ua.co.tensa.Tensa;
-import ua.co.tensa.config.data.RconServerYAML;
+import ua.co.tensa.modules.rcon.data.RconServerYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 

@@ -1,4 +1,6 @@
-package ua.co.tensa.config.data;
+package ua.co.tensa.modules.chat.data;
+
+import ua.co.tensa.config.data.BaseYAMLConfig;
 
 public class ChatYAML extends BaseYAMLConfig {
 
@@ -23,8 +25,7 @@ public class ChatYAML extends BaseYAMLConfig {
 
         yamlFile.setComment("global", "Global chat");
         setConfigValue("global.enabled", true);
-        setConfigValue("global.alias", "!");
-        setConfigValue("global.command", "g");
+        setConfigValue("global.command", "g,global,gchat");
         yamlFile.setComment("global.permission", "If empty, everyone can use this chat and see the messages");
         setConfigValue("global.permission", "");
         setConfigValue("global.see_all", true);
@@ -32,7 +33,6 @@ public class ChatYAML extends BaseYAMLConfig {
 
         yamlFile.setComment("staff", "Staff chat");
         setConfigValue("staff.enabled", true);
-        setConfigValue("staff.alias", "@");
         setConfigValue("staff.command", "s");
         setConfigValue("staff.permission", "tensa.chat.staff");
         setConfigValue("staff.see_all", false);
@@ -40,7 +40,6 @@ public class ChatYAML extends BaseYAMLConfig {
 
         yamlFile.setComment("alert", "Alert chat");
         setConfigValue("alert.enabled", true);
-        setConfigValue("alert.alias", "");
         setConfigValue("alert.command", "alert");
         setConfigValue("alert.permission", "");
         setConfigValue("alert.see_all", true);

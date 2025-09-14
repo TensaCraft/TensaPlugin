@@ -1,4 +1,6 @@
-package ua.co.tensa.config.data;
+package ua.co.tensa.modules.bridge.data;
+
+import ua.co.tensa.config.data.BaseYAMLConfig;
 
 public class BridgeYAML extends BaseYAMLConfig {
     private static BridgeYAML instance;

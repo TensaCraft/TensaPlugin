@@ -1,6 +1,6 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import ua.co.tensa.config.data.RconManagerYAML;
+import ua.co.tensa.modules.rcon.data.RconManagerYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 

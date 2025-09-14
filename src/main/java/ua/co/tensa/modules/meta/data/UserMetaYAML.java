@@ -1,4 +1,6 @@
-package ua.co.tensa.config.data;
+package ua.co.tensa.modules.meta.data;
+
+import ua.co.tensa.config.data.BaseYAMLConfig;
 
 public class UserMetaYAML extends BaseYAMLConfig {
     private static UserMetaYAML instance;

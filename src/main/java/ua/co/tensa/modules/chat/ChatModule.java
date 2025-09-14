@@ -5,30 +5,24 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 
+/**
+ * Chat module without event listeners and without alias handling.
+ * Uses only explicit Velocity commands (registered by ChatCommands).
+ */
 public class ChatModule {
 
     private static final ModuleEntry IMPL = new AbstractModule(
             "chat-manager", "Chat Manager") {
-        @Override protected void onEnable() { ChatModule.enableImpl(); }
-        @Override protected void onDisable() { ChatModule.disableImpl(); }
+        @Override protected void onEnable() { ChatCommands.register(); }
+        @Override protected void onDisable() { ChatCommands.unregister(); }
     };
+
     public static final ModuleEntry ENTRY = IMPL;
-
-    public static void initialise() {
-         ChatEventListener.reload();
-         ChatCommands.reload();
-    }
-
-    public static void reload() {
-        initialise();
-    }
-
-    private static void enableImpl() { initialise(); ua.co.tensa.Message.info("Chat Manager module enabled"); }
-    private static void disableImpl() { initialise(); }
 
     public static void enable() { IMPL.enable(); }
     public static void disable() { IMPL.disable(); }
 
+    /** Fanout helper: send a message to everyone or only to players with a permission. */
     public static void sendMessageToPermittedPlayers(String message, String permission) {
         if (permission == null || permission.isBlank()) {
             Tensa.server.getAllPlayers().forEach(p -> Message.send(p, message));

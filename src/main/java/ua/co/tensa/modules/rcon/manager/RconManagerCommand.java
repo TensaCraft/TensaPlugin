@@ -8,6 +8,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.modules.rcon.data.RconManagerYAML;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -35,7 +36,7 @@ public class RconManagerCommand implements SimpleCommand {
 		String server = args[0];
 
         if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
-            ua.co.tensa.config.data.RconManagerYAML.getInstance().getReloadedFile();
+            RconManagerYAML.getInstance().getReloadedFile();
             Message.sendLang(sender, Lang.rcon_manager_reload);
             return;
         }

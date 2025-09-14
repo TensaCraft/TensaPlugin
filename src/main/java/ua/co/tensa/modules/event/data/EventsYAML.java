@@ -1,4 +1,6 @@
-package ua.co.tensa.config.data;
+package ua.co.tensa.modules.event.data;
+
+import ua.co.tensa.config.data.BaseYAMLConfig;
 
 public class EventsYAML extends BaseYAMLConfig {
 

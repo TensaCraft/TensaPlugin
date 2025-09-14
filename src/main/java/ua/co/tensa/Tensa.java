@@ -18,8 +18,12 @@ import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.modules.Modules;
-import ua.co.tensa.modules.chat.ChatEventListener;
+import ua.co.tensa.modules.bridge.data.BridgeYAML;
+import ua.co.tensa.modules.chat.data.ChatYAML;
 import ua.co.tensa.modules.event.EventManager;
+import ua.co.tensa.modules.event.data.EventsYAML;
+import ua.co.tensa.modules.rcon.data.RconManagerYAML;
+import ua.co.tensa.modules.rcon.data.RconServerYAML;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
 import ua.co.tensa.placeholders.PlaceholderManager;
 
@@ -56,11 +60,11 @@ public class Tensa {
         // Ensure all module configs exist and are up-to-date with new defaults
         try {
             ua.co.tensa.config.data.ConfigYAML.getInstance().reload();
-            ua.co.tensa.config.data.BridgeYAML.getInstance().reload();
-            ua.co.tensa.config.data.EventsYAML.getInstance().reload();
-            ua.co.tensa.config.data.ChatYAML.getInstance().reload();
-            ua.co.tensa.config.data.RconManagerYAML.getInstance().reload();
-            ua.co.tensa.config.data.RconServerYAML.getInstance().reload();
+            BridgeYAML.getInstance().reload();
+            EventsYAML.getInstance().reload();
+            ChatYAML.getInstance().reload();
+            RconManagerYAML.getInstance().reload();
+            RconServerYAML.getInstance().reload();
             ua.co.tensa.config.data.LangYAML.getInstance().reload();
             ua.co.tensa.config.ConfigRegistry.reloadAll();
         } catch (Throwable ignored) { }
@@ -89,9 +93,7 @@ public class Tensa {
     }
 
     @Subscribe
-    public void onPlayerMessage(PlayerChatEvent event) {
-        ChatEventListener.onPlayerMessage(event);
-    }
+    public void onPlayerMessage(PlayerChatEvent event) {}
 
 
     @Subscribe

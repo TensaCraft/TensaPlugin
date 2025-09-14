@@ -9,22 +9,26 @@ import ua.co.tensa.Util;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.core.ConfigAdapter;
-import ua.co.tensa.config.data.ChatYAML;
+import ua.co.tensa.modules.chat.data.ChatYAML;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 public class ChatCommands implements SimpleCommand {
 
-    // We keep only the adapter for keys + section map access.
+    // Access chats.yml via section maps
     private static ConfigAdapter chatCfg = ChatYAML.getInstance().adapter();
 
-    /** Read module flag dynamically, so reload() takes effect. */
+    /**
+     * Read module flag dynamically to respect reload().
+     */
     private static boolean isChatEnabled() {
         return Config.getModules("chat-manager");
     }
 
-    /** Normalize a command label (strip leading '/', trim). */
+    /**
+     * Normalize a command label: strip leading '/', trim.
+     */
     private static String normalizeCmd(String cmd) {
         if (cmd == null) return null;
         String c = cmd.trim();
@@ -32,7 +36,9 @@ public class ChatCommands implements SimpleCommand {
         return c.trim();
     }
 
-    /** Safe get string from section map with default. */
+    /**
+     * Safe String getter from a section map.
+     */
     private static String secString(Map<String, Object> sec, String key, String def) {
         if (sec == null) return def;
         Object v = sec.get(key);
@@ -41,7 +47,9 @@ public class ChatCommands implements SimpleCommand {
         return String.valueOf(v);
     }
 
-    /** Safe get boolean from section map with default. Accepts Boolean or "true"/"false". */
+    /**
+     * Safe boolean getter from a section map.
+     */
     private static boolean secBool(Map<String, Object> sec, String key, boolean def) {
         if (sec == null) return def;
         Object v = sec.get(key);
@@ -51,13 +59,40 @@ public class ChatCommands implements SimpleCommand {
         return def;
     }
 
-    /** Resolve command for a given top-level key via section map. Returns normalized or null. */
-    private static String secCommand(Map<String, Object> sec) {
-        String raw = secString(sec, "command", "");
-        String cmd = normalizeCmd(raw);
-        return (cmd == null || cmd.isBlank()) ? null : cmd;
+    /**
+     * Produce a list of commands for a section.
+     * Supports:
+     * - commands: [a, b, c]
+     * - command: "a b,c;d"
+     */
+    private static List<String> secCommands(Map<String, Object> sec) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (sec == null) return List.of();
+
+        Object c = sec.get("commands");
+        if (c instanceof Collection<?> col) {
+            for (Object o : col) {
+                if (o == null) continue;
+                String s = normalizeCmd(String.valueOf(o));
+                if (s != null && !s.isBlank()) out.add(s);
+            }
+        }
+
+        String one = normalizeCmd(secString(sec, "command", ""));
+        if (one != null && !one.isBlank()) {
+            String[] tokens = one.split("[,;\\s]+");
+            for (String t : tokens) {
+                String s = normalizeCmd(t);
+                if (s != null && !s.isBlank()) out.add(s);
+            }
+        }
+
+        return new ArrayList<>(out);
     }
 
+    /**
+     * Reload configuration and re-register commands.
+     */
     public static void reload() {
         ChatYAML.getInstance().reload();
         chatCfg = ChatYAML.getInstance().adapter();
@@ -65,47 +100,48 @@ public class ChatCommands implements SimpleCommand {
         register();
     }
 
+    /**
+     * Register commands (no aliases), multiple names per section allowed.
+     */
     public static void register() {
         if (!isChatEnabled()) return;
 
-        // Iterate top-level entries: global, staff, alert, pm, ...
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
             if (sec == null || sec.isEmpty()) continue;
+            if (!secBool(sec, "enabled", true)) continue;
 
-            boolean enabled = secBool(sec, "enabled", true);
-            if (!enabled) continue;
+            List<String> cmds = secCommands(sec);
+            if (cmds.isEmpty()) continue;
 
-            String cmd = secCommand(sec);
-            if (cmd == null) continue;
-
-            // Always provide a non-empty alias to avoid edge cases.
-            String alias = "t" + cmd;
-
-            // Register primary + alias
-            Util.registerCommand(cmd, alias, new ChatCommands());
+            for (String cmd : cmds) {
+                Util.registerCommand(cmd, "", new ChatCommands());
+            }
         }
     }
 
+    /**
+     * Unregister previously registered commands.
+     */
     public static void unregister() {
-        // Unregister both primary and alias for every section we know about
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
             if (sec == null || sec.isEmpty()) continue;
 
-            String cmd = secCommand(sec);
-            if (cmd == null) continue;
-
-            Util.unregisterCommand(cmd);
-            Util.unregisterCommand("t" + cmd);
+            for (String cmd : secCommands(sec)) {
+                Util.unregisterCommand(cmd);
+            }
         }
     }
 
+    /**
+     * Command execution entry-point.
+     */
     @Override
     public void execute(Invocation invocation) {
         if (!isChatEnabled()) return;
 
-        final String usedLabel = invocation.alias(); // already without '/'
+        final String used = invocation.alias();
 
         String server;
         String playerName;
@@ -117,18 +153,13 @@ public class ChatCommands implements SimpleCommand {
             playerName = "";
         }
 
-        // Find a matching section by command (primary or alias) and enabled=true
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
             if (sec == null || sec.isEmpty()) continue;
+            if (!secBool(sec, "enabled", true)) continue;
 
-            boolean enabled = secBool(sec, "enabled", true);
-            if (!enabled) continue;
-
-            String cmd = secCommand(sec);
-            if (cmd == null) continue;
-
-            if (!usedLabel.equals(cmd) && !usedLabel.equals("t" + cmd)) continue;
+            List<String> cmds = secCommands(sec);
+            if (cmds.isEmpty() || !cmds.contains(used)) continue;
 
             String type = secString(sec, "type", "public");
             if ("private".equalsIgnoreCase(type)) {
@@ -136,16 +167,17 @@ public class ChatCommands implements SimpleCommand {
             } else {
                 handlePublicChat(invocation, key, sec, server, playerName);
             }
-            return; // only one should match
+            return;
         }
     }
 
-    private void handlePrivateChat(Invocation invocation, String key, Map<String, Object> sec,
-                                   String server, String playerName) {
+    /**
+     * Private chat handler: /pm <target> <message...>
+     */
+    private void handlePrivateChat(Invocation invocation, String key, Map<String, Object> sec, String server, String playerName) {
         CommandSource sender = invocation.source();
         boolean console = !(sender instanceof Player);
 
-        // Expect at least: /pm <target> <message...>
         if (invocation.arguments().length < 2) {
             Message.sendLang(sender, Lang.chat_usage, "{command}", invocation.alias());
             return;
@@ -163,7 +195,6 @@ public class ChatCommands implements SimpleCommand {
         String msg = (args.length <= 1) ? "" : String.join(" ", Arrays.copyOfRange(args, 1, args.length));
 
         if (console) {
-            // Console: send direct message
             Message.send(target, msg);
             return;
         }
@@ -185,8 +216,10 @@ public class ChatCommands implements SimpleCommand {
         Message.privateMessage(sender, fromMsg);
     }
 
-    private void handlePublicChat(Invocation invocation, String key, Map<String, Object> sec,
-                                  String server, String playerName) {
+    /**
+     * Public chat handler.
+     */
+    private void handlePublicChat(Invocation invocation, String key, Map<String, Object> sec, String server, String playerName) {
 
         String perm = secString(sec, "permission", "");
         if (!perm.isEmpty() && !invocation.source().hasPermission(perm)) {
@@ -203,8 +236,8 @@ public class ChatCommands implements SimpleCommand {
 
         String fmt = secString(sec, "format", "{player}: {message}");
         String rendered = Message.renderTemplateString(fmt, ctx);
-
         boolean seeAll = secBool(sec, "see_all", false);
+
         if (seeAll) {
             ChatModule.sendMessageToPermittedPlayers(rendered, "");
         } else {
@@ -212,22 +245,21 @@ public class ChatCommands implements SimpleCommand {
         }
     }
 
+    /**
+     * Tab-completion: for private chats, suggest online player names for the first arg.
+     */
     @Override
     public CompletableFuture<List<String>> suggestAsync(final Invocation invocation) {
         final String used = invocation.alias();
 
-        // Completion only for private chat commands that match `used`
         boolean isPrivate = false;
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
             if (sec == null || sec.isEmpty()) continue;
-
             if (!secBool(sec, "enabled", true)) continue;
 
-            String cmd = secCommand(sec);
-            if (cmd == null) continue;
-
-            if (!used.equals(cmd) && !used.equals("t" + cmd)) continue;
+            List<String> cmds = secCommands(sec);
+            if (cmds.isEmpty() || !cmds.contains(used)) continue;
 
             String type = secString(sec, "type", "public");
             if ("private".equalsIgnoreCase(type)) {
@@ -238,18 +270,14 @@ public class ChatCommands implements SimpleCommand {
 
         if (!isPrivate) return CompletableFuture.completedFuture(List.of());
 
-        List<String> names = Tensa.server.getAllPlayers().stream()
-                .map(Player::getUsername)
-                .toList();
+        List<String> names = Tensa.server.getAllPlayers().stream().map(Player::getUsername).toList();
 
         if (invocation.arguments().length == 0) {
             return CompletableFuture.completedFuture(names);
         }
         if (invocation.arguments().length == 1) {
             String typed = invocation.arguments()[0].toLowerCase(Locale.ROOT);
-            List<String> sug = names.stream()
-                    .filter(n -> n.toLowerCase(Locale.ROOT).startsWith(typed))
-                    .toList();
+            List<String> sug = names.stream().filter(n -> n.toLowerCase(Locale.ROOT).startsWith(typed)).toList();
             return CompletableFuture.completedFuture(sug);
         }
         return CompletableFuture.completedFuture(List.of());

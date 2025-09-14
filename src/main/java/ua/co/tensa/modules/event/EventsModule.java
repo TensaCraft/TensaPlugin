@@ -1,6 +1,6 @@
 package ua.co.tensa.modules.event;
 
-import ua.co.tensa.config.data.EventsYAML;
+import ua.co.tensa.modules.event.data.EventsYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 

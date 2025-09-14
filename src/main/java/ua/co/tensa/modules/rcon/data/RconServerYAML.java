@@ -1,4 +1,6 @@
-package ua.co.tensa.config.data;
+package ua.co.tensa.modules.rcon.data;
+
+import ua.co.tensa.config.data.BaseYAMLConfig;
 
 import java.io.File;
 
