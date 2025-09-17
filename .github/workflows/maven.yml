@@ -44,6 +44,10 @@ jobs:
         with:
           name: TENSA
           path: ${{ env.JAR_PATH }}
+          if-no-files-found: warn
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
 
       - name: Create Release
         if: ${{ github.event_name == 'push' }}
