@@ -4,6 +4,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.chat.data.ChatConfig;
 
 /**
  * Chat module without event listeners and without alias handling.
@@ -14,12 +15,12 @@ public class ChatModule {
     private static final ModuleEntry IMPL = new AbstractModule(
             "chat-manager", "Chat Manager") {
         @Override protected void onEnable() {
-            ua.co.tensa.modules.chat.data.ChatConfig.get().reloadCfg();
+            ChatConfig.get().reloadCfg();
             ChatCommands.register();
         }
         @Override protected void onDisable() { ChatCommands.unregister(); }
         @Override protected void onReload() {
-            ua.co.tensa.modules.chat.data.ChatConfig.get().reloadCfg();
+            ChatConfig.get().reloadCfg();
             ChatCommands.unregister();
             ChatCommands.register();
         }

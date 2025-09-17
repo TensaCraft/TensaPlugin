@@ -12,6 +12,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.config.data.LangYAML;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
 import ua.co.tensa.placeholders.PlaceholderManager;
@@ -49,7 +50,7 @@ public class Tensa {
         Lang.initialise();
         PlaceholderManager.initialise();
         // Global localization/config init (module configs are handled by modules themselves)
-        try { ua.co.tensa.config.data.LangYAML.getInstance().reload(); } catch (Throwable ignored) {}
+        try { LangYAML.getInstance().reload(); } catch (Throwable ignored) {}
         Modules.load();
     }
 

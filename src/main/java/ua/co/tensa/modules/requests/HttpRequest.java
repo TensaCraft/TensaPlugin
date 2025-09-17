@@ -14,6 +14,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
+import ua.co.tensa.Message;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -101,13 +102,13 @@ public class HttpRequest {
 			String result = EntityUtils.toString(entity);
 			try {
 				JsonElement jsonElement = JsonParser.parseString(result);
-                ua.co.tensa.Message.info("Request was successful. Method: " + method + ". URL: " + url);
+                Message.info("Request was successful. Method: " + method + ". URL: " + url);
 				return jsonElement;
 			} catch (JsonSyntaxException ex) {
                     if (status == 200) {
-                        ua.co.tensa.Message.warn("The response is not a valid JSON. Method: " + method + ". URL: " + url);
+                        Message.warn("The response is not a valid JSON. Method: " + method + ". URL: " + url);
                     } else {
-                        ua.co.tensa.Message.error("Request failed with status code: " + status + ". \nMethod: " + method + ". \nURL: " + url + ". Response: \n" + result);
+                        Message.error("Request failed with status code: " + status + ". \nMethod: " + method + ". \nURL: " + url + ". Response: \n" + result);
                     }
 				return null;
 			}

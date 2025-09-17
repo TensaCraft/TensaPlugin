@@ -67,7 +67,6 @@ public class Util {
     }
 
     private static String inferModuleFromClass(String className) {
-        // Expected packages: ua.co.tensa.modules.<module>.* or ua.co.tensa.commands.*
         String mod = "core";
         String needle = ".modules.";
         int idx = className.indexOf(needle);

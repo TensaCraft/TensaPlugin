@@ -43,7 +43,7 @@ public class RconManagerCommand implements SimpleCommand {
                 Message.sendLang(sender, Lang.rcon_manager_reload);
             } catch (Exception e) {
                 Message.sendLang(sender, Lang.unknown_error);
-                ua.co.tensa.Message.error("RconManager reload failed: " + e.getMessage());
+                Message.error("RconManager reload failed: " + e.getMessage());
             }
             return;
         }
@@ -60,7 +60,7 @@ public class RconManagerCommand implements SimpleCommand {
         } else if (RconManagerModule.serverIs(server)) {
             executeCommandForServer(invocation, command, sender, server);
         } else {
-            ua.co.tensa.Message.warn("RCON server not found in config: '" + server + "'");
+            Message.warn("RCON server not found in config: '" + server + "'");
         }
 	}
 
@@ -150,7 +150,7 @@ public class RconManagerCommand implements SimpleCommand {
             // Catch any other exceptions
             Message.sendLang(sender, Lang.unknown_error);
             // For debugging - log detailed errors:
-            ua.co.tensa.Message.error("RCON error for server " + server + ": " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            Message.error("RCON error for server " + server + ": " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
 	}
 

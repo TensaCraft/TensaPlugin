@@ -1,7 +1,7 @@
 package ua.co.tensa.modules.rcon.data;
 
-import ua.co.tensa.config.model.ConfigBase;
 import org.simpleyaml.configuration.file.YamlFile;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.util.*;
