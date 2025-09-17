@@ -7,6 +7,7 @@ import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.proxy.Player;
+import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 
@@ -43,7 +44,7 @@ public class EventManager {
         ctx.put("fromServer", preServer);
         for (Object command : commands) {
             String templ = String.valueOf(command);
-            out.add(ua.co.tensa.Message.renderTemplateString(templ, ctx));
+            out.add(Message.renderTemplateString(templ, ctx));
         }
         return out;
     }
@@ -57,7 +58,7 @@ public class EventManager {
                     long add = Long.parseLong(raw);
                     delayAccum.addAndGet(add);
                 } catch (NumberFormatException e) {
-                    ua.co.tensa.Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
+                    Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
                 }
                 continue;
             }
@@ -78,7 +79,7 @@ public class EventManager {
                     long add = Long.parseLong(raw);
                     delayAccum.addAndGet(add);
                 } catch (NumberFormatException e) {
-                    ua.co.tensa.Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
+                    Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
                 }
                 continue;
             }

@@ -35,7 +35,7 @@ public class RequestCommand implements SimpleCommand {
             }
             runCommand(args, sender);
         } catch (Exception e) {
-            ua.co.tensa.Message.error("Requests: execution error - " + e.getMessage());
+            Message.error("Requests: execution error - " + e.getMessage());
         }
     }
 
@@ -58,9 +58,9 @@ public class RequestCommand implements SimpleCommand {
 
         if (resp != null) {
             if (!resp.isJsonObject()) {
-                ua.co.tensa.Message.error("Requests: Invalid JSON object in response (type="
+                Message.error("Requests: Invalid JSON object in response (type="
                         + (resp.isJsonArray() ? "array" : resp.isJsonPrimitive() ? "primitive" : resp.isJsonNull() ? "null" : "unknown") + ")");
-                ua.co.tensa.Message.error("Requests: Raw response from " + url + ": " + resp.toString());
+                Message.error("Requests: Raw response from " + url + ": " + resp.toString());
                 return;
             }
 
@@ -100,7 +100,7 @@ public class RequestCommand implements SimpleCommand {
         List<String> filteredSuccess = new ArrayList<>();
         for (String cmd : successTemplates) {
             if (!isPlayer && cmd.contains("%player_name%")) {
-                ua.co.tensa.Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
+                Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
                 continue;
             }
             filteredSuccess.add(cmd);
@@ -112,7 +112,7 @@ public class RequestCommand implements SimpleCommand {
             dispatchCommand(sender, command, translate);
         }
         } else {
-            ua.co.tensa.Message.warn("Requests: null/invalid JSON response from URL: " + url);
+            Message.warn("Requests: null/invalid JSON response from URL: " + url);
 
             List<String> failureTemplates = parsePlaceholdersInList(
                     config.getConfigurationSection("response").getStringList("failure"), java.util.Collections.emptyMap());
@@ -120,7 +120,7 @@ public class RequestCommand implements SimpleCommand {
             List<String> filteredFailure = new ArrayList<>();
             for (String cmd : failureTemplates) {
                 if (!isPlayer && cmd.contains("%player_name%")) {
-                    ua.co.tensa.Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
+                    Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
                     continue;
                 }
                 filteredFailure.add(cmd);
@@ -175,7 +175,7 @@ public class RequestCommand implements SimpleCommand {
         Map<String, String> stringMap = new HashMap<>();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             String value = entry.getValue().toString();
-            value = ua.co.tensa.Message.renderPercentString(value, params);
+            value = Message.renderPercentString(value, params);
             stringMap.put(entry.getKey(), value);
         }
         return stringMap;
@@ -218,7 +218,7 @@ public class RequestCommand implements SimpleCommand {
         List<String> parsedList = new ArrayList<>();
         for (String item : list) {
             if (item == null) item = "null";
-            parsedList.add(ua.co.tensa.Message.renderPercentString(item, params));
+            parsedList.add(Message.renderPercentString(item, params));
         }
         return parsedList;
     }

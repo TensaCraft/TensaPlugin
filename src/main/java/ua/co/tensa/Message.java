@@ -17,7 +17,7 @@ public class Message {
     private static final LegacyComponentSerializer LEGACY_AMP = LegacyComponentSerializer.legacyAmpersand();
 
     private static String langPrefix() {
-        String p = ua.co.tensa.config.Lang.LangConfig.prefix;
+        String p = Lang.LangConfig.prefix;
         return p == null ? "" : p;
     }
 

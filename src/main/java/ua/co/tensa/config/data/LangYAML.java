@@ -1,5 +1,6 @@
 package ua.co.tensa.config.data;
 
+import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlBackedFile;
 
@@ -26,7 +27,7 @@ public class LangYAML extends YamlBackedFile {
      * with values from the template to keep files up to date after updates.
      */
     public static void syncAllLanguageFiles(org.simpleyaml.configuration.file.YamlConfiguration template) {
-        java.io.File langDir = new java.io.File(ua.co.tensa.Tensa.pluginPath + java.io.File.separator + "lang");
+        java.io.File langDir = new java.io.File(Tensa.pluginPath + java.io.File.separator + "lang");
         if (!langDir.exists() || !langDir.isDirectory()) return;
         java.io.File[] files = langDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".yml"));
         if (files == null) return;
@@ -49,7 +50,7 @@ public class LangYAML extends YamlBackedFile {
                     yf.save();
                 }
             } catch (Exception e) {
-                ua.co.tensa.Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getMessage());
+                Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getMessage());
             }
         }
     }

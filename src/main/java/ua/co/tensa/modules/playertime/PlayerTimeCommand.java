@@ -37,7 +37,7 @@ public class PlayerTimeCommand implements SimpleCommand {
             try {
                 timeTracker.getCurrentPlayerTime(player.getUniqueId()).thenAccept(result -> {
                     if (result == null) {
-                        ua.co.tensa.Message.warn("PlayerTime: DB returned no result for current player time");
+                        Message.warn("PlayerTime: DB returned no result for current player time");
                         return;
                     }
                     try {
@@ -46,19 +46,19 @@ public class PlayerTimeCommand implements SimpleCommand {
                                     "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1))));
                         }
                     } catch (SQLException e) {
-                        ua.co.tensa.Message.error(e.getMessage());
+                        Message.error(e.getMessage());
                     } finally {
                         try { result.close(); } catch (SQLException ignored) {}
                     }
                 });
             } catch (SQLException e) {
-                ua.co.tensa.Message.error(e.getMessage());
+                Message.error(e.getMessage());
             }
         } else if (args.length == 1 && sender.hasPermission("TENSA.playertime.admin")) {
             String playerName = args[0];
             timeTracker.getPlayerTimeByName(playerName).thenAccept(result -> {
                 if (result == null) {
-                    ua.co.tensa.Message.warn("PlayerTime: DB returned no result for name query: " + playerName);
+                    Message.warn("PlayerTime: DB returned no result for name query: " + playerName);
                     return;
                 }
                 try {
@@ -70,7 +70,7 @@ public class PlayerTimeCommand implements SimpleCommand {
                         Message.sendLang(sender, Lang.player_not_found, "{player}", playerName);
                     }
                 } catch (SQLException e) {
-                    ua.co.tensa.Message.error(e.getMessage());
+                    Message.error(e.getMessage());
                 } finally {
                     try { result.close(); } catch (SQLException ignored) {}
                 }
