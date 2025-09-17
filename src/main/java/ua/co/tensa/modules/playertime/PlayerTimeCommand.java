@@ -1,12 +1,12 @@
 package ua.co.tensa.modules.playertime;
 
-import ua.co.tensa.Message;
-import ua.co.tensa.Tensa;
-import ua.co.tensa.config.Lang;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.Lang;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -28,7 +28,7 @@ public class PlayerTimeCommand implements SimpleCommand {
         String[] args = invocation.arguments();
 
         if (!sender.hasPermission("tensa.playertime")) {
-            sender.sendMessage(Lang.no_perms.get());
+            Message.sendLang(sender, Lang.no_perms);
             return;
         }
 
@@ -36,41 +36,54 @@ public class PlayerTimeCommand implements SimpleCommand {
             Player player = (Player) sender;
             try {
                 timeTracker.getCurrentPlayerTime(player.getUniqueId()).thenAccept(result -> {
+                    if (result == null) {
+                        ua.co.tensa.Message.warn("PlayerTime: DB returned no result for current player time");
+                        return;
+                    }
                     try {
                         if (result.next()) {
-                            sender.sendMessage(Lang.player_time.replace("{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1)))));
+                            Message.sendLang(sender, Lang.player_time,
+                                    "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1))));
                         }
-                        result.close();
                     } catch (SQLException e) {
-                        Message.error(e.getMessage());
+                        ua.co.tensa.Message.error(e.getMessage());
+                    } finally {
+                        try { result.close(); } catch (SQLException ignored) {}
                     }
                 });
             } catch (SQLException e) {
-                Message.error(e.getMessage());
+                ua.co.tensa.Message.error(e.getMessage());
             }
         } else if (args.length == 1 && sender.hasPermission("TENSA.playertime.admin")) {
             String playerName = args[0];
             timeTracker.getPlayerTimeByName(playerName).thenAccept(result -> {
+                if (result == null) {
+                    ua.co.tensa.Message.warn("PlayerTime: DB returned no result for name query: " + playerName);
+                    return;
+                }
                 try {
                     if (result.next()) {
-                        sender.sendMessage(Lang.player_time_other.replace("{player}", playerName, "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1)))));
+                        Message.sendLang(sender, Lang.player_time_other,
+                                "{player}", playerName,
+                                "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1))));
                     } else {
-                        sender.sendMessage(Lang.player_not_found.replace("{player}", playerName));
+                        Message.sendLang(sender, Lang.player_not_found, "{player}", playerName);
                     }
-                    result.close();
                 } catch (SQLException e) {
-                    Message.error(e.getMessage());
+                    ua.co.tensa.Message.error(e.getMessage());
+                } finally {
+                    try { result.close(); } catch (SQLException ignored) {}
                 }
             });
         } else {
-            sender.sendMessage(Lang.player_time_usage.get());
+            Message.sendLang(sender, Lang.player_time_usage);
         }
     }
 
     public static void unregister() {
         CommandManager manager = Tensa.server.getCommandManager();
-        manager.unregister("vplayertime");
-        manager.unregister("vptime");
+        manager.unregister("tplayertime");
+        manager.unregister("tptime");
     }
 
     @Override

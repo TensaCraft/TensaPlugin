@@ -1,62 +1,57 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import ua.co.tensa.Message;
-import ua.co.tensa.Util;
-import ua.co.tensa.config.data.RconManagerYAML;
-import org.simpleyaml.configuration.file.YamlConfiguration;
+import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.rcon.data.RconManagerConfig;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
+public class RconManagerModule {
 
-public class RconManagerModule extends YamlConfiguration {
+    private static final ModuleEntry IMPL = new AbstractModule(
+            "rcon-manager", "Rcon Manager") {
+        @Override protected void onEnable() {
+            try {
+                RconManagerConfig.get().reloadCfg();
+                ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "trcon", new RconManagerCommand());
+            } catch (Exception e) {
+                ua.co.tensa.Message.error("RconManager onEnable failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            }
+        }
+        @Override protected void onReload() { RconManagerConfig.get().reloadCfg(); }
+        @Override protected void onDisable() {
+            ua.co.tensa.modules.AbstractModule.unregisterCommands("vurcon", "rcon", "velocityrcon");
+        }
+    };
 
-	private static YamlConfiguration config;
+    public static final ModuleEntry ENTRY = IMPL;
 
-	public static void initialise() {
-		config = RconManagerYAML.getInstance().getReloadedFile();
-	}
+    public static boolean serverIs(String server) {
+        String ip = RconManagerConfig.get().ip(server, "");
+        return !ip.isEmpty();
+    }
 
-	public static void reload() {
-		initialise();
-	}
+    public static List<String> getServers() {
+        return new ArrayList<>(RconManagerConfig.get().serverKeys());
+    }
 
+    public static Integer getPort(String server) {
+        return RconManagerConfig.get().port(server, 25575);
+    }
 
-	public static boolean serverIs(String server) {
-		return !config.getString("servers." + server).isEmpty();
-	}
+    public static String getIP(String server) {
+        return RconManagerConfig.get().ip(server, "127.0.0.1");
+    }
 
-	public static List<String> getServers() {
-		Set<String> keys = config.getConfigurationSection("servers").getKeys(false);
-		return new ArrayList<>(keys);
-	}
+    public static String getPass(String server) {
+        return RconManagerConfig.get().pass(server, "");
+    }
 
-	public static Integer getPort(String server) {
-		return config.getInt("servers." + server + ".port");
-	}
+    public static ArrayList<String> getCommandArgs() {
+        return new ArrayList<>(RconManagerConfig.get().tabComplete);
+    }
 
-	public static String getIP(String server) {
-		return config.getString("servers." + server + ".ip");
-	}
-
-	public static String getPass(String server) {
-		return config.getString("servers." + server + ".pass");
-	}
-
-	public static ArrayList<String> getCommandArgs() {
-		ArrayList<String> args = new ArrayList<>();
-		config.getList("tab-complete-list").forEach(arg -> args.add((String) arg));
-		return args;
-	}
-
-	public static void enable() {
-		reload();
-		Util.registerCommand("rcon", "vurcon", new RconManagerCommand());
-		Message.info("Rcon Manager module enabled");
-	}
-
-	public static void disable() {
-		RconManagerCommand.unregister();
-		config = null;
-	}
+    public static void enable() { IMPL.enable(); }
+    public static void disable() { IMPL.disable(); }
 }

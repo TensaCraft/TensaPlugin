@@ -1,16 +1,26 @@
 package ua.co.tensa.modules.text;
 
-import ua.co.tensa.Message;
 import ua.co.tensa.Util;
+import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.ModuleEntry;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
 import static ua.co.tensa.Tensa.pluginPath;
 
 
 public class TextReaderModule {
+
+    private static final ModuleEntry IMPL = new AbstractModule(
+            "text-reader", "Text Reader") {
+        @Override protected void onEnable() { TextReaderModule.enableImpl(); }
+        @Override protected void onDisable() { TextReaderModule.disableImpl(); }
+    };
+    public static final ModuleEntry ENTRY = IMPL;
 
     private static final Path dir = pluginPath.resolve("text");
 
@@ -19,26 +29,28 @@ public class TextReaderModule {
             Util.copyFile(dir.toString(), "rules.txt");
             Util.copyFile(dir.toString(), "readme.txt");
         }
-        Message.info("Text Reader module enabled");
     }
 
-    public static void enable() {
+    private static void enableImpl() {
         load();
         for (String cmd: getTxtFileNamesWithoutExtension()) {
-            Util.registerCommand(cmd, cmd, new TextReaderCommand());
+            AbstractModule.registerCommand(cmd, cmd, new TextReaderCommand());
         }
     }
 
-    public static void disable() {
-        TextReaderCommand.unregister();
+    private static void disableImpl() {
+        AbstractModule.unregisterCommands(getTxtFileNamesWithoutExtension());
     }
+
+    public static void enable() { IMPL.enable(); }
+    public static void disable() { IMPL.disable(); }
 
     public static String readTxt(String filename) throws IOException {
         return Files.readString(dir.resolve(filename + ".txt"), StandardCharsets.UTF_8);
     }
 
     public static String[] getTxtFileNamesWithoutExtension() {
-        File directory = new File(dir.toUri());
+        File directory = dir.toFile();
         if (directory.exists() && directory.isDirectory()) {
             String[] fileNames = directory.list((dir, name) -> name.endsWith(".txt"));
             if (fileNames != null) {

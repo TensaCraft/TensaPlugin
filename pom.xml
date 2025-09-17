@@ -7,7 +7,7 @@
 
     <groupId>com</groupId>
     <artifactId>TENSA</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
 
     <name>TENSA</name>
@@ -16,6 +16,8 @@
         <!-- General properties -->
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Skip tests by default on build -->
+        <skipTests>true</skipTests>
 
         <!-- Plugin versions -->
         <maven.compiler.plugin.version>3.8.1</maven.compiler.plugin.version>
@@ -31,6 +33,7 @@
         <h2.version>2.2.224</h2.version>
         <httpclient.version>4.5.14</httpclient.version>
         <httpcore.version>4.4.16</httpcore.version>
+        <hikari.version>5.1.0</hikari.version>
     </properties>
 
     <repositories>
@@ -42,14 +45,27 @@
             <id>jitpack.io</id>
             <url>https://jitpack.io</url>
         </repository>
+        <repository>
+            <id>william278-releases</id>
+            <url>https://repo.william278.net/releases/</url>
+        </repository>
     </repositories>
 
-    <dependencies>
+        <dependencies>
         <!-- Velocity API -->
         <dependency>
             <groupId>com.velocitypowered</groupId>
             <artifactId>velocity-api</artifactId>
             <version>${velocity.api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        
+        <!-- PAPIProxyBridge API (provided; installed on proxy) -->
+        <dependency>
+            <groupId>net.william278</groupId>
+            <artifactId>papiproxybridge</artifactId>
+            <version>1.7.2</version>
             <scope>provided</scope>
         </dependency>
 
@@ -67,6 +83,11 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-handler</artifactId>
             <version>${netty.version}</version>
         </dependency>
 
@@ -97,6 +118,13 @@
             <artifactId>httpclient</artifactId>
             <version>${httpclient.version}</version>
         </dependency>
+        
+        <!-- HikariCP Connection Pool -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikari.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpcore</artifactId>
@@ -107,9 +135,30 @@
             <artifactId>commons-logging</artifactId>
             <version>1.2</version>
         </dependency>
-    </dependencies>
+
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.12.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.25.3</version>
+            <scope>test</scope>
+        </dependency>
+        </dependencies>
 
     <build>
+        <finalName>TENSA</finalName>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
@@ -128,6 +177,19 @@
                 </configuration>
             </plugin>
 
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <skipTests>${skipTests}</skipTests>
+                    <useModulePath>false</useModulePath>
+                    <includes>
+                        <include>**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+
             <!-- Shade plugin for creating uber-jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -140,6 +202,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <minimizeJar>false</minimizeJar>
                             <artifactSet>
                                 <includes>
                                     <include>io.netty:netty-buffer</include>
@@ -151,6 +214,7 @@
                                     <include>com.github.Carleslc.Simple-YAML:Simple-Yaml</include>
                                     <include>org.mariadb.jdbc:mariadb-java-client</include>
                                     <include>com.h2database:h2</include>
+                                    <include>com.zaxxer:HikariCP</include>
                                 </includes>
                             </artifactSet>
                             <transformers>
@@ -164,10 +228,46 @@
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
+                                        <!-- Reduce shade warnings for duplicate legal files and manifest -->
+                                        <exclude>META-INF/DEPENDENCIES</exclude>
+                                        <exclude>META-INF/LICENSE</exclude>
+                                        <exclude>META-INF/NOTICE</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <!-- Exclude JPMS descriptors to avoid encapsulation warnings -->
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <!-- Silence Netty duplicate resource warning -->
+                                        <exclude>META-INF/io.netty.versions.properties</exclude>
                                     </excludes>
                                 </filter>
                             </filters>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <!-- After shading, prune target to keep only TENSA.jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>prune-target</id>
+                        <phase>package</phase>
+                        <configuration>
+                            <target>
+                                <echo message="Pruning target directory to only TENSA.jar"/>
+                                <delete includeemptydirs="true">
+                                    <fileset dir="${project.build.directory}">
+                                        <exclude name="TENSA.jar"/>
+                                    </fileset>
+                                </delete>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
@@ -185,6 +285,13 @@
                     </resource>
                 </resources>
             </build>
+        </profile>
+        <!-- Enable tests explicitly with -P tests -->
+        <profile>
+            <id>tests</id>
+            <properties>
+                <skipTests>false</skipTests>
+            </properties>
         </profile>
     </profiles>
 

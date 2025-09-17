@@ -1,0 +1,198 @@
+package ua.co.tensa.modules.bridge;
+
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.proxy.ServerConnection;
+import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
+import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
+import ua.co.tensa.modules.AbstractModule;
+import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.bridge.data.BridgeConfig;
+
+import java.nio.charset.StandardCharsets;
+
+public class PMBridgeModule {
+    private static final ModuleEntry IMPL = new AbstractModule("pm-bridge", "PluginMessage Bridge") {
+        private ChannelIdentifier id;
+
+        @Override protected void onEnable() {
+            BridgeConfig cfg = BridgeConfig.get();
+            cfg.reloadCfg();
+            String ch = cfg.channel;
+            id = MinecraftChannelIdentifier.from(ch);
+            Tensa.server.getChannelRegistrar().register(id);
+            registerListener(new PMBridgeModule());
+            ua.co.tensa.modules.AbstractModule.registerCommand("tpmdebug", "tpmdbg", new PMBridgeDebugCommand());
+            // status logging handled centrally
+        }
+
+        @Override protected void onDisable() {
+            if (id != null) {
+                try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
+            }
+            ua.co.tensa.modules.AbstractModule.unregisterCommands("tpmdebug", "tpmdbg");
+        }
+
+        @Override protected void onReload() {
+            try {
+                BridgeConfig cfg = BridgeConfig.get();
+                cfg.reloadCfg();
+                if (id != null) {
+                    try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
+                }
+                String ch = cfg.channel;
+                id = MinecraftChannelIdentifier.from(ch);
+                Tensa.server.getChannelRegistrar().register(id);
+            } catch (Throwable t) {
+                ua.co.tensa.Message.warn("PM-Bridge reload failed: " + t.getMessage());
+            }
+        }
+    };
+
+    public static final ModuleEntry ENTRY = IMPL;
+    public static void enable() { IMPL.enable(); }
+    public static void disable() { IMPL.disable(); }
+
+    // no-op: only proxy execution supported
+
+    @Subscribe
+    public void onPluginMessage(PluginMessageEvent event) {
+        // Always read the latest config when processing messages
+        // Use current in-memory view; config is reloaded on module reload (/tensareload)
+        BridgeConfig cfg = BridgeConfig.get();
+        String ch = cfg.channel;
+        ChannelIdentifier id = MinecraftChannelIdentifier.from(ch);
+        // Only proceed for the configured channel; no extra spam logs
+        if (!event.getIdentifier().equals(id)) return;
+
+        // Only accept from backend servers
+        if (!(event.getSource() instanceof ServerConnection serverConn)) return;
+
+        String token = resolveToken(cfg);
+        boolean log = cfg.log;
+        java.util.List<String> allow = cfg.allowFrom;
+        // Normalize allowlist: trim, lowercase, drop blanks
+        java.util.Set<String> allowNorm = new java.util.HashSet<>();
+        if (allow != null) {
+            for (String a : allow) {
+                if (a == null) continue;
+                String s = a.trim();
+                if (!s.isEmpty()) allowNorm.add(s.toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+
+        String serverName = serverConn.getServerInfo().getName();
+        if (!allowNorm.isEmpty() && !isAllowedServer(allowNorm, serverName)) {
+            if (log) ua.co.tensa.Message.warn("PM-Bridge: blocked message from disallowed server '" + serverName + "'");
+            return;
+        }
+        if (log) ua.co.tensa.Message.info("PM-Bridge: message on " + ch + " from server '" + serverName + "'");
+        // No allowlist filtering: accept from any backend server
+
+        String payload = new String(event.getData(), StandardCharsets.UTF_8);
+        int idx = payload.indexOf(':');
+        if (idx <= 0) {
+            if (log) ua.co.tensa.Message.warn("PM-Bridge: invalid payload format");
+            return;
+        }
+        String provided = payload.substring(0, idx);
+        String cmd = payload.substring(idx + 1).trim();
+        if (!provided.equals(token)) {
+            if (log) ua.co.tensa.Message.warn("PM-Bridge: invalid token from " + serverName);
+            return;
+        }
+
+        if (cmd.isEmpty()) return;
+
+        if (cmd.isEmpty()) return;
+        if (log) ua.co.tensa.Message.info("PM-Bridge exec from " + serverName + ": /" + cmd);
+        Util.executeCommand(cmd);
+        event.setResult(PluginMessageEvent.ForwardResult.handled());
+    }
+
+    // Prevents config error spam: log at most once per 15s
+    private static volatile long _lastCfgErr = 0L;
+    private static void throttleConfigError(String msg) {
+        long now = System.currentTimeMillis();
+        if ((now - _lastCfgErr) > 15000) {
+            ua.co.tensa.Message.error(msg);
+            _lastCfgErr = now;
+        }
+    }
+
+    // Allowlist helper for unit testing
+    static boolean isAllowedServer(java.util.Set<String> allowNorm, String server) {
+        if (allowNorm == null || allowNorm.isEmpty()) return true;
+        if (server == null) return false;
+        String s = server.trim().toLowerCase(java.util.Locale.ROOT);
+        if (allowNorm.contains("*") || allowNorm.contains("all")) return true;
+        return allowNorm.contains(s);
+    }
+
+    public static String resolveToken(BridgeConfig cfg) {
+        boolean useVelocitySecret = cfg.useVelocitySecret;
+        String token = cfg.token;
+        if (!useVelocitySecret) return token;
+        try {
+            java.nio.file.Path pluginsDir = ua.co.tensa.Tensa.pluginPath; // .../plugins/TENSA (may be relative)
+            java.nio.file.Path absPlugins = pluginsDir == null ? null : pluginsDir.toAbsolutePath().normalize();
+            java.nio.file.Path root = null;
+            if (absPlugins != null) {
+                root = absPlugins.getParent() != null ? absPlugins.getParent().getParent() : null; // go up: .../plugins/TENSA -> .../
+            }
+            if (root == null) {
+                root = java.nio.file.Paths.get(".").toAbsolutePath().normalize();
+            }
+            // Direct default fallback: forwarding.secret in root
+            java.nio.file.Path directSecret = root.resolve("forwarding.secret");
+            if (java.nio.file.Files.exists(directSecret)) {
+                String sec = java.nio.file.Files.readString(directSecret).trim();
+                if (!sec.isEmpty()) return sec;
+            }
+
+            java.nio.file.Path velocityToml = root.resolve("velocity.toml");
+            if (!java.nio.file.Files.exists(velocityToml)) return token;
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(velocityToml);
+            String secretFile = null;
+            for (String line : lines) {
+                String s = line.trim();
+                if (s.startsWith("forwarding-secret-file")) {
+                    int eq = s.indexOf('=');
+                    if (eq > 0) {
+                        String val = s.substring(eq + 1).trim();
+                        if (val.startsWith("\"") && val.endsWith("\"")) {
+                            val = val.substring(1, val.length() - 1);
+                        }
+                        secretFile = val;
+                        break;
+                    }
+                }
+            }
+            if (secretFile != null && !secretFile.isBlank()) {
+                java.nio.file.Path secretPath = root.resolve(secretFile);
+                if (java.nio.file.Files.exists(secretPath)) {
+                    String sec = java.nio.file.Files.readString(secretPath).trim();
+                    if (!sec.isEmpty()) return sec;
+                }
+            }
+            // fallback: try find 'secret =' directly (older style)
+            for (String line : lines) {
+                String s = line.trim();
+                if (s.startsWith("secret")) {
+                    int eq = s.indexOf('=');
+                    if (eq > 0) {
+                        String val = s.substring(eq + 1).trim();
+                        if (val.startsWith("\"") && val.endsWith("\"")) {
+                            val = val.substring(1, val.length() - 1);
+                        }
+                        if (!val.isEmpty()) return val;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return token; // use explicit token if auto not found
+    }
+
+}

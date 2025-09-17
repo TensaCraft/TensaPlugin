@@ -1,17 +1,20 @@
 package ua.co.tensa.modules.playertime;
+
 import ua.co.tensa.config.Database;
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerTimeTracker {
-    private final HashMap<UUID, Long> playerOnlineTime;
+    private final Map<UUID, Long> playerOnlineTime;
     private final Database database;
 
     public PlayerTimeTracker(Database database) {
-        this.playerOnlineTime = new HashMap<>();
+        this.playerOnlineTime = new ConcurrentHashMap<>();
         this.database = database;
     }
 
@@ -57,12 +60,12 @@ public class PlayerTimeTracker {
 
     public void updateAllOnlineTimes() {
         long currentTime = System.currentTimeMillis();
-        for (UUID playerId : playerOnlineTime.keySet()) {
-            Long joinTime = playerOnlineTime.get(playerId);
+        for (Map.Entry<UUID, Long> entry : playerOnlineTime.entrySet()) {
+            Long joinTime = entry.getValue();
             if (joinTime != null) {
                 long totalTimeOnline = currentTime - joinTime;
-                updatePlayerTimeInDatabase(playerId, totalTimeOnline);
-                playerOnlineTime.put(playerId, currentTime);
+                updatePlayerTimeInDatabase(entry.getKey(), totalTimeOnline);
+                playerOnlineTime.put(entry.getKey(), currentTime);
             }
         }
     }

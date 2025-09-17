@@ -1,13 +1,14 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import ua.co.tensa.config.Lang;
-import ua.co.tensa.Util;
-import ua.co.tensa.Tensa;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
+import ua.co.tensa.config.Lang;
+import ua.co.tensa.modules.rcon.data.RconManagerConfig;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -23,44 +24,53 @@ public class RconManagerCommand implements SimpleCommand {
 		String[] args = invocation.arguments();
 
 		if (!hasPermission(invocation)) {
-			sendMessage(sender, Lang.no_perms.get());
+			Message.sendLang(sender, Lang.no_perms);
 			return;
 		}
 
 		if (args.length < 1) {
-			sendMessage(sender, Lang.rcon_usage.get());
+			Message.sendLang(sender, Lang.rcon_usage);
 			return;
 		}
 
 		String server = args[0];
 
-		if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
-			RconManagerModule.reload();
-			sendMessage(sender, Lang.rcon_manager_reload.get());
-			return;
-		}
+        if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
+            try {
+                RconManagerConfig.get().reloadCfg();
+                // Trigger module reload to reinitialize everything properly
+                ua.co.tensa.modules.rcon.manager.RconManagerModule.ENTRY.reload();
+                Message.sendLang(sender, Lang.rcon_manager_reload);
+            } catch (Exception e) {
+                Message.sendLang(sender, Lang.unknown_error);
+                ua.co.tensa.Message.error("RconManager reload failed: " + e.getMessage());
+            }
+            return;
+        }
 
 		String command = buildCommand(args, server);
 
 		if (command.isEmpty()) {
-			sendMessage(sender, Lang.rcon_empty_command.get());
+			Message.sendLang(sender, Lang.rcon_empty_command);
 			return;
 		}
 
-		if ("all".equals(server)) {
-			executeCommandForAllServers(invocation, command, sender);
-		} else if (RconManagerModule.serverIs(server)) {
-			executeCommandForServer(invocation, command, sender, server);
-		}
+        if ("all".equalsIgnoreCase(server)) {
+            executeCommandForAllServers(invocation, command, sender);
+        } else if (RconManagerModule.serverIs(server)) {
+            executeCommandForServer(invocation, command, sender, server);
+        } else {
+            ua.co.tensa.Message.warn("RCON server not found in config: '" + server + "'");
+        }
 	}
 
 	@Override
 	public boolean hasPermission(final Invocation invocation) {
-		return invocation.source().hasPermission("TENSA.rcon");
+        return invocation.source().hasPermission("tensa.rcon");
 	}
 
 	public boolean hasPermission(final Invocation invocation, String server) {
-		return invocation.source().hasPermission("TENSA.rcon." + server);
+        return invocation.source().hasPermission("tensa.rcon." + server);
 	}
 
 	@Override
@@ -85,7 +95,7 @@ public class RconManagerCommand implements SimpleCommand {
 
 	public static void unregister() {
 		CommandManager manager = Tensa.server.getCommandManager();
-		String[] commands = { "vurcon", "rcon", "velocityrcon" };
+        String[] commands = { "rcon", "trcon" };
 		for (String command : commands) {
 			manager.unregister(command);
 		}
@@ -96,7 +106,7 @@ public class RconManagerCommand implements SimpleCommand {
 		if (hasPermission(invocation, "all") || hasPermission(invocation, server)) {
 			tryExecuteRconCommand(command, sender, server);
 		} else {
-			sendMessage(sender, Lang.no_perms.get());
+			Message.sendLang(sender, Lang.no_perms);
 		}
 	}
 
@@ -105,27 +115,43 @@ public class RconManagerCommand implements SimpleCommand {
 			if (hasPermission(invocation, "all") || hasPermission(invocation, server_name)) {
 				tryExecuteRconCommand(command, sender, server_name);
 			} else {
-				sendMessage(sender, Lang.no_perms.get());
+				Message.sendLang(sender, Lang.no_perms);
 			}
 		}
 	}
 
 	private void tryExecuteRconCommand(String command, CommandSource sender, String server) {
 		try {
-			Rcon rcon = new Rcon(RconManagerModule.getIP(server), RconManagerModule.getPort(server),
-					RconManagerModule.getPass(server).getBytes());
+			String ip = RconManagerModule.getIP(server);
+			Integer port = RconManagerModule.getPort(server);
+			String password = RconManagerModule.getPass(server);
+
+        // Minimal trace only on error; avoid noisy logs on success
+
+			Rcon rcon = new Rcon(ip, port, password.getBytes());
 			String result = rcon.command(command.trim());
+			rcon.disconnect(); // Close connection after command
+
+        // Avoid logging result to console to reduce spam
+
 			if (result.isEmpty()) {
 				result = Lang.rcon_response_empty.getClean();
 			}
-			sendMessage(sender, Lang.rcon_response.replace("{server}", Util.capitalize(server), "{response}", result));
-		} catch (UnknownHostException e) {
-			sendMessage(sender, Lang.rcon_unknown_error.replace("{server}", Util.capitalize(server)));
-		} catch (IOException e) {
-			sendMessage(sender, Lang.rcon_io_error.replace("{server}", Util.capitalize(server)));
-		} catch (AuthenticationException e) {
-			sendMessage(sender, Lang.rcon_auth_error.replace("{server}", Util.capitalize(server)));
-		}
+
+        // Always inform the invoker, including console
+        Message.sendLang(sender, Lang.rcon_response, "{server}", Util.capitalize(server), "{response}", result);
+        } catch (UnknownHostException e) {
+            Message.sendLang(sender, Lang.rcon_unknown_error, "{server}", Util.capitalize(server));
+        } catch (IOException e) {
+            Message.sendLang(sender, Lang.rcon_io_error, "{server}", Util.capitalize(server));
+        } catch (AuthenticationException e) {
+            Message.sendLang(sender, Lang.rcon_auth_error, "{server}", Util.capitalize(server));
+        } catch (Exception e) {
+            // Catch any other exceptions
+            Message.sendLang(sender, Lang.unknown_error);
+            // For debugging - log detailed errors:
+            ua.co.tensa.Message.error("RCON error for server " + server + ": " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
 	}
 
 	private String buildCommand(String[] args, String server) {
@@ -136,7 +162,4 @@ public class RconManagerCommand implements SimpleCommand {
 		return sb.toString().trim();
 	}
 
-	private void sendMessage(CommandSource sender, Component message) {
-		sender.sendMessage(message);
-	}
 }

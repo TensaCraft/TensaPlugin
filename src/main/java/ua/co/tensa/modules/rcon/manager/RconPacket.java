@@ -1,10 +1,6 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -71,13 +67,13 @@ public class RconPacket {
 		int responseRequestId = -1;
 		int responseType = -1;
 
-		while (true) {
-			int packetSize;
-			try {
-				packetSize = Integer.reverseBytes(dis.readInt());
-			} catch (IOException e) {
-				throw new IOException("Failed to read packet size", e);
-			}
+        while (true) {
+            int packetSize;
+            try {
+                packetSize = Integer.reverseBytes(dis.readInt());
+            } catch (IOException e) {
+                throw new IOException("Failed to read packet size", e);
+            }
 
 			byte[] packetData = new byte[packetSize];
 			dis.readFully(packetData);
@@ -105,11 +101,11 @@ public class RconPacket {
 
 			payloadStream.write(payload);
 
-			// If packet size is less than the maximum packet size, we have received all data
-			if (packetSize < 4096) {
-				break;
-			}
-		}
+            // Stop when packet smaller than maximum chunk size used by servers
+            if (packetSize < 4096) {
+                break;
+            }
+        }
 
 		byte[] fullPayload = payloadStream.toByteArray();
 

@@ -1,85 +1,40 @@
 package ua.co.tensa.config;
 
-import org.simpleyaml.configuration.file.YamlConfiguration;
-import ua.co.tensa.config.data.ConfigYAML;
-import java.util.ArrayList;
+import ua.co.tensa.config.data.AppConfig;
+import ua.co.tensa.config.model.YamlAdapter;
+
 import java.util.List;
-import java.util.Set;
-import static ua.co.tensa.Tensa.database;
 
-public class Config extends YamlConfiguration {
+/**
+ * Instance-based config manager backed by a typed model (AppConfig).
+ * YAML structure and keys remain unchanged.
+ */
+public class Config {
+    private final AppConfig app;
 
-	private static YamlConfiguration config;
-	public static DatabaseInitializer databaseInitializer;
+    public Config() {
+        this.app = new AppConfig();
+        // Ensure defaults are written and fields loaded after construction
+        this.app.reloadCfg();
+    }
 
-	public static void initialise() {
-		config = ConfigYAML.getInstance().getReloadedFile();
-	}
+    public void reload() { app.reloadCfg(); }
 
-	public static void reload() {
-		initialise();
-	}
+    public YamlAdapter adapter() { return app.adapter(); }
 
-	public static List<String> getModules() {
-		Set<String> keys = config.getConfigurationSection("modules").getKeys(true);
-		return new ArrayList<>(keys);
-	}
+    // Convenience accessors mirroring previous API but using typed fields
+    public List<String> getModules() { return app.moduleKeys(); }
+    public boolean isModuleEnabled(String id) { return app.isModuleEnabled(id); }
+    public String getLang() { return app.language; }
 
-	public static boolean getModules(String identifier) {
-		return config.getConfigurationSection("modules").getBoolean(identifier);
-	}
-
-	public static String getLang() {
-		return config.getString("language");
-	}
-
-	// Database
-	public static boolean databaseEnable() {
-		return config.getBoolean("database.enable");
-	}
-	public static String getDatabaseType() {
-		return config.getString("database.type");
-	}
-
-	public static String getDatabaseName() {
-		return config.getString("database.name");
-	}
-
-	public static String getDatabaseUser() {
-		return config.getString("database.user");
-	}
-
-	public static String getDatabasePassword() {
-		return config.getString("database.password");
-	}
-
-	public static String getDatabaseHost() {
-		return config.getString("database.host");
-	}
-
-	public static int getDatabasePort() {
-		return config.getInt("database.port");
-	}
-
-	public static boolean getSsl() {
-		return config.getBoolean("database.use_ssl");
-	}
-
-	public static String getDatabaseTablePrefix() {
-		return config.getString("database.table_prefix");
-	}
-
-	public static boolean useUUID() {
-		return config.getBoolean("use_uuid");
-	}
-
-	public static void databaseInitializer(){
-		if (Config.databaseEnable()){
-			database = new Database();
-			if (database.connect()) {
-				databaseInitializer = new DatabaseInitializer(database);
-				databaseInitializer.initializeTables();
-			}
-		}
-	}
+    public boolean databaseEnable() { return app.databaseEnable; }
+    public String getDatabaseType() { return app.databaseType; }
+    public String getDatabaseName() { return app.databaseName; }
+    public String getDatabaseUser() { return app.databaseUser; }
+    public String getDatabasePassword() { return app.databasePassword; }
+    public String getDatabaseHost() { return app.databaseHost; }
+    public int getDatabasePort() { return app.databasePort; }
+    public boolean getSsl() { return app.useSsl; }
+    public String getDatabaseTablePrefix() { return app.tablePrefix; }
+    public boolean useUUID() { return app.useUuid; }
 }

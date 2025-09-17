@@ -1,8 +1,9 @@
 package ua.co.tensa.commands;
 
-import ua.co.tensa.config.Lang;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import ua.co.tensa.Message;
+import ua.co.tensa.config.Lang;
 
 public class HelpCommand implements SimpleCommand {
 
@@ -10,10 +11,10 @@ public class HelpCommand implements SimpleCommand {
     public void execute(Invocation invocation) {
         CommandSource source = invocation.source();
         if (!hasPermission(invocation)) {
-            source.sendMessage(Lang.no_perms.get());
+            Message.sendLang(source, Lang.no_perms);
             return;
         }
-        source.sendMessage(Lang.help.get());
+        Message.sendLang(source, Lang.help);
     }
 
     @Override

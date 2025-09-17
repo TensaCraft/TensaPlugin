@@ -35,11 +35,12 @@ public class Rcon {
 			throw new IllegalArgumentException("Port is out of range");
 		}
 
-		synchronized (this.sync) {
-			this.requestId = this.rand.nextInt();
-			this.socket = new Socket();
-			this.socket.connect(new InetSocketAddress(host, port), 5000); // adding connection timeout
-		}
+        synchronized (this.sync) {
+            this.requestId = this.rand.nextInt();
+            this.socket = new Socket();
+            this.socket.connect(new InetSocketAddress(host, port), 5000); // connect timeout
+            try { this.socket.setSoTimeout(5000); } catch (Exception ignored) {}
+        }
 
 		RconPacket res = send(3, password);
 

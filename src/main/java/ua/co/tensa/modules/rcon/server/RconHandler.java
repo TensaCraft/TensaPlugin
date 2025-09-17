@@ -1,11 +1,11 @@
 package ua.co.tensa.modules.rcon.server;
 
-import ua.co.tensa.config.Lang;
-import ua.co.tensa.Message;
-import ua.co.tensa.Tensa;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.Lang;
 
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -57,15 +57,20 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		}
 	}
 
-	private void handleLogin(ChannelHandlerContext ctx, String payload, int requestId) {
-		if (password.equals(payload)) {
-			loggedIn = true;
-			sendResponse(ctx, requestId, TYPE_COMMAND, "");
-		} else {
-			loggedIn = false;
-			sendResponse(ctx, FAILURE, TYPE_COMMAND, "");
-		}
-	}
+    private void handleLogin(ChannelHandlerContext ctx, String payload, int requestId) {
+        if (password.equals(payload)) {
+            loggedIn = true;
+            // Many RCON clients expect two packets on successful auth:
+            // an empty RESPONSE_VALUE followed by AUTH_RESPONSE
+            sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+            sendResponse(ctx, requestId, TYPE_COMMAND, "");
+        } else {
+            loggedIn = false;
+            // Send both empty RESPONSE_VALUE and AUTH_RESPONSE with failure id (-1)
+            sendResponse(ctx, FAILURE, TYPE_RESPONSE, "");
+            sendResponse(ctx, FAILURE, TYPE_COMMAND, "");
+        }
+    }
 
 	private void handleCommand(ChannelHandlerContext ctx, String payload, int requestId) {
 		if (!loggedIn) {
@@ -76,13 +81,20 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		boolean success;
 		String message;
 		String ip = ctx.channel().remoteAddress().toString().replace("/", "");
-		Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", payload));
+        // Optional debug logging (configurable to prevent spam)
+        if (RconServerModule.isDebugEnabled()) {
+            ua.co.tensa.Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", payload));
+        }
 
-		Tensa.server.getAllPlayers().forEach(p -> {
-			if (p.getPermissionValue("TENSA.rcon.notify").asBoolean()) {
-				p.sendMessage(Lang.rcon_connect_notify.replace("{address}", ip, "{command}", payload));
-			}
-		});
+		// Only notify players if debug is enabled (to prevent spam)
+		if (RconServerModule.isDebugEnabled()) {
+			Tensa.server.getAllPlayers().forEach(p -> {
+				if (p.getPermissionValue("TENSA.rcon.notify").asBoolean()) {
+	                Message.sendLang(p, ua.co.tensa.config.Lang.rcon_connect_notify,
+	                        "{address}", ip, "{command}", payload);
+				}
+			});
+		}
 
 		if (payload.equalsIgnoreCase("end") || payload.equalsIgnoreCase("stop")) {
 			stop = true;
@@ -96,29 +108,42 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 				} else {
 					message = Lang.no_command.getClean();
 				}
-			} catch (Exception e) {
-				Message.error(e.getMessage());
+            } catch (Exception e) {
+                // Only log exceptions if error logging is enabled
+                if (RconServerModule.isErrorLoggingEnabled()) {
+                    ua.co.tensa.Message.error(e.getMessage());
+                }
 				success = false;
 				message = Lang.unknown_error.getClean();
 			}
 		}
 
 		if (!success) {
-			message = String.format(Lang.error_executing.getClean() + " %s (%s)", payload, message);
+			// Only log and format detailed errors if error logging is enabled
+			if (RconServerModule.isErrorLoggingEnabled()) {
+				String errorMsg = String.format(Lang.error_executing.getClean() + " %s (%s)", payload, message);
+				ua.co.tensa.Message.info(String.format("RCON Error from %s: %s", ip, errorMsg));
+				message = errorMsg;
+			} else {
+				// Just return a generic error without logging details to console or sending to RCON client
+				message = "Command failed";
+			}
 		}
 
-		if (!RconServerModule.isColored()) {
-			message = RconServerModule.stripColor(message);
-		}
+        if (!RconServerModule.isColored()) {
+            message = RconServerModule.stripColor(message);
+        }
 
-		sendLargeResponse(ctx, requestId, message);
+        // Some clients expect a leading empty RESPONSE_VALUE before the actual content
+        sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+        sendLargeResponse(ctx, requestId, message);
 
 		if (stop) {
 			Tensa.server.shutdown();
 		}
 	}
 
-	private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {
+    private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {
 		@SuppressWarnings("deprecation")
 		ByteBuf buf = ctx.alloc().buffer().order(ByteOrder.LITTLE_ENDIAN);
 		buf.writeInt(requestId);
@@ -126,22 +151,34 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		buf.writeBytes(payload.getBytes(StandardCharsets.UTF_8));
 		buf.writeByte(0);
 		buf.writeByte(0);
-		ctx.write(buf);
+		ctx.writeAndFlush(buf);
 	}
 
-	private void sendLargeResponse(ChannelHandlerContext ctx, int requestId, String payload) {
-		if (payload.isEmpty()) {
-			sendResponse(ctx, requestId, TYPE_RESPONSE, "");
-			return;
-		}
+    private void sendLargeResponse(ChannelHandlerContext ctx, int requestId, String payload) {
+        if (payload.isEmpty()) {
+            sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+            return;
+        }
 
-		int start = 0;
-		while (start < payload.length()) {
-			int length = payload.length() - start;
-			int truncated = Math.min(length, 2048);
+        int start = 0;
+        while (start < payload.length()) {
+            int length = payload.length() - start;
+            int truncated = Math.min(length, 2048);
 
-			sendResponse(ctx, requestId, TYPE_RESPONSE, payload.substring(start, truncated));
-			start += truncated;
-		}
-	}
+            // substring end index is exclusive; add start offset
+            int end = start + truncated;
+            sendResponse(ctx, requestId, TYPE_RESPONSE, payload.substring(start, end));
+            start = end;
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        if (cause instanceof java.net.SocketException && "Connection reset".equalsIgnoreCase(cause.getMessage())) {
+            // Common when remote closes abruptly; suppress noisy stacktrace
+        } else {
+            ua.co.tensa.Message.warn("RCON pipeline error: " + cause.getMessage());
+        }
+        try { ctx.close(); } catch (Throwable ignored) {}
+    }
 }
