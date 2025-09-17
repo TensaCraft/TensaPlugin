@@ -1,10 +1,11 @@
 package ua.co.tensa.config.data;
 
-import ua.co.tensa.config.Config;
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.model.YamlBackedFile;
 
 import java.io.File;
 
-public class LangYAML extends BaseYAMLConfig {
+public class LangYAML extends YamlBackedFile {
 
     private static LangYAML instance;
 
@@ -132,7 +133,7 @@ public class LangYAML extends BaseYAMLConfig {
     }
 
     private static String getLangFile() {
-        String lang = Config.getLang();
+        String lang = Tensa.config != null ? Tensa.config.getLang() : "en";
         if (lang == null || lang.isEmpty()) {
             return "en";
         }

@@ -4,11 +4,10 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
-import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
-import ua.co.tensa.modules.meta.data.UserMetaYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.meta.data.UserMetaConfig;
 import ua.co.tensa.placeholders.PlaceholderManager;
 
 public class UserMetaModule {
@@ -22,13 +21,13 @@ public class UserMetaModule {
 
     private static void enableImpl() {
         // Determine storage type from config
-        String type = UserMetaYAML.getInstance().getString("storage.type", "database");
+        String type = UserMetaConfig.get().storageType;
 
         Database db = Tensa.database;
 
         // If using database storage, require DB to be enabled and connected
         if ("database".equalsIgnoreCase(type)) {
-            if (!Config.databaseEnable()) {
+            if (Tensa.config == null || !Tensa.config.databaseEnable()) {
                 ua.co.tensa.Message.warn("UserMeta module requires database to be enabled");
                 return;
             }
@@ -61,7 +60,6 @@ public class UserMetaModule {
             if (player == null || store == null) return "";
             return store.get(player.getUniqueId(), key);
         });
-        ua.co.tensa.Message.info("UserMeta module enabled");
     }
 
     private static void disableImpl() {

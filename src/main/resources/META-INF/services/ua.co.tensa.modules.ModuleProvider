@@ -1,0 +1,10 @@
+ua.co.tensa.modules.bridge.PMBridgeProvider
+ua.co.tensa.modules.chat.ChatProvider
+ua.co.tensa.modules.event.EventsProvider
+ua.co.tensa.modules.rcon.manager.RconManagerProvider
+ua.co.tensa.modules.rcon.server.RconServerProvider
+ua.co.tensa.modules.requests.RequestsProvider
+ua.co.tensa.modules.playertime.PlayerTimeProvider
+ua.co.tensa.modules.text.TextReaderProvider
+ua.co.tensa.modules.meta.UserMetaProvider
+

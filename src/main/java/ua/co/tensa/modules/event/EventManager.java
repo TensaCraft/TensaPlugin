@@ -9,7 +9,6 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
-import ua.co.tensa.config.Config;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,7 @@ import static ua.co.tensa.modules.event.EventsModule.Events.*;
 public class EventManager {
 
     private static boolean isEnabled() {
-        try { return !Config.getModules("events-manager"); } catch (Throwable ignored) { return true; }
+        try { return Tensa.config == null || !Tensa.config.isModuleEnabled("events-manager"); } catch (Throwable ignored) { return true; }
     }
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";

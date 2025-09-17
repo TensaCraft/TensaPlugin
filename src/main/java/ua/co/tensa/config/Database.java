@@ -16,8 +16,8 @@ public class Database {
     public boolean enabled = false;
 
     public synchronized boolean connect() {
-        String type = Config.getDatabaseType();
-        tablePrefix = Config.getDatabaseTablePrefix();
+        String type = ua.co.tensa.Tensa.config.getDatabaseType();
+        tablePrefix = ua.co.tensa.Tensa.config.getDatabaseTablePrefix();
 
         if ("h2".equalsIgnoreCase(type)) {
             return connectH2();
@@ -72,10 +72,10 @@ public class Database {
                 // Older/newer driver versions may differ; safe to ignore
             }
             String url = "jdbc:mariadb://"
-                    + Config.getDatabaseHost() + ":"
-                    + Config.getDatabasePort() + "/"
-                    + Config.getDatabaseName()
-                    + "?useSSL=" + Config.getSsl()
+                    + ua.co.tensa.Tensa.config.getDatabaseHost() + ":"
+                    + ua.co.tensa.Tensa.config.getDatabasePort() + "/"
+                    + ua.co.tensa.Tensa.config.getDatabaseName()
+                    + "?useSSL=" + ua.co.tensa.Tensa.config.getSsl()
                     + "&autoReconnect=true"
                     + "&maxReconnects=3"
                     + "&connectTimeout=10000"
@@ -83,8 +83,8 @@ public class Database {
                     + "&tcpKeepAlive=true";
             HikariConfig cfg = new HikariConfig();
             cfg.setJdbcUrl(url);
-            cfg.setUsername(Config.getDatabaseUser());
-            cfg.setPassword(Config.getDatabasePassword());
+            cfg.setUsername(ua.co.tensa.Tensa.config.getDatabaseUser());
+            cfg.setPassword(ua.co.tensa.Tensa.config.getDatabasePassword());
             cfg.setDriverClassName("org.mariadb.jdbc.Driver");
             cfg.setMaximumPoolSize(10);
             cfg.setMinimumIdle(2);
@@ -93,7 +93,7 @@ public class Database {
 
             // Discover server-side timeouts to tune Hikari and avoid stale connections
             long serverWaitTimeoutSec = 28_800; // sane default (8h)
-            try (Connection probe = DriverManager.getConnection(url, Config.getDatabaseUser(), Config.getDatabasePassword());
+            try (Connection probe = DriverManager.getConnection(url, ua.co.tensa.Tensa.config.getDatabaseUser(), ua.co.tensa.Tensa.config.getDatabasePassword());
                  Statement st = probe.createStatement()) {
                 long waitTimeout = serverWaitTimeoutSec;
                 long interactiveTimeout = serverWaitTimeoutSec;

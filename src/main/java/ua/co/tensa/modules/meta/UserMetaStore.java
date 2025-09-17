@@ -3,7 +3,7 @@ package ua.co.tensa.modules.meta;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Database;
-import ua.co.tensa.modules.meta.data.UserMetaYAML;
+import ua.co.tensa.modules.meta.data.UserMetaConfig;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -25,17 +25,17 @@ public class UserMetaStore {
     private final Map<UUID, Map<String, String>> cache = new ConcurrentHashMap<>();
 
     public UserMetaStore(Database db) {
-        String type = UserMetaYAML.getInstance().getString("storage.type", "database");
+        String type = UserMetaConfig.get().storageType;
         this.storageType = switch (type.toLowerCase()) {
             case "file" -> StorageType.FILE;
             case "memory" -> StorageType.MEMORY;
             default -> StorageType.DATABASE;
         };
-        this.defaultPersist = UserMetaYAML.getInstance().getBoolean("default_persist", true);
+        this.defaultPersist = UserMetaConfig.get().defaultPersist;
         this.db = db;
         String filePath;
         if (this.storageType == StorageType.FILE) {
-            String path = UserMetaYAML.getInstance().getString("storage.file", "user_meta/data.yml");
+            String path = UserMetaConfig.get().storageFile;
             filePath = Tensa.pluginPath.resolve(path).toString();
             this.file = new YamlFile(filePath);
             try {

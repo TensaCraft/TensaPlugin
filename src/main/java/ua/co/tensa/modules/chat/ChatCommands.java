@@ -6,10 +6,9 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
-import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.config.core.ConfigAdapter;
-import ua.co.tensa.modules.chat.data.ChatYAML;
+import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.modules.chat.data.ChatConfig;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -17,13 +16,13 @@ import java.util.concurrent.CompletableFuture;
 public class ChatCommands implements SimpleCommand {
 
     // Access chats.yml via section maps
-    private static ConfigAdapter chatCfg = ChatYAML.getInstance().adapter();
+    private static YamlAdapter chatCfg = ChatConfig.get().adapter();
 
     /**
      * Read module flag dynamically to respect reload().
      */
     private static boolean isChatEnabled() {
-        return Config.getModules("chat-manager");
+        return Tensa.config != null && Tensa.config.isModuleEnabled("chat-manager");
     }
 
     /**
@@ -94,8 +93,8 @@ public class ChatCommands implements SimpleCommand {
      * Reload configuration and re-register commands.
      */
     public static void reload() {
-        ChatYAML.getInstance().reload();
-        chatCfg = ChatYAML.getInstance().adapter();
+        ChatConfig.get().reloadCfg();
+        chatCfg = ChatConfig.get().adapter();
         unregister();
         register();
     }

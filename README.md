@@ -2,6 +2,27 @@
 # TENSA Plugin
 
 TENSA Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
+
+## Config Models
+- Typed config classes with annotations live under `ua.co.tensa.config.model`.
+- Each model maps fields to YAML keys via `@CfgKey`, writes missing defaults, and reloads safely.
+- Global access is via `Tensa.config` which wraps `AppConfig` (for `config.yml`).
+
+Quick example:
+```java
+// Create a config model bound to user_meta/config.yml
+public class UserMetaConfig extends ConfigModelBase {
+  @CfgKey("storage.type") public String storageType = "database";
+  @CfgKey("default_persist") public boolean defaultPersist = true;
+  public UserMetaConfig() { super("user_meta/config.yml"); }
+}
+```
+
+Usage:
+- Instantiate once (singleton) and use typed fields: `UserMetaConfig.get().storageType`.
+- Reload configs: `/tensareload` (models auto-refresh their fields).
+- Root config accessors: `Tensa.configManager.isModuleEnabled("chat-manager")`, `getLang()`, database getters, etc.
+
 ## Commands
 - `/tensa`: Help command to display all available commands.
 - `/tensareload`: Reloads the plugin configuration file.
@@ -235,4 +256,3 @@ alert:
   see_all: true
   format: '&8[&4ALERT&8] &f{message}'
 ```
-

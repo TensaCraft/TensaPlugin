@@ -6,7 +6,6 @@ import com.velocitypowered.api.command.SimpleCommand;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.modules.AbstractModule;
 
 import java.io.IOException;
 import java.util.List;

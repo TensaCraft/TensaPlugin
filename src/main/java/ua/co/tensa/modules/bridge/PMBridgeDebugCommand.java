@@ -5,8 +5,8 @@ import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.Message;
-import ua.co.tensa.modules.bridge.data.BridgeYAML;
 import ua.co.tensa.modules.Modules;
+import ua.co.tensa.modules.bridge.data.BridgeConfig;
 
 public class PMBridgeDebugCommand implements SimpleCommand {
     @Override
@@ -28,17 +28,18 @@ public class PMBridgeDebugCommand implements SimpleCommand {
             return;
         }
         // Show current active config (no implicit reload)
-        YamlConfiguration cfg = BridgeYAML.getInstance().getConfig();
-        var a = BridgeYAML.getInstance().adapter();
-        String channel = a.getString("channel", "tensa:exec");
+        BridgeConfig c = BridgeConfig.get();
+        YamlConfiguration cfg = c.getConfig();
+        String channel = c.channel;
         // raw token from config.yml and resolved token (after use_velocity_secret logic)
         Object rawTokenObj = cfg.get("token");
         String rawToken = rawTokenObj == null ? null : String.valueOf(rawTokenObj);
-        String token = PMBridgeModule.resolveToken(cfg);
+        String token = PMBridgeModule.resolveToken(c);
         String safeToken = ua.co.tensa.Message.escapeMiniMessage(token);
-        boolean use = a.getBoolean("use_velocity_secret", true);
-        boolean log = a.getBoolean("log", true);
-        java.util.List<String> allow = a.getStringList("allow_from");
+        boolean use = c.useVelocitySecret;
+        boolean log = c.log;
+        java.util.List<String> allow = c.allowFrom;
+        String allowStr = (allow == null || allow.isEmpty()) ? "<empty>" : String.join(", ", allow);
         boolean enabled = Modules.getEntries().getOrDefault("pm-bridge", null) != null && Modules.getEntries().get("pm-bridge").isEnabled();
 
         Message.send(src, "<gold>=== PM Bridge Debug ===</gold>");
@@ -87,6 +88,7 @@ public class PMBridgeDebugCommand implements SimpleCommand {
             }
         } catch (Exception ignored) {}
         Message.send(src, "<gray>log:</gray> <yellow>" + log + "</yellow>");
+        Message.send(src, "<gray>allow_from:</gray> <yellow>" + allowStr + "</yellow>");
         Message.send(src, "<gold>=========================</gold>");
     }
 
@@ -95,8 +97,3 @@ public class PMBridgeDebugCommand implements SimpleCommand {
         return invocation.source().hasPermission("tensa.pm.debug");
     }
 }
-
-// MiniMessage escape moved to ua.co.tensa.Message.escapeMiniMessage
-
-// Shared helpers in command context (duplicate minimal copy to avoid exporting internals)
-// removed legacy _CFG helper (adapter used instead)

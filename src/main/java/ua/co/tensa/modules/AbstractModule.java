@@ -3,9 +3,9 @@ package ua.co.tensa.modules;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.EventManager;
 import com.velocitypowered.api.scheduler.ScheduledTask;
-import ua.co.tensa.Message;
 import ua.co.tensa.Util;
-import ua.co.tensa.config.data.BaseYAMLConfig;
+import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.config.model.YamlBackedFile;
 
 /**
  * Base class for modules providing a consistent lifecycle
@@ -32,12 +32,12 @@ public abstract class AbstractModule implements ModuleEntry {
     @Override
     public final String title() { return title; }
 
-    @Override
-    public final void enable() {
+    protected final void doEnable(boolean logStatus) {
         if (enabled) return;
         try {
             onEnable();
             enabled = true;
+            if (logStatus) ModuleStatusLogger.enabled(id, title);
         } catch (Throwable t) {
             ua.co.tensa.Message.error("Enable failed for module '" + id + "': " + t.getMessage());
             enabled = false;
@@ -45,7 +45,9 @@ public abstract class AbstractModule implements ModuleEntry {
     }
 
     @Override
-    public final void disable() {
+    public final void enable() { doEnable(true); }
+
+    protected final void doDisable(boolean logStatus) {
         if (!enabled) return;
         try {
             onDisable();
@@ -56,8 +58,12 @@ public abstract class AbstractModule implements ModuleEntry {
             cancelAllTasks();
             unregisterAllPlaceholders();
             enabled = false;
+            if (logStatus) ModuleStatusLogger.disabled(id, title);
         }
     }
+
+    @Override
+    public final void disable() { doDisable(true); }
 
     @Override
     public boolean isEnabled() { return enabled; }
@@ -67,13 +73,29 @@ public abstract class AbstractModule implements ModuleEntry {
     protected abstract void onDisable();
     protected void onReload() { /* optional soft reload */ }
 
-    // Reload: perform full disable -> enable cycle to ensure configs/state reinitialize
+    // Reload: if onReload is overridden -> use it; otherwise perform full restart
     @Override
     public void reload() {
-        if (isEnabled()) {
-            disable();
+        if (!isEnabled()) { enable(); return; }
+        boolean overridden = false;
+        try {
+            // Detect if subclass provided its own onReload implementation
+            overridden = this.getClass().getDeclaredMethod("onReload").getDeclaringClass() != AbstractModule.class;
+        } catch (NoSuchMethodException ignored) {
+            overridden = false;
         }
-        enable();
+        if (overridden) {
+            try {
+                onReload();
+                ModuleStatusLogger.reloaded(id, title);
+                return;
+            } catch (Throwable t) {
+                ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getMessage() + "; restarting module");
+            }
+        }
+        try { doDisable(false); } catch (Throwable ignored) {}
+        doEnable(false);
+        ModuleStatusLogger.reloaded(id, title);
     }
 
     // Helpers (static where instance state isn't required)
@@ -93,12 +115,12 @@ public abstract class AbstractModule implements ModuleEntry {
     /**
      * Ensure a config file exists and is loaded, then return a view.
      */
-    public static void ensureConfig(BaseYAMLConfig cfg) {
+    public static void ensureConfig(YamlBackedFile cfg) {
         cfg.getReloadedFile();
     }
 
     /** Ensure config exists and get its adapter view. */
-    public static ua.co.tensa.config.core.ConfigAdapter ensureAdapter(BaseYAMLConfig cfg) {
+    public static YamlAdapter ensureAdapter(YamlBackedFile cfg) {
         ensureConfig(cfg);
         return cfg.adapter();
     }
@@ -143,7 +165,7 @@ public abstract class AbstractModule implements ModuleEntry {
     }
 
     // Scheduler helpers: auto-cancel on disable
-    protected ScheduledTask schedule(java.lang.Runnable task, long delay, java.util.concurrent.TimeUnit unit) {
+    public ScheduledTask schedule(java.lang.Runnable task, long delay, java.util.concurrent.TimeUnit unit) {
         if (task == null) return null;
         ScheduledTask t = ua.co.tensa.Tensa.server.getScheduler()
                 .buildTask(ua.co.tensa.Tensa.pluginContainer, task)
@@ -153,7 +175,7 @@ public abstract class AbstractModule implements ModuleEntry {
         return t;
     }
 
-    protected ScheduledTask scheduleRepeating(java.lang.Runnable task, long delay, long repeat, java.util.concurrent.TimeUnit unit) {
+    public ScheduledTask scheduleRepeating(java.lang.Runnable task, long delay, long repeat, java.util.concurrent.TimeUnit unit) {
         if (task == null) return null;
         ScheduledTask t = ua.co.tensa.Tensa.server.getScheduler()
                 .buildTask(ua.co.tensa.Tensa.pluginContainer, task)

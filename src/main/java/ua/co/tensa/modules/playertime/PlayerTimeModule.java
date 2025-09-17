@@ -1,10 +1,8 @@
 package ua.co.tensa.modules.playertime;
 
 import ua.co.tensa.Tensa;
-import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.DatabaseInitializer;
-import ua.co.tensa.config.Lang;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 
@@ -20,7 +18,6 @@ public class PlayerTimeModule {
     public static final ModuleEntry ENTRY = IMPL;
 
     private static void enableImpl() {
-        ua.co.tensa.Message.info("PlayerTime module enabled");
         initialize();
     }
 
@@ -33,7 +30,7 @@ public class PlayerTimeModule {
     public static void disable() { IMPL.disable(); }
 
     public static void initialize() {
-        if (!Config.databaseEnable()){
+        if (Tensa.config == null || !Tensa.config.databaseEnable()){
             ua.co.tensa.Message.warn("The PlayerTime module requires the use of a database, enable it in the configuration file");
             return;
         }
@@ -49,11 +46,7 @@ public class PlayerTimeModule {
             AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
             AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
 
-
-            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, timeTracker::updateAllOnlineTimes)
-                    .delay(1, TimeUnit.MINUTES)
-                    .repeat(1, TimeUnit.MINUTES)
-                    .schedule();
+            ((AbstractModule) IMPL).scheduleRepeating(timeTracker::updateAllOnlineTimes, 1, 1, TimeUnit.MINUTES);
         } else {
             ua.co.tensa.Message.warn("PlayerTime module. A database connection could not be established");
             disable();

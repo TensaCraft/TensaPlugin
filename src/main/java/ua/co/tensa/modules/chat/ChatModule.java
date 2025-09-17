@@ -13,8 +13,16 @@ public class ChatModule {
 
     private static final ModuleEntry IMPL = new AbstractModule(
             "chat-manager", "Chat Manager") {
-        @Override protected void onEnable() { ChatCommands.register(); }
+        @Override protected void onEnable() {
+            ua.co.tensa.modules.chat.data.ChatConfig.get().reloadCfg();
+            ChatCommands.register();
+        }
         @Override protected void onDisable() { ChatCommands.unregister(); }
+        @Override protected void onReload() {
+            ua.co.tensa.modules.chat.data.ChatConfig.get().reloadCfg();
+            ChatCommands.unregister();
+            ChatCommands.register();
+        }
     };
 
     public static final ModuleEntry ENTRY = IMPL;

@@ -29,7 +29,6 @@ public class TextReaderModule {
             Util.copyFile(dir.toString(), "rules.txt");
             Util.copyFile(dir.toString(), "readme.txt");
         }
-        ua.co.tensa.Message.info("Text Reader module enabled");
     }
 
     private static void enableImpl() {

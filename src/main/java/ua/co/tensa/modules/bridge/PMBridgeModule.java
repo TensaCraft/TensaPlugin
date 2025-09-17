@@ -7,9 +7,9 @@ import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
-import ua.co.tensa.modules.bridge.data.BridgeYAML;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.bridge.data.BridgeConfig;
 
 import java.nio.charset.StandardCharsets;
 
@@ -18,17 +18,35 @@ public class PMBridgeModule {
         private ChannelIdentifier id;
 
         @Override protected void onEnable() {
-            var cfg = BridgeYAML.getInstance().getReloadedFile();
-            String ch = cfg.getString("channel", "tensa:exec");
+            BridgeConfig cfg = BridgeConfig.get();
+            cfg.reloadCfg();
+            String ch = cfg.channel;
             id = MinecraftChannelIdentifier.from(ch);
             Tensa.server.getChannelRegistrar().register(id);
             registerListener(new PMBridgeModule());
-            ua.co.tensa.Message.info("PM-Bridge enabled on channel: " + ch);
+            ua.co.tensa.modules.AbstractModule.registerCommand("tpmdebug", "tpmdbg", new PMBridgeDebugCommand());
+            // status logging handled centrally
         }
 
         @Override protected void onDisable() {
             if (id != null) {
                 try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
+            }
+            ua.co.tensa.modules.AbstractModule.unregisterCommands("tpmdebug", "tpmdbg");
+        }
+
+        @Override protected void onReload() {
+            try {
+                BridgeConfig cfg = BridgeConfig.get();
+                cfg.reloadCfg();
+                if (id != null) {
+                    try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
+                }
+                String ch = cfg.channel;
+                id = MinecraftChannelIdentifier.from(ch);
+                Tensa.server.getChannelRegistrar().register(id);
+            } catch (Throwable t) {
+                ua.co.tensa.Message.warn("PM-Bridge reload failed: " + t.getMessage());
             }
         }
     };
@@ -37,12 +55,14 @@ public class PMBridgeModule {
     public static void enable() { IMPL.enable(); }
     public static void disable() { IMPL.disable(); }
 
+    // no-op: only proxy execution supported
+
     @Subscribe
     public void onPluginMessage(PluginMessageEvent event) {
         // Always read the latest config when processing messages
         // Use current in-memory view; config is reloaded on module reload (/tensareload)
-        var adapter = BridgeYAML.getInstance().adapter();
-        String ch = adapter.getString("channel", "tensa:exec");
+        BridgeConfig cfg = BridgeConfig.get();
+        String ch = cfg.channel;
         ChannelIdentifier id = MinecraftChannelIdentifier.from(ch);
         // Only proceed for the configured channel; no extra spam logs
         if (!event.getIdentifier().equals(id)) return;
@@ -50,12 +70,21 @@ public class PMBridgeModule {
         // Only accept from backend servers
         if (!(event.getSource() instanceof ServerConnection serverConn)) return;
 
-        String token = resolveToken(BridgeYAML.getInstance().getConfig());
-        boolean log = adapter.getBoolean("log", true);
-        java.util.List<String> allow = adapter.getStringList("allow_from");
+        String token = resolveToken(cfg);
+        boolean log = cfg.log;
+        java.util.List<String> allow = cfg.allowFrom;
+        // Normalize allowlist: trim, lowercase, drop blanks
+        java.util.Set<String> allowNorm = new java.util.HashSet<>();
+        if (allow != null) {
+            for (String a : allow) {
+                if (a == null) continue;
+                String s = a.trim();
+                if (!s.isEmpty()) allowNorm.add(s.toLowerCase(java.util.Locale.ROOT));
+            }
+        }
 
         String serverName = serverConn.getServerInfo().getName();
-        if (allow != null && !allow.isEmpty() && !isAllowedServer(allow, serverName)) {
+        if (!allowNorm.isEmpty() && !isAllowedServer(allowNorm, serverName)) {
             if (log) ua.co.tensa.Message.warn("PM-Bridge: blocked message from disallowed server '" + serverName + "'");
             return;
         }
@@ -76,6 +105,8 @@ public class PMBridgeModule {
         }
 
         if (cmd.isEmpty()) return;
+
+        if (cmd.isEmpty()) return;
         if (log) ua.co.tensa.Message.info("PM-Bridge exec from " + serverName + ": /" + cmd);
         Util.executeCommand(cmd);
         event.setResult(PluginMessageEvent.ForwardResult.handled());
@@ -92,18 +123,17 @@ public class PMBridgeModule {
     }
 
     // Allowlist helper for unit testing
-    static boolean isAllowedServer(java.util.List<String> allow, String server) {
-        if (allow == null || allow.isEmpty()) return true;
+    static boolean isAllowedServer(java.util.Set<String> allowNorm, String server) {
+        if (allowNorm == null || allowNorm.isEmpty()) return true;
         if (server == null) return false;
-        for (String a : allow) {
-            if (server.equalsIgnoreCase(a)) return true;
-        }
-        return false;
+        String s = server.trim().toLowerCase(java.util.Locale.ROOT);
+        if (allowNorm.contains("*") || allowNorm.contains("all")) return true;
+        return allowNorm.contains(s);
     }
 
-    public static String resolveToken(org.simpleyaml.configuration.file.YamlConfiguration cfg) {
-        boolean useVelocitySecret = getBool(cfg, "use_velocity_secret", true);
-        String token = cfg.getString("token", "");
+    public static String resolveToken(BridgeConfig cfg) {
+        boolean useVelocitySecret = cfg.useVelocitySecret;
+        String token = cfg.token;
         if (!useVelocitySecret) return token;
         try {
             java.nio.file.Path pluginsDir = ua.co.tensa.Tensa.pluginPath; // .../plugins/TENSA (may be relative)
@@ -165,15 +195,4 @@ public class PMBridgeModule {
         return token; // use explicit token if auto not found
     }
 
-    // Robust boolean reader: supports true/false and string "true"/"false"
-    private static boolean getBool(org.simpleyaml.configuration.file.YamlConfiguration cfg, String key, boolean def) {
-        Object v = cfg.get(key);
-        if (v instanceof Boolean b) return b;
-        if (v instanceof String s) {
-            String t = s.trim().toLowerCase();
-            if (t.equals("true")) return true;
-            if (t.equals("false")) return false;
-        }
-        return def;
-    }
 }
