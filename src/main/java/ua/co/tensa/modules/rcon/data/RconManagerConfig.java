@@ -1,12 +1,12 @@
 package ua.co.tensa.modules.rcon.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.util.*;
 
-public class RconManagerConfig extends ConfigModelBase {
+public class RconManagerConfig extends ConfigBase {
     private static RconManagerConfig instance;
 
     @CfgKey("servers")

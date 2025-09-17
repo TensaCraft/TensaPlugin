@@ -1,9 +1,9 @@
 package ua.co.tensa.modules.rcon.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
-public class RconServerConfig extends ConfigModelBase {
+public class RconServerConfig extends ConfigBase {
     private static RconServerConfig instance;
 
     @CfgKey("port") public int port = 25570;

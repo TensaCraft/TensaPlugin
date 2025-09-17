@@ -1,12 +1,12 @@
 package ua.co.tensa.modules.meta.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 /**
  * Typed model for user meta configuration.
  */
-public class UserMetaConfig extends ConfigModelBase {
+public class UserMetaConfig extends ConfigBase {
     private static UserMetaConfig instance;
 
     @CfgKey("storage.type")

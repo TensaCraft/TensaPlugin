@@ -1,6 +1,6 @@
 package ua.co.tensa.config.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 import ua.co.tensa.modules.ModuleProvider;
 import ua.co.tensa.modules.TensaModule;
@@ -14,7 +14,7 @@ import java.util.Map;
  * Typed model for config.yml.
  * YAML structure is unchanged; this model provides typed accessors.
  */
-public class AppConfig extends ConfigModelBase {
+public class AppConfig extends ConfigBase {
 
     // General
     @CfgKey(value = "language", comment = "Default language file under /lang")

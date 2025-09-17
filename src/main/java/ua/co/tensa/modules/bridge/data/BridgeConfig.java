@@ -1,9 +1,9 @@
 package ua.co.tensa.modules.bridge.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
-public class BridgeConfig extends ConfigModelBase {
+public class BridgeConfig extends ConfigBase {
     private static BridgeConfig instance;
 
     @CfgKey("token")

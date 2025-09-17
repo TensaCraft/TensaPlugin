@@ -1,12 +1,12 @@
 package ua.co.tensa.modules.event.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class EventsConfig extends ConfigModelBase {
+public class EventsConfig extends ConfigBase {
     private static EventsConfig instance;
 
     @CfgKey("events.on_join_commands.enabled")

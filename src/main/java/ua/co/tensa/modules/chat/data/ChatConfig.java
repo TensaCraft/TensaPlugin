@@ -1,6 +1,6 @@
 package ua.co.tensa.modules.chat.data;
 
-import ua.co.tensa.config.model.ConfigModelBase;
+import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.util.LinkedHashMap;
@@ -10,7 +10,7 @@ import java.util.Map;
  * Typed entry for chats.yml using the model system.
  * Populates three default sections: global, staff, alert.
  */
-public class ChatConfig extends ConfigModelBase {
+public class ChatConfig extends ConfigBase {
     private static ChatConfig instance;
 
     @CfgKey("global")

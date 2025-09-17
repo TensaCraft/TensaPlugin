@@ -6,16 +6,16 @@ import ua.co.tensa.Message;
 /**
  * Base for annotation-driven config models built on YamlBackedFile.
  */
-public abstract class ConfigModelBase extends YamlBackedFile {
-    private ModelBinder binder;
+public abstract class ConfigBase extends YamlBackedFile {
+    private ConfigBinder binder;
 
     private void ensureBinder() {
         if (this.binder == null) {
-            this.binder = new ModelBinder(this);
+            this.binder = new ConfigBinder(this);
         }
     }
 
-    protected ConfigModelBase(String relativePath) {
+    protected ConfigBase(String relativePath) {
         super(relativePath);
     }
 

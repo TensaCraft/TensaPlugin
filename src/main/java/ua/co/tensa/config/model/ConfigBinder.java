@@ -14,11 +14,11 @@ import java.util.Map;
  * Reflection-based binder that maps fields annotated with @CfgKey
  * to values in YAML, writing defaults when missing.
  */
-final class ModelBinder {
+final class ConfigBinder {
     private final Object target;
     private final List<Field> fields = new ArrayList<>();
 
-    ModelBinder(Object target) {
+    ConfigBinder(Object target) {
         this.target = target;
         for (Class<?> c = target.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
@@ -37,7 +37,7 @@ final class ModelBinder {
             try {
                 Object def = f.get(target);
                 boolean allow = true;
-                if (target instanceof ConfigModelBase cm) {
+                if (target instanceof ConfigBase cm) {
                     allow = cm.shouldWriteDefault(base, def, yaml);
                 }
                 if (!allow) continue;
