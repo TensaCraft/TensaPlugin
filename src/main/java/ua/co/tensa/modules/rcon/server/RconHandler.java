@@ -134,9 +134,10 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
             message = RconServerModule.stripColor(message);
         }
 
-        // Some clients expect a leading empty RESPONSE_VALUE before the actual content
-        sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+        // Send the actual response first so clients that stop at the first packet don't miss the output
         sendLargeResponse(ctx, requestId, message);
+        // Follow up with an empty RESPONSE_VALUE to signal the end of the reply (matches Valve RCON behaviour)
+        sendResponse(ctx, requestId, TYPE_RESPONSE, "");
 
 		if (stop) {
 			Tensa.server.shutdown();

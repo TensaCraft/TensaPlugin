@@ -7,8 +7,12 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.identity.Identity;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.TranslatableComponent;
+import net.kyori.adventure.translation.GlobalTranslator;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.jetbrains.annotations.NotNull;
+
+import java.util.Locale;
 
 import static com.velocitypowered.api.permission.PermissionFunction.ALWAYS_TRUE;
 
@@ -16,12 +20,21 @@ public class RconCommandSource implements CommandSource {
 
 	private final StringBuffer buffer = new StringBuffer();
 	private final PermissionFunction permissionFunction = ALWAYS_TRUE;
+	private final Locale locale;
 
 	public RconCommandSource(ProxyServer server) {
+		this.locale = Locale.getDefault();
 	}
 
 	private void addToBuffer(Component message) {
-		String txt = LegacyComponentSerializer.legacySection().serialize(message);
+		Component rendered = GlobalTranslator.render(message, locale);
+		if (rendered instanceof TranslatableComponent) {
+			Component fallback = GlobalTranslator.render(message, Locale.ENGLISH);
+			if (!(fallback instanceof TranslatableComponent)) {
+				rendered = fallback;
+			}
+		}
+		String txt = LegacyComponentSerializer.legacySection().serialize(rendered);
 		txt = RconServerModule.stripMcColor(txt);
 		if (buffer.length() != 0)
 			buffer.append("\n");
