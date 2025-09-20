@@ -5,8 +5,6 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.modules.meta.data.UserMetaConfig;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,36 +75,30 @@ public class UserMetaStore {
 
     private Map<String, String> loadAll(UUID uuid) {
         Map<String, String> map = new ConcurrentHashMap<>();
-        try {
-            switch (storageType) {
-                case DATABASE -> {
-                    try (ResultSet rs = db.select("user_meta", "meta_key, meta_value", "uuid = ?", uuid.toString())) {
-                        if (rs != null) {
-                            while (rs.next()) {
-                                map.put(rs.getString(1), rs.getString(2));
-                            }
+        switch (storageType) {
+            case DATABASE -> db.select("user_meta", "meta_key, meta_value", "uuid = ?",
+                    rs -> {
+                        while (rs.next()) {
+                            map.put(rs.getString(1), rs.getString(2));
+                        }
+                        return null;
+                    }, uuid.toString());
+            case FILE -> {
+                if (file != null) {
+                    try { file.load(); } catch (Exception ignored) {}
+                }
+                if (file != null && file.contains(uuid.toString())) {
+                    var section = file.getConfigurationSection(uuid.toString());
+                    if (section != null) {
+                        for (String key : section.getKeys(false)) {
+                            map.put(key, section.getString(key, ""));
                         }
                     }
-                }
-                case FILE -> {
-                    if (file != null) {
-                        try { file.load(); } catch (Exception ignored) {}
-                    }
-                    if (file != null && file.contains(uuid.toString())) {
-                        var section = file.getConfigurationSection(uuid.toString());
-                        if (section != null) {
-                            for (String key : section.getKeys(false)) {
-                                map.put(key, section.getString(key, ""));
-                            }
-                        }
-                    }
-                }
-                case MEMORY -> {
-                    // nothing to load; memory-only
                 }
             }
-        } catch (SQLException e) {
-            ua.co.tensa.Message.error(e.getMessage());
+            case MEMORY -> {
+                // nothing to load; memory-only
+            }
         }
         return map;
     }

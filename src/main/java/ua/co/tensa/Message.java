@@ -36,10 +36,17 @@ public class Message {
     }
 
     public static void send(CommandSource recipient, String message) {
-        for (String line : message.split("\n")) {
-            Player player = recipient instanceof Player ? (Player) recipient : null;
-            PlaceholderManager.resolveComponentAsync(player, line)
-                    .thenAccept(recipient::sendMessage);
+        if (message == null) {
+            return;
+        }
+        Player player = recipient instanceof Player ? (Player) recipient : null;
+        String[] lines = message.split("\n");
+        java.util.concurrent.CompletableFuture<Void> chain = java.util.concurrent.CompletableFuture.completedFuture(null);
+        for (String line : lines) {
+            String current = line;
+            chain = chain.thenCompose(ignored ->
+                    PlaceholderManager.resolveComponentAsync(player, current)
+                            .thenAccept(recipient::sendMessage));
         }
     }
 

@@ -151,11 +151,6 @@ public class Database {
         return updated != null;
     }
 
-    private ResultSet executeQuerySync(String query, Object... parameters) {
-        checkConnection();
-        return executeSync(query, parameters, PreparedStatement::executeQuery);
-    }
-
     private <T> T executeSync(String query, Object[] parameters, SQLExecutor<T> executor) {
         checkConnection();
         try (Connection conn = dataSource.getConnection();
@@ -181,6 +176,14 @@ public class Database {
         return null;
     }
 
+    private <T> T executeQuery(String query, Object[] parameters, ResultSetHandler<T> handler) {
+        return executeSync(query, parameters, stmt -> {
+            try (ResultSet rs = stmt.executeQuery()) {
+                return handler.handle(rs);
+            }
+        });
+    }
+
     private boolean isConnectionException(SQLException e) {
         return e instanceof SQLNonTransientConnectionException
                 || e instanceof SQLTransientConnectionException
@@ -199,6 +202,11 @@ public class Database {
     @FunctionalInterface
     private interface SQLExecutor<T> {
         T execute(PreparedStatement preparedStatement) throws SQLException;
+    }
+
+    @FunctionalInterface
+    public interface ResultSetHandler<T> {
+        T handle(ResultSet resultSet) throws SQLException;
     }
 
     private String constructInsertQuery(String tableName, String columns, int valueCount) {
@@ -235,8 +243,8 @@ public class Database {
         return executeUpdateSync("DELETE FROM " + appendPrefix(tableName) + " WHERE " + where, castValuesToLong(values));
     }
 
-    public ResultSet select(String tableName, String columns, String where, Object... values) {
-        return executeQuerySync(constructSelectQuery(tableName, columns, where), castValuesToLong(values));
+    public <T> T select(String tableName, String columns, String where, ResultSetHandler<T> handler, Object... values) {
+        return executeQuery(constructSelectQuery(tableName, columns, where), castValuesToLong(values), handler);
     }
 
     public void createTableAsync(String tableName, String columns) {
@@ -255,12 +263,14 @@ public class Database {
         return CompletableFuture.supplyAsync(() -> delete(tableName, where, castValuesToLong(values)));
     }
 
-    public CompletableFuture<ResultSet> selectAsync(String tableName, String columns, String where, Object... values) {
-        return CompletableFuture.supplyAsync(() -> select(tableName, columns, where, castValuesToLong(values)));
+    public <T> CompletableFuture<T> selectAsync(String tableName, String columns, String where, ResultSetHandler<T> handler, Object... values) {
+        Object[] params = castValuesToLong(values);
+        return CompletableFuture.supplyAsync(() -> executeQuery(constructSelectQuery(tableName, columns, where), params, handler));
     }
 
-    public CompletableFuture<ResultSet> executeQueryAsync(String query, Object... parameters) {
-        return CompletableFuture.supplyAsync(() -> executeQuerySync(query, castValuesToLong(parameters)));
+    public <T> CompletableFuture<T> executeQueryAsync(String query, ResultSetHandler<T> handler, Object... parameters) {
+        Object[] params = castValuesToLong(parameters);
+        return CompletableFuture.supplyAsync(() -> executeQuery(query, params, handler));
     }
 
     public CompletableFuture<Boolean> executeUpdateAsync(String query, Object... parameters) {
@@ -268,15 +278,8 @@ public class Database {
     }
 
     public boolean exists(String tableName, String where, Object... values) {
-        try (ResultSet rs = select(tableName, "*", where, values)) {
-            if (rs == null) {
-                return false;
-            }
-            return rs.next();
-        } catch (SQLException e) {
-            Message.error(e.getMessage());
-        }
-        return false;
+        Boolean exists = select(tableName, "*", where, rs -> rs != null && rs.next(), values);
+        return Boolean.TRUE.equals(exists);
     }
 
     public boolean tableExists(String tableName) {

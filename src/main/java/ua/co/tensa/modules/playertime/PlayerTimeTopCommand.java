@@ -7,8 +7,6 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
 
-import java.sql.SQLException;
-
 public class PlayerTimeTopCommand implements SimpleCommand {
 
     private final PlayerTimeTracker timeTracker;
@@ -26,27 +24,20 @@ public class PlayerTimeTopCommand implements SimpleCommand {
         }
         int limit = 10;
 
-        this.timeTracker.getTopPlayers(limit).thenAccept(result -> {
-            try {
+        this.timeTracker.getTopPlayers(limit).thenAccept(entries -> {
+            if (entries == null || entries.isEmpty()) {
                 Message.sendLang(sender, Lang.player_time_top);
-                int position = 1;
-                while (result.next()) {
-                    String playerInfo = result.getString(1);
-                    String playTime = PlayerTimeModule.formatTime(Long.parseLong(result.getString(2)));
-                    Message.sendLang(sender, Lang.player_time_top_entry,
-                            "{position}", String.valueOf(position),
-                            "{player}", playerInfo,
-                            "{time}", playTime);
-                    position += 1;
-                }
-            } catch (SQLException e) {
-                ua.co.tensa.Message.error(e.getMessage());
-            } finally {
-                try {
-                    result.close();
-                } catch (SQLException e) {
-                    ua.co.tensa.Message.error(e.getMessage());
-                }
+                return;
+            }
+            Message.sendLang(sender, Lang.player_time_top);
+            int position = 1;
+            for (PlayerTimeTracker.PlayerTimeEntry entry : entries) {
+                String playTime = PlayerTimeModule.formatTime(entry.playTime());
+                Message.sendLang(sender, Lang.player_time_top_entry,
+                        "{position}", String.valueOf(position),
+                        "{player}", entry.playerName(),
+                        "{time}", playTime);
+                position += 1;
             }
         });
 

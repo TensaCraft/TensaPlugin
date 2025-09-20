@@ -8,7 +8,6 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
 
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -34,46 +33,24 @@ public class PlayerTimeCommand implements SimpleCommand {
 
         if (args.length == 0 && sender instanceof Player) {
             Player player = (Player) sender;
-            try {
-                timeTracker.getCurrentPlayerTime(player.getUniqueId()).thenAccept(result -> {
-                    if (result == null) {
-                        Message.warn("PlayerTime: DB returned no result for current player time");
-                        return;
-                    }
-                    try {
-                        if (result.next()) {
-                            Message.sendLang(sender, Lang.player_time,
-                                    "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1))));
-                        }
-                    } catch (SQLException e) {
-                        Message.error(e.getMessage());
-                    } finally {
-                        try { result.close(); } catch (SQLException ignored) {}
-                    }
-                });
-            } catch (SQLException e) {
-                Message.error(e.getMessage());
-            }
-        } else if (args.length == 1 && sender.hasPermission("TENSA.playertime.admin")) {
-            String playerName = args[0];
-            timeTracker.getPlayerTimeByName(playerName).thenAccept(result -> {
-                if (result == null) {
-                    Message.warn("PlayerTime: DB returned no result for name query: " + playerName);
+            timeTracker.getCurrentPlayerTime(player.getUniqueId()).thenAccept(playTime -> {
+                if (playTime == null) {
+                    Message.warn("PlayerTime: DB returned no result for current player time");
                     return;
                 }
-                try {
-                    if (result.next()) {
-                        Message.sendLang(sender, Lang.player_time_other,
-                                "{player}", playerName,
-                                "{time}", PlayerTimeModule.formatTime(Long.parseLong(result.getString(1))));
-                    } else {
-                        Message.sendLang(sender, Lang.player_not_found, "{player}", playerName);
-                    }
-                } catch (SQLException e) {
-                    Message.error(e.getMessage());
-                } finally {
-                    try { result.close(); } catch (SQLException ignored) {}
+                Message.sendLang(sender, Lang.player_time,
+                        "{time}", PlayerTimeModule.formatTime(playTime));
+            });
+        } else if (args.length == 1 && sender.hasPermission("TENSA.playertime.admin")) {
+            String playerName = args[0];
+            timeTracker.getPlayerTimeByName(playerName).thenAccept(playTime -> {
+                if (playTime == null) {
+                    Message.sendLang(sender, Lang.player_not_found, "{player}", playerName);
+                    return;
                 }
+                Message.sendLang(sender, Lang.player_time_other,
+                        "{player}", playerName,
+                        "{time}", PlayerTimeModule.formatTime(playTime));
             });
         } else {
             Message.sendLang(sender, Lang.player_time_usage);

@@ -2,8 +2,8 @@ package ua.co.tensa.modules.playertime;
 
 import ua.co.tensa.config.Database;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -12,6 +12,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PlayerTimeTracker {
     private final Map<UUID, Long> playerOnlineTime;
     private final Database database;
+
+    public record PlayerTimeEntry(String playerName, long playTime) {}
 
     public PlayerTimeTracker(Database database) {
         this.playerOnlineTime = new ConcurrentHashMap<>();
@@ -45,17 +47,28 @@ public class PlayerTimeTracker {
         database.updateAsync("player_times", "play_time = play_time + ?", "uuid = ?", timeOnline, playerId.toString());
     }
 
-    public CompletableFuture<ResultSet> getPlayerTimeByName(String playerName) {
-        return database.selectAsync("player_times", "play_time", "name = ?", playerName);
+    public CompletableFuture<Long> getPlayerTimeByName(String playerName) {
+        return database.selectAsync("player_times", "play_time", "name = ?",
+                rs -> rs.next() ? rs.getLong(1) : null,
+                playerName);
     }
 
-    public CompletableFuture<ResultSet> getCurrentPlayerTime(UUID playerId) throws SQLException {
-        return database.selectAsync("player_times", "play_time", "uuid = ?", playerId.toString());
+    public CompletableFuture<Long> getCurrentPlayerTime(UUID playerId) {
+        return database.selectAsync("player_times", "play_time", "uuid = ?",
+                rs -> rs.next() ? rs.getLong(1) : null,
+                playerId.toString());
     }
 
-    public CompletableFuture<ResultSet> getTopPlayers(int limit) {
-        String query = String.format("play_time > 0 ORDER BY play_time DESC LIMIT %d", limit);
-        return database.selectAsync("player_times", "name, play_time", query);
+    public CompletableFuture<List<PlayerTimeEntry>> getTopPlayers(int limit) {
+        String where = "play_time > 0 ORDER BY play_time DESC LIMIT ?";
+        return database.selectAsync("player_times", "name, play_time", where,
+                rs -> {
+                    List<PlayerTimeEntry> entries = new ArrayList<>();
+                    while (rs.next()) {
+                        entries.add(new PlayerTimeEntry(rs.getString(1), rs.getLong(2)));
+                    }
+                    return entries;
+                }, limit);
     }
 
     public void updateAllOnlineTimes() {
