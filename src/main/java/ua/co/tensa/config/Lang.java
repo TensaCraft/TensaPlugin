@@ -65,7 +65,9 @@ public enum Lang {
                 return Message.convert(key);
             }
             String value = config.getString(key);
-            return value == null ? Message.convert(key) : Message.convert((prefix == null ? "" : prefix) + value);
+            if (value == null) return Message.convert(key);
+            String withPrefix = (prefix == null || prefix.isEmpty()) ? value : prefix + value;
+            return Message.convert(withPrefix);
         }
 
         public static Component getKey(String key, String[] replaceList) {
@@ -76,7 +78,8 @@ public enum Lang {
             for (int i = 0; i < replaceList.length - 1; i += 2) {
                 resp = resp.replace(replaceList[i], replaceList[i + 1]);
             }
-            return Message.convert((prefix == null ? "" : prefix) + resp);
+            String withPrefix = (prefix == null || prefix.isEmpty()) ? resp : prefix + resp;
+            return Message.convert(withPrefix);
         }
 
         public static String getCleanText(String key) {

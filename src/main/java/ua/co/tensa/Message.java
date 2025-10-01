@@ -118,7 +118,8 @@ public class Message {
                 }
             }
         }
-        String full = Lang.LangConfig.prefix + value;
+        String prefix = Lang.LangConfig.prefix;
+        String full = (prefix == null || prefix.isEmpty()) ? value : prefix + value;
         send(recipient, full);
     }
 
