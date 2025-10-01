@@ -6,6 +6,7 @@ import net.kyori.adventure.text.minimessage.tag.Tag;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.placeholders.providers.LuckPermsPlaceholderProvider;
 import ua.co.tensa.placeholders.providers.PAPIProxyBridgeProvider;
 
 import java.util.Map;
@@ -21,11 +22,35 @@ public class PlaceholderManager {
     private static final Map<String, BiFunction<Player, String, String>> anglePrefixResolvers = new ConcurrentHashMap<>();
 
     private static PlaceholderProvider papiProvider;
+    private static LuckPermsPlaceholderProvider luckPermsProvider;
 
     public static void initialise() {
         registerDefaults();
         // lazy load providers
         papiProvider = new PAPIProxyBridgeProvider();
+        luckPermsProvider = new LuckPermsPlaceholderProvider();
+        registerLuckPermsPlaceholders();
+    }
+
+    private static void registerLuckPermsPlaceholders() {
+        if (luckPermsProvider == null || !luckPermsProvider.isAvailable()) return;
+
+        // Register LuckPerms placeholders in both % and < formats
+        // %luckperms_prefix%, %luckperms_suffix%, %luckperms_group%, %luckperms_meta_<key>%
+        registerRawPrefixResolver("luckperms_", (player, key) -> {
+            if (luckPermsProvider != null) {
+                return luckPermsProvider.resolve(player, key);
+            }
+            return "";
+        });
+
+        // <luckperms_prefix>, <luckperms_suffix>, etc.
+        registerAnglePrefixResolver("luckperms_", (player, key) -> {
+            if (luckPermsProvider != null) {
+                return luckPermsProvider.resolve(player, key);
+            }
+            return "";
+        });
     }
 
     private static TagResolver buildCustomTagResolver(Player player) {
@@ -132,14 +157,77 @@ public class PlaceholderManager {
         String raw = applyCustomPlaceholdersOnly(player, input);
         boolean mayHavePapi = raw.indexOf('%') >= 0;
         if (papiProvider instanceof PAPIProxyBridgeProvider papi && papi.isAvailable() && player != null && mayHavePapi) {
-            return papi.formatComponentAsync(player, raw).thenApply(comp -> {
-                // Serialize PAPI-resolved component back to MiniMessage so we can still resolve MiniPlaceholders tags
-                String serialized = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().serialize(comp);
-                String replaced = replaceAnglePlaceholders(player, serialized);
-                return Message.convert(replaced);
+            return papi.formatPlaceholdersAsync(player, raw).thenApply(resolved -> {
+                // Now we have PAPI placeholders resolved to raw strings (e.g. &aAdmin)
+                // Replace our custom angle placeholders before parsing
+                String replaced = replaceAnglePlaceholders(player, resolved);
+                // Convert to component - this handles both legacy and MiniMessage
+                return convertMixed(replaced);
             });
         }
         return java.util.concurrent.CompletableFuture.completedFuture(resolveComponent(player, input));
+    }
+
+    // Converts mixed legacy + MiniMessage format
+    private static Component convertMixed(String input) {
+        if (input == null || input.isEmpty()) return Component.empty();
+
+        // Check if contains legacy codes from PAPI
+        boolean hasLegacy = input.indexOf('&') >= 0 || input.indexOf('§') >= 0;
+
+        if (hasLegacy) {
+            // Use MiniMessage with legacy tag resolver to parse both formats
+            // This allows MiniMessage tags like <dark_gray> to work alongside legacy &a codes
+            net.kyori.adventure.text.minimessage.MiniMessage mm = net.kyori.adventure.text.minimessage.MiniMessage.builder()
+                    .tags(net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.resolver(
+                            net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.standard(),
+                            net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.builder()
+                                    .resolver(net.kyori.adventure.text.minimessage.tag.standard.StandardTags.color())
+                                    .resolver(net.kyori.adventure.text.minimessage.tag.standard.StandardTags.decorations())
+                                    .build()
+                    ))
+                    .build();
+
+            // Pre-process: convert legacy codes to MiniMessage equivalents
+            String processed = convertLegacyToMiniMessage(input);
+            return mm.deserialize(processed);
+        }
+
+        return Message.convert(input);
+    }
+
+    // Convert legacy color codes to MiniMessage format
+    private static String convertLegacyToMiniMessage(String input) {
+        if (input == null) return null;
+
+        // Replace common legacy codes with MiniMessage equivalents
+        // but preserve existing MiniMessage tags
+        String result = input
+                .replace("§", "&") // Normalize to &
+                .replaceAll("&0(?![>])", "<black>")
+                .replaceAll("&1(?![>])", "<dark_blue>")
+                .replaceAll("&2(?![>])", "<dark_green>")
+                .replaceAll("&3(?![>])", "<dark_aqua>")
+                .replaceAll("&4(?![>])", "<dark_red>")
+                .replaceAll("&5(?![>])", "<dark_purple>")
+                .replaceAll("&6(?![>])", "<gold>")
+                .replaceAll("&7(?![>])", "<gray>")
+                .replaceAll("&8(?![>])", "<dark_gray>")
+                .replaceAll("&9(?![>])", "<blue>")
+                .replaceAll("&a(?![>])", "<green>")
+                .replaceAll("&b(?![>])", "<aqua>")
+                .replaceAll("&c(?![>])", "<red>")
+                .replaceAll("&d(?![>])", "<light_purple>")
+                .replaceAll("&e(?![>])", "<yellow>")
+                .replaceAll("&f(?![>])", "<white>")
+                .replaceAll("&k(?![>])", "<obfuscated>")
+                .replaceAll("&l(?![>])", "<bold>")
+                .replaceAll("&m(?![>])", "<strikethrough>")
+                .replaceAll("&n(?![>])", "<underlined>")
+                .replaceAll("&o(?![>])", "<italic>")
+                .replaceAll("&r(?![>])", "<reset>");
+
+        return result;
     }
 
     private static String replaceAnglePlaceholders(Player player, String input) {
@@ -150,9 +238,10 @@ public class PlaceholderManager {
             return fn != null ? java.util.Optional.ofNullable(fn.apply(player)).orElse("") : "";
         };
         // replace standard keys and namespaced variants
+        // use exact match replacement to avoid breaking MiniMessage tags
         for (String key : custom.keySet()) {
-            out = out.replace("<" + key + ">", val.apply(key));
-            out = out.replace("<tensa_" + key + ">", val.apply(key));
+            out = replaceExactTag(out, key, val.apply(key));
+            out = replaceExactTag(out, "tensa_" + key, val.apply(key));
         }
         // replace registered angle prefix placeholders, e.g. <meta_key>
         for (Map.Entry<String, BiFunction<Player, String, String>> e : anglePrefixResolvers.entrySet()) {
@@ -163,19 +252,30 @@ public class PlaceholderManager {
         return out;
     }
 
+    private static String replaceExactTag(String input, String tagName, String replacement) {
+        if (input == null || tagName == null || replacement == null) return input;
+        String tag = "<" + tagName + ">";
+        if (!input.contains(tag)) return input;
+        return input.replace(tag, replacement);
+    }
+
     private static String replacePattern(String input, String prefix, String suffix, java.util.function.Function<String, String> resolver) {
-        String out = input;
+        if (input == null || input.isEmpty()) return input;
+        StringBuilder out = new StringBuilder();
         int idx = 0;
-        while ((idx = out.indexOf(prefix, idx)) >= 0) {
-            int end = out.indexOf(suffix, idx + prefix.length());
+        int lastEnd = 0;
+        while ((idx = input.indexOf(prefix, idx)) >= 0) {
+            int end = input.indexOf(suffix, idx + prefix.length());
             if (end < 0) break;
-            String token = out.substring(idx, end + suffix.length());
-            String key = out.substring(idx + prefix.length(), end);
+            String key = input.substring(idx + prefix.length(), end);
             String val = resolver.apply(key);
-            out = out.replace(token, val);
-            idx += val.length();
+            out.append(input, lastEnd, idx);
+            out.append(val);
+            lastEnd = end + suffix.length();
+            idx = lastEnd;
         }
-        return out;
+        out.append(input.substring(lastEnd));
+        return out.toString();
     }
 
     private static String applyCustomPlaceholdersOnly(Player player, String input) {

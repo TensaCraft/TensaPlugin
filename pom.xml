@@ -69,6 +69,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- LuckPerms API (provided; installed on proxy) -->
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.5</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Netty залежності -->
         <dependency>
             <groupId>io.netty</groupId>
