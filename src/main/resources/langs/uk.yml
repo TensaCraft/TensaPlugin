@@ -23,12 +23,8 @@ rcon_connect_notify: "<green>Rcon з`єднання з:</green> <gray>[</gray><d
 rcon_usage: "<gold>Використання:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>"
 rcon_empty_command: "<gold>Команда порожня!</gold>"
 rcon_invalid_command_or_server: "<gold>Недійсна команда або ім`я сервера</gold>"
-rcon_response: "<gold>{server}</gold>: <green>{response}</green>"
+rcon_response: "<dark_gray>[</dark_gray><gold>{server}</gold><dark_gray>]</dark_gray> <white>{response}</white>"
 rcon_response_empty: "<gray>Немає відповіді від сервера</gray>"
-
-# Bash Module
-
-# Php Module
 
 # PlayerTime Module
 player_time_usage: "<gold>Використання:</gold> <yellow>tptime</yellow> <gray>[Player]</gray>"

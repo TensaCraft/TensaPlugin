@@ -196,38 +196,52 @@ public class PlaceholderManager {
         return Message.convert(input);
     }
 
-    // Convert legacy color codes to MiniMessage format
+    // Cached pattern and map for legacy color code conversion
+    private static final java.util.regex.Pattern LEGACY_COLOR_PATTERN =
+        java.util.regex.Pattern.compile("&([0-9a-fk-or])(?![>])");
+
+    private static final Map<Character, String> LEGACY_TO_MINIMESSAGE = Map.ofEntries(
+        Map.entry('0', "<black>"),
+        Map.entry('1', "<dark_blue>"),
+        Map.entry('2', "<dark_green>"),
+        Map.entry('3', "<dark_aqua>"),
+        Map.entry('4', "<dark_red>"),
+        Map.entry('5', "<dark_purple>"),
+        Map.entry('6', "<gold>"),
+        Map.entry('7', "<gray>"),
+        Map.entry('8', "<dark_gray>"),
+        Map.entry('9', "<blue>"),
+        Map.entry('a', "<green>"),
+        Map.entry('b', "<aqua>"),
+        Map.entry('c', "<red>"),
+        Map.entry('d', "<light_purple>"),
+        Map.entry('e', "<yellow>"),
+        Map.entry('f', "<white>"),
+        Map.entry('k', "<obfuscated>"),
+        Map.entry('l', "<bold>"),
+        Map.entry('m', "<strikethrough>"),
+        Map.entry('n', "<underlined>"),
+        Map.entry('o', "<italic>"),
+        Map.entry('r', "<reset>")
+    );
+
+    // Convert legacy color codes to MiniMessage format using single-pass regex
     private static String convertLegacyToMiniMessage(String input) {
         if (input == null) return null;
 
-        // Replace common legacy codes with MiniMessage equivalents
-        // but preserve existing MiniMessage tags
-        String result = input
-                .replace("§", "&") // Normalize to &
-                .replaceAll("&0(?![>])", "<black>")
-                .replaceAll("&1(?![>])", "<dark_blue>")
-                .replaceAll("&2(?![>])", "<dark_green>")
-                .replaceAll("&3(?![>])", "<dark_aqua>")
-                .replaceAll("&4(?![>])", "<dark_red>")
-                .replaceAll("&5(?![>])", "<dark_purple>")
-                .replaceAll("&6(?![>])", "<gold>")
-                .replaceAll("&7(?![>])", "<gray>")
-                .replaceAll("&8(?![>])", "<dark_gray>")
-                .replaceAll("&9(?![>])", "<blue>")
-                .replaceAll("&a(?![>])", "<green>")
-                .replaceAll("&b(?![>])", "<aqua>")
-                .replaceAll("&c(?![>])", "<red>")
-                .replaceAll("&d(?![>])", "<light_purple>")
-                .replaceAll("&e(?![>])", "<yellow>")
-                .replaceAll("&f(?![>])", "<white>")
-                .replaceAll("&k(?![>])", "<obfuscated>")
-                .replaceAll("&l(?![>])", "<bold>")
-                .replaceAll("&m(?![>])", "<strikethrough>")
-                .replaceAll("&n(?![>])", "<underlined>")
-                .replaceAll("&o(?![>])", "<italic>")
-                .replaceAll("&r(?![>])", "<reset>");
+        input = input.replace("§", "&");
 
-        return result;
+        java.util.regex.Matcher matcher = LEGACY_COLOR_PATTERN.matcher(input);
+        StringBuilder result = new StringBuilder();
+
+        while (matcher.find()) {
+            char code = matcher.group(1).charAt(0);
+            String replacement = LEGACY_TO_MINIMESSAGE.getOrDefault(code, matcher.group(0));
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(result);
+
+        return result.toString();
     }
 
     private static String replaceAnglePlaceholders(Player player, String input) {

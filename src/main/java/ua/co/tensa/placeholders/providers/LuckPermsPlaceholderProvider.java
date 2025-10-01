@@ -22,7 +22,7 @@ public class LuckPermsPlaceholderProvider {
     public LuckPermsPlaceholderProvider() {
         try {
             api = LuckPermsProvider.get();
-            Message.info("LuckPerms API detected - placeholders enabled");
+            Message.placeholder("REGISTERED", "LuckPerms API");
         } catch (Throwable e) {
             api = null;
             // Keep silent to avoid noise
@@ -67,7 +67,7 @@ public class LuckPermsPlaceholderProvider {
                     return "";
             }
         } catch (Throwable e) {
-            Message.warn("LuckPerms resolve failed for " + placeholder + ": " + e.getMessage());
+            Message.placeholder("RESOLVE ERROR", "LuckPerms[" + placeholder + "] → " + e.getMessage());
             return "";
         }
     }

@@ -20,7 +20,7 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
         try {
             // Per README: PlaceholderAPI.createInstance() / formatPlaceholders(...)
             apiInstance = net.william278.papiproxybridge.api.PlaceholderAPI.createInstance();
-            Message.info("PAPIProxyBridge: API detected (net.william278.papiproxybridge.api.PlaceholderAPI)");
+            Message.placeholder("REGISTERED", "PAPIProxyBridge API");
         } catch (Throwable e) {
             apiInstance = null;
             // keep silent to avoid noise; availability will be false
@@ -42,7 +42,7 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
             // Non-blocking in main usage; here we best-effort with minimal wait
             return fut.getNow(input);
         } catch (Throwable e) {
-            Message.warn("PAPIProxyBridge resolve failed: " + e.getMessage());
+            Message.placeholder("RESOLVE ERROR", "PAPIProxyBridge → " + e.getMessage());
             return input;
         }
     }
@@ -58,7 +58,7 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
             CompletableFuture<Component> fut = apiInstance.formatComponentPlaceholders(input, uuid);
             return fut.getNow(Message.convert(input));
         } catch (Throwable e) {
-            Message.warn("PAPIProxyBridge component resolve failed: " + e.getMessage());
+            Message.placeholder("COMPONENT ERROR", "PAPIProxyBridge → " + e.getMessage());
             return Message.convert(input);
         }
     }
@@ -69,7 +69,7 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
         try {
             return apiInstance.formatPlaceholders(input, player.getUniqueId());
         } catch (Throwable e) {
-            Message.warn("PAPIProxyBridge resolve failed: " + e.getMessage());
+            Message.placeholder("ASYNC ERROR", "PAPIProxyBridge → " + e.getMessage());
             return CompletableFuture.completedFuture(input);
         }
     }
@@ -79,7 +79,7 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
         try {
             return apiInstance.formatComponentPlaceholders(input, player.getUniqueId());
         } catch (Throwable e) {
-            Message.warn("PAPIProxyBridge component resolve failed: " + e.getMessage());
+            Message.placeholder("ASYNC COMPONENT ERROR", "PAPIProxyBridge → " + e.getMessage());
             return CompletableFuture.completedFuture(Message.convert(input));
         }
     }

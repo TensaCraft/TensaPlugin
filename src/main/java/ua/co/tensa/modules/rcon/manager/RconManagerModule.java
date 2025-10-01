@@ -16,7 +16,7 @@ public class RconManagerModule {
                 RconManagerConfig.get().reloadCfg();
                 ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "trcon", new RconManagerCommand());
             } catch (Exception e) {
-                ua.co.tensa.Message.error("RconManager onEnable failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+                ua.co.tensa.Message.rcon("MANAGER ENABLE FAILED", e.getClass().getSimpleName() + " → " + e.getMessage());
             }
         }
         @Override protected void onReload() { RconManagerConfig.get().reloadCfg(); }

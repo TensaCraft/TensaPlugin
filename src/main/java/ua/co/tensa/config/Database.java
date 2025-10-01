@@ -20,17 +20,16 @@ public class Database {
         String type = Tensa.config.getDatabaseType();
         tablePrefix = Tensa.config.getDatabaseTablePrefix();
 
-        if ("h2".equalsIgnoreCase(type)) {
-            return connectH2();
-        } else {
-            return connectMySQL();
-        }
+        return switch (type.toLowerCase()) {
+            case "h2" -> connectH2();
+            default -> connectMySQL();
+        };
     }
 
     public void close() {
         if (dataSource != null) {
             dataSource.close();
-            Message.info("Database pool closed successfully.");
+            Message.database("POOL CLOSED", "Connection pool shutdown successfully");
             dataSource = null;
         }
     }
@@ -53,11 +52,11 @@ public class Database {
             cfg.setConnectionTimeout(10_000);
             cfg.setIdleTimeout(60_000);
             dataSource = new HikariDataSource(cfg);
-            Message.info("Connection to the H2 database in MySQL mode is successful");
+            Message.database("CONNECTED", "H2 database (MySQL mode) ready");
             enabled = true;
             return true;
         } catch (Exception e) {
-            Message.error("Failed to connect to H2 Database: " + e.getMessage());
+            Message.database("CONNECTION FAILED", "H2 → " + e.getMessage());
             return false;
         }
     }
@@ -127,11 +126,11 @@ public class Database {
             cfg.setIdleTimeout(idleTimeoutMs);
             cfg.setValidationTimeout(5_000);
             dataSource = new HikariDataSource(cfg);
-            Message.info("Connection to the MySQL database is successful");
+            Message.database("CONNECTED", "MySQL database ready");
             enabled = true;
             return true;
         } catch (Exception e) {
-            Message.error("Failed to connect to MySQL: " + e.getMessage());
+            Message.database("CONNECTION FAILED", "MySQL → " + e.getMessage());
             return false;
         }
     }
@@ -158,19 +157,19 @@ public class Database {
             return executor.execute(stmt);
         } catch (SQLException e) {
             if (isConnectionException(e)) {
-                Message.info("Lost DB connection — reconnecting and retrying query");
+                Message.database("RECONNECTING", "Lost connection, attempting to reconnect");
                 if (connect()) {
                     try (Connection conn2 = dataSource.getConnection();
                          PreparedStatement stmt2 = prepareStatement(conn2, query, parameters)) {
                         return executor.execute(stmt2);
                     } catch (SQLException ex) {
-                        Message.error("Retry failed: " + ex.getMessage());
+                        Message.database("RETRY FAILED", ex.getMessage());
                     }
                 } else {
-                    Message.error("Reconnect attempt failed");
+                    Message.database("RECONNECT FAILED", "Unable to re-establish connection");
                 }
             } else {
-                Message.error(e.getMessage());
+                Message.database("QUERY ERROR", e.getMessage());
             }
         }
         return null;
@@ -290,7 +289,7 @@ public class Database {
                 return tables.next();
             }
         } catch (SQLException e) {
-            Message.error(e.getMessage());
+            Message.database("TABLE CHECK FAILED", e.getMessage());
             return false;
         }
     }

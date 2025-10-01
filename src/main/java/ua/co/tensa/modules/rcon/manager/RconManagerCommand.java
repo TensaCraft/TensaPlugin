@@ -43,7 +43,7 @@ public class RconManagerCommand implements SimpleCommand {
                 Message.sendLang(sender, Lang.rcon_manager_reload);
             } catch (Exception e) {
                 Message.sendLang(sender, Lang.unknown_error);
-                Message.error("RconManager reload failed: " + e.getMessage());
+                Message.rcon("RELOAD FAILED", e.getMessage());
             }
             return;
         }
@@ -60,7 +60,7 @@ public class RconManagerCommand implements SimpleCommand {
         } else if (RconManagerModule.serverIs(server)) {
             executeCommandForServer(invocation, command, sender, server);
         } else {
-            Message.warn("RCON server not found in config: '" + server + "'");
+            Message.rcon("SERVER NOT FOUND", "'" + server + "' not in config");
         }
 	}
 
@@ -132,14 +132,18 @@ public class RconManagerCommand implements SimpleCommand {
 			String result = rcon.command(command.trim());
 			rcon.disconnect(); // Close connection after command
 
-        // Avoid logging result to console to reduce spam
-
 			if (result.isEmpty()) {
 				result = Lang.rcon_response_empty.getClean();
+			} else {
+				// Strip MiniMessage and legacy color codes from server response
+				result = stripFormattingCodes(result);
 			}
 
-        // Always inform the invoker, including console
-        Message.sendLang(sender, Lang.rcon_response, "{server}", Util.capitalize(server), "{response}", result);
+			// Format multi-line responses with proper indentation
+			result = formatMultilineResponse(result);
+
+			// Always inform the invoker, including console
+			Message.sendLang(sender, Lang.rcon_response, "{server}", Util.capitalize(server), "{response}", result);
         } catch (UnknownHostException e) {
             Message.sendLang(sender, Lang.rcon_unknown_error, "{server}", Util.capitalize(server));
         } catch (IOException e) {
@@ -150,16 +154,56 @@ public class RconManagerCommand implements SimpleCommand {
             // Catch any other exceptions
             Message.sendLang(sender, Lang.unknown_error);
             // For debugging - log detailed errors:
-            Message.error("RCON error for server " + server + ": " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            Message.rcon("COMMAND ERROR", server + " → " + e.getClass().getSimpleName() + ": " + e.getMessage());
         }
 	}
 
 	private String buildCommand(String[] args, String server) {
-		StringBuilder sb = new StringBuilder();
-		for (int i = 1; i < args.length; i++) {
-			sb.append(args[i]).append(" ");
+		if (args.length <= 1) return "";
+		return String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+	}
+
+	// Cached patterns for better performance
+	private static final java.util.regex.Pattern HEX_COLOR_PATTERN =
+		java.util.regex.Pattern.compile("[§&]x(?:[§&][0-9a-fA-F]){6}");
+	private static final java.util.regex.Pattern LEGACY_COLOR_PATTERN =
+		java.util.regex.Pattern.compile("[§&][0-9a-fk-orA-FK-OR]");
+	private static final java.util.regex.Pattern MINIMESSAGE_TAG_PATTERN =
+		java.util.regex.Pattern.compile("<[^>]*>");
+	private static final java.util.regex.Pattern EMPTY_LINES_PATTERN =
+		java.util.regex.Pattern.compile("(?m)^\\s*$\\n");
+	private static final java.util.regex.Pattern MULTIPLE_SPACES_PATTERN =
+		java.util.regex.Pattern.compile(" {2,}");
+
+	private String stripFormattingCodes(String input) {
+		if (input == null || input.isEmpty()) return "";
+
+		// Use cached patterns for better performance
+		String result = HEX_COLOR_PATTERN.matcher(input).replaceAll("");
+		result = LEGACY_COLOR_PATTERN.matcher(result).replaceAll("");
+		result = MINIMESSAGE_TAG_PATTERN.matcher(result).replaceAll("");
+		result = EMPTY_LINES_PATTERN.matcher(result).replaceAll("");
+		result = MULTIPLE_SPACES_PATTERN.matcher(result).replaceAll(" ");
+
+		return result.trim();
+	}
+
+	private String formatMultilineResponse(String input) {
+		if (input == null || input.isEmpty()) return "";
+
+		String[] lines = input.split("\n");
+		if (lines.length == 1) return input;
+
+		StringBuilder formatted = new StringBuilder();
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i].trim();
+			if (!line.isEmpty()) {
+				if (i > 0) formatted.append("\n  "); // Indent continuation lines
+				formatted.append(line);
+			}
 		}
-		return sb.toString().trim();
+
+		return formatted.toString();
 	}
 
 }

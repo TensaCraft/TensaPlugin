@@ -84,20 +84,20 @@ public class RconServerModule {
             ChannelFuture future = rconServer.bind(address).syncUninterruptibly();
             Channel channel = future.channel();
             if (channel != null && channel.isActive()) {
-                ua.co.tensa.Message.info("Binding rcon to address: " + address.getHostName() + ":" + address.getPort());
+                ua.co.tensa.Message.rcon("BOUND", address.getHostName() + ":" + address.getPort());
             } else {
-                ua.co.tensa.Message.warn("Failed to bind RCON to " + address.getHostName() + ":" + address.getPort());
+                ua.co.tensa.Message.rcon("BIND FAILED", address.getHostName() + ":" + address.getPort());
                 stopRconListener();
             }
         } catch (Throwable t) {
-            ua.co.tensa.Message.error("RCON bind error: " + t.getMessage());
+            ua.co.tensa.Message.rcon("BIND ERROR", t.getMessage());
             stopRconListener();
         }
     }
 
 	private static void stopRconListener() {
 		if (rconServer != null) {
-			ua.co.tensa.Message.info("Trying to stop RCON listener");
+			ua.co.tensa.Message.rcon("STOPPING", "Shutting down RCON listener");
 			rconServer.shutdown();
 		}
 	}

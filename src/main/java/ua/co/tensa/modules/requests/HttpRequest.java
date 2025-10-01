@@ -51,20 +51,23 @@ public class HttpRequest {
             while (attempts < 2) { // 1 retry on failure
                 attempts++;
                 try {
-                    if (method.equalsIgnoreCase("POST")) {
-                        HttpPost httpPost = new HttpPost(url);
-                        httpPost.setHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-                        httpPost.setEntity(new UrlEncodedFormEntity(getParamsList(), "UTF-8"));
-                        try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
-                            return processResponse(response);
+                    return switch (method.toUpperCase()) {
+                        case "POST" -> {
+                            HttpPost httpPost = new HttpPost(url);
+                            httpPost.setHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+                            httpPost.setEntity(new UrlEncodedFormEntity(getParamsList(), "UTF-8"));
+                            try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
+                                yield processResponse(response);
+                            }
                         }
-                    } else if (method.equalsIgnoreCase("GET")) {
-                        HttpGet httpGet = new HttpGet(getUrlWithParams());
-                        try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
-                            return processResponse(response);
+                        case "GET" -> {
+                            HttpGet httpGet = new HttpGet(getUrlWithParams());
+                            try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
+                                yield processResponse(response);
+                            }
                         }
-                    }
-                    break;
+                        default -> null;
+                    };
                 } catch (Exception e) {
                     last = e;
                     // if first attempt fails, loop will retry once
@@ -98,21 +101,20 @@ public class HttpRequest {
 	private JsonElement processResponse(CloseableHttpResponse httpResponse) throws Exception {
 		int status = httpResponse.getStatusLine().getStatusCode();
 		HttpEntity entity = httpResponse.getEntity();
-		if (entity != null) {
-			String result = EntityUtils.toString(entity);
-			try {
-				JsonElement jsonElement = JsonParser.parseString(result);
-                Message.info("Request was successful. Method: " + method + ". URL: " + url);
-				return jsonElement;
-			} catch (JsonSyntaxException ex) {
-                    if (status == 200) {
-                        Message.warn("The response is not a valid JSON. Method: " + method + ". URL: " + url);
-                    } else {
-                        Message.error("Request failed with status code: " + status + ". \nMethod: " + method + ". \nURL: " + url + ". Response: \n" + result);
-                    }
-				return null;
+		if (entity == null) return null;
+
+		String result = EntityUtils.toString(entity);
+		try {
+			JsonElement jsonElement = JsonParser.parseString(result);
+			Message.info("HTTP " + method + " → " + url + " [" + status + "]");
+			return jsonElement;
+		} catch (JsonSyntaxException ex) {
+			if (status == 200) {
+				Message.warn("HTTP " + method + " → Non-JSON response from " + url);
+			} else {
+				Message.error("HTTP " + method + " → Failed [" + status + "] " + url + "\nResponse: " + result);
 			}
+			return null;
 		}
-		return null;
 	}
 }

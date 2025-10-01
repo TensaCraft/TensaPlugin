@@ -111,7 +111,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
             } catch (Exception e) {
                 // Only log exceptions if error logging is enabled
                 if (RconServerModule.isErrorLoggingEnabled()) {
-                    ua.co.tensa.Message.error(e.getMessage());
+                    ua.co.tensa.Message.rcon("EXECUTION ERROR", e.getMessage());
                 }
 				success = false;
 				message = Lang.unknown_error.getClean();
@@ -178,7 +178,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
         if (cause instanceof java.net.SocketException && "Connection reset".equalsIgnoreCase(cause.getMessage())) {
             // Common when remote closes abruptly; suppress noisy stacktrace
         } else {
-            ua.co.tensa.Message.warn("RCON pipeline error: " + cause.getMessage());
+            ua.co.tensa.Message.rcon("PIPELINE ERROR", cause.getMessage());
         }
         try { ctx.close(); } catch (Throwable ignored) {}
     }

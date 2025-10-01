@@ -12,6 +12,12 @@ public class DatabaseInitializer {
 //        createPlayerTimeTable();
     }
     public void createPlayerTimeTable() {
-        database.createTableAsync("player_times", "id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(255), uuid VARCHAR(255), play_time BIGINT");
+        String sql = """
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(255),
+            uuid VARCHAR(255),
+            play_time BIGINT
+            """;
+        database.createTableAsync("player_times", sql);
     }
 }

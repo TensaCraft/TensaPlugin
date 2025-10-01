@@ -86,9 +86,10 @@ public class RequestsModule {
 		for (YamlConfiguration config : configs) {
 			List<String> triggers = config.getStringList("triggers");
 			for (String trigger : triggers) {
-				Map<String, String> map = new HashMap<>();
-				map.put("trigger", trigger);
-				map.put("file", FILE_NAMES.getOrDefault(config, "unknown"));
+				Map<String, String> map = Map.of(
+					"trigger", trigger,
+					"file", FILE_NAMES.getOrDefault(config, "unknown")
+				);
 				result.add(map);
 			}
 		}
