@@ -9,6 +9,11 @@ import ua.co.tensa.config.Lang;
 
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
@@ -16,6 +21,13 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	private static final byte TYPE_RESPONSE = 0;
 	private static final byte TYPE_COMMAND = 2;
 	private static final byte TYPE_LOGIN = 3;
+
+	// Rate limiting: track failed login attempts per IP
+	private static final Map<String, AtomicInteger> failedAttempts = new ConcurrentHashMap<>();
+	private static final Map<String, AtomicLong> lastAttemptTime = new ConcurrentHashMap<>();
+	private static final int MAX_FAILED_ATTEMPTS = 3;
+	private static final long RATE_LIMIT_WINDOW_MS = 5000; // 5 seconds
+	private static final long BLOCK_DURATION_MS = 300000; // 5 minutes
 
 	private final String password;
 
@@ -58,14 +70,55 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	}
 
     private void handleLogin(ChannelHandlerContext ctx, String payload, int requestId) {
+        String remoteAddress = ctx.channel().remoteAddress().toString();
+        long currentTime = System.currentTimeMillis();
+
+        // Check if IP is temporarily blocked
+        AtomicInteger attempts = failedAttempts.get(remoteAddress);
+        AtomicLong lastTime = lastAttemptTime.get(remoteAddress);
+
+        if (attempts != null && lastTime != null) {
+            if (attempts.get() >= MAX_FAILED_ATTEMPTS) {
+                long timeSinceBlock = currentTime - lastTime.get();
+                if (timeSinceBlock < BLOCK_DURATION_MS) {
+                    ua.co.tensa.Message.rcon("LOGIN BLOCKED", remoteAddress + " → Too many failed attempts");
+                    ctx.close();
+                    return;
+                } else {
+                    // Block expired, reset
+                    failedAttempts.remove(remoteAddress);
+                    lastAttemptTime.remove(remoteAddress);
+                }
+            }
+        }
+
+        // Rate limit: max 1 attempt per RATE_LIMIT_WINDOW_MS
+        if (lastTime != null) {
+            long timeSinceLastAttempt = currentTime - lastTime.get();
+            if (timeSinceLastAttempt < RATE_LIMIT_WINDOW_MS) {
+                ua.co.tensa.Message.rcon("RATE LIMITED", remoteAddress + " → Too many requests");
+                ctx.close();
+                return;
+            }
+        }
+
+        lastAttemptTime.put(remoteAddress, new AtomicLong(currentTime));
+
         if (password.equals(payload)) {
             loggedIn = true;
+            // Clear failed attempts on success
+            failedAttempts.remove(remoteAddress);
             // Many RCON clients expect two packets on successful auth:
             // an empty RESPONSE_VALUE followed by AUTH_RESPONSE
             sendResponse(ctx, requestId, TYPE_RESPONSE, "");
             sendResponse(ctx, requestId, TYPE_COMMAND, "");
         } else {
             loggedIn = false;
+            // Increment failed attempts
+            failedAttempts.computeIfAbsent(remoteAddress, k -> new AtomicInteger(0)).incrementAndGet();
+            ua.co.tensa.Message.rcon("AUTH FAILED", remoteAddress + " → Invalid password (attempt " +
+                failedAttempts.get(remoteAddress).get() + "/" + MAX_FAILED_ATTEMPTS + ")");
+
             // Send both empty RESPONSE_VALUE and AUTH_RESPONSE with failure id (-1)
             sendResponse(ctx, FAILURE, TYPE_RESPONSE, "");
             sendResponse(ctx, FAILURE, TYPE_COMMAND, "");

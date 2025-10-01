@@ -18,19 +18,7 @@ import java.util.Map;
 import static ua.co.tensa.Tensa.server;
 
 public class Util {
-    public static class RegisteredCommand {
-        public final String primary;
-        public final String alias;
-        public final String className;
-        public final String module;
-
-        public RegisteredCommand(String primary, String alias, String className, String module) {
-            this.primary = primary;
-            this.alias = alias;
-            this.className = className;
-            this.module = module;
-        }
-    }
+    public record RegisteredCommand(String primary, String alias, String className, String module) {}
 
     private static final java.util.LinkedHashMap<String, RegisteredCommand> REGISTERED = new java.util.LinkedHashMap<>();
 
@@ -112,62 +100,6 @@ public class Util {
         }
     }
 
-    public static Map<String, ScriptsData> getScriptsData(Path dirPath, String isDirFileName) {
-
-        ArrayList<ScriptsData> data = new ArrayList<>();
-        for (String fileName : getScripts(dirPath, true)) {
-            Path itemPath = dirPath.resolve(fileName);
-            String absolutePath;
-            String commandName;
-            String extension;
-
-            if (Files.isDirectory(itemPath)) {
-                commandName = fileName;
-                absolutePath = itemPath.resolve(isDirFileName).toString();
-                if (!Files.exists(Path.of(absolutePath))) {
-                    copyFile(itemPath.toString(), isDirFileName);
-                }
-                extension = getFileExtension(absolutePath);
-                data.add(new ScriptsData(commandName, itemPath.toString(), extension, absolutePath, true));
-            } else {
-                String ext = getFileExtension(fileName);
-                commandName = ext.isEmpty() ? fileName : fileName.substring(0, fileName.length() - (ext.length() + 1));
-                absolutePath = itemPath.toString();
-                extension = ext.isEmpty() ? null : ext;
-                data.add(new ScriptsData(commandName, dirPath.toString(), extension, absolutePath, false));
-            }
-        }
-
-        Map<String, ScriptsData> scriptsData = new HashMap<>();
-        data.forEach(res -> scriptsData.put(res.cmd_name, res));
-        return scriptsData;
-    }
-
-    public static ArrayList<String> getScripts(Path dirPath, boolean exception) {
-        String[] scripts = dirPath.toFile().list();
-        if (scripts == null) {
-            return new ArrayList<>();
-        }
-        if (!exception) {
-            ArrayList<String> args = new ArrayList<>();
-            for (String fileName : scripts) {
-                File file = dirPath.resolve(fileName).toFile();
-                if (file.isDirectory()) {
-                    args.add(fileName);
-                } else {
-                    String ext = getFileExtension(fileName);
-                    String name = ext.isEmpty() ? fileName : fileName.substring(0, fileName.length() - (ext.length() + 1));
-                    args.add(name);
-                }
-            }
-            return args;
-        }
-        return new ArrayList<>(Arrays.asList(scripts));
-    }
-
-    public static ArrayList<String> getScripts(Path dirPath) {
-        return getScripts(dirPath, false);
-    }
 
     public static String getFileExtension(String fileName) {
         if (fileName == null) {
@@ -184,22 +116,5 @@ public class Util {
         return extension;
 
     }
-
-    public static class ScriptsData {
-        public String cmd_name;
-        public String path;
-        public String exception;
-        public String absolutePath;
-        public boolean isDir;
-
-        public ScriptsData(String cmd_name, String path, String exception, String absolutePath, boolean isDir) {
-            this.cmd_name = cmd_name;
-            this.path = path;
-            this.exception = exception;
-            this.absolutePath = absolutePath;
-            this.isDir = isDir;
-        }
-    }
-
 
 }

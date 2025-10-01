@@ -51,8 +51,16 @@ public class RconServer {
 	}
 
     public void shutdown() {
-        try { workerGroup.shutdownGracefully().syncUninterruptibly(); } catch (Throwable ignored) {}
-        try { bossGroup.shutdownGracefully().syncUninterruptibly(); } catch (Throwable ignored) {}
+        try {
+            workerGroup.shutdownGracefully().syncUninterruptibly();
+        } catch (Throwable e) {
+            ua.co.tensa.Message.debug("Worker group shutdown interrupted: " + e.getMessage());
+        }
+        try {
+            bossGroup.shutdownGracefully().syncUninterruptibly();
+        } catch (Throwable e) {
+            ua.co.tensa.Message.debug("Boss group shutdown interrupted: " + e.getMessage());
+        }
     }
 
 	public ProxyServer getServer() {

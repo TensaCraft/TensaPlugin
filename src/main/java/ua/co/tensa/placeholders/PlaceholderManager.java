@@ -332,17 +332,30 @@ public class PlaceholderManager {
 
     private static String replaceDelimited(String input, String prefix, String suffix, Function<String, String> resolver) {
         if (input == null || input.isEmpty()) return input;
-        String out = input;
+
+        // Use StringBuilder for efficient string building
+        StringBuilder result = new StringBuilder(input.length() + 128);
         int idx = 0;
-        while ((idx = out.indexOf(prefix, idx)) >= 0) {
-            int end = out.indexOf(suffix, idx + 1);
+        int lastEnd = 0;
+
+        while ((idx = input.indexOf(prefix, idx)) >= 0) {
+            int end = input.indexOf(suffix, idx + prefix.length());
             if (end < 0) break;
-            String token = out.substring(idx, end + suffix.length());
-            String key = out.substring(idx + prefix.length(), end);
+
+            // Append everything before the placeholder
+            result.append(input, lastEnd, idx);
+
+            // Extract key and resolve value
+            String key = input.substring(idx + prefix.length(), end);
             String val = resolver.apply(key);
-            out = out.replace(token, val);
-            idx += Math.max(1, val.length());
+            result.append(val);
+
+            lastEnd = end + suffix.length();
+            idx = lastEnd;
         }
-        return out;
+
+        // Append remaining text
+        result.append(input.substring(lastEnd));
+        return result.toString();
     }
 }

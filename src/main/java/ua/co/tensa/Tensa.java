@@ -50,7 +50,11 @@ public class Tensa {
         Lang.initialise();
         PlaceholderManager.initialise();
         // Global localization/config init (module configs are handled by modules themselves)
-        try { LangYAML.getInstance().reload(); } catch (Throwable ignored) {}
+        try {
+            LangYAML.getInstance().reload();
+        } catch (Throwable e) {
+            Message.warn("Language file reload failed: " + e.getMessage());
+        }
         Modules.load();
     }
 
@@ -68,5 +72,7 @@ public class Tensa {
         if (database != null) {
             database.close();
         }
+        // Shutdown database executor pool
+        Database.shutdownExecutor();
     }
 }

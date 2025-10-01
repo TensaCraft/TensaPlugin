@@ -35,10 +35,10 @@ public class TensaInfoCommand implements SimpleCommand {
 
         // Commands section (from Util registry), grouped by module
         var cmds = Util.getRegisteredCommands();
-        cmds.sort(Comparator.comparing(c -> c.primary));
+        cmds.sort(Comparator.comparing(Util.RegisteredCommand::primary));
         java.util.Map<String, java.util.List<ua.co.tensa.Util.RegisteredCommand>> byModule = new java.util.LinkedHashMap<>();
         for (var c : cmds) {
-            String module = (c.module == null || c.module.isBlank()) ? "core" : c.module;
+            String module = (c.module() == null || c.module().isBlank()) ? "core" : c.module();
             byModule.computeIfAbsent(module, k -> new java.util.ArrayList<>()).add(c);
         }
         Message.privateMessage(source, "<gold>Commands</gold> <gray>(" + cmds.size() + ")</gray>:");
@@ -46,10 +46,10 @@ public class TensaInfoCommand implements SimpleCommand {
             String mod = entry.getKey();
             var list = entry.getValue();
             Message.privateMessage(source, "<yellow>•</yellow> <white>" + capitalizeWords(mod.replace('-', ' ')) + "</white> <gray>(" + list.size() + ")</gray>");
-            list.sort(Comparator.comparing(c -> c.primary));
+            list.sort(Comparator.comparing(Util.RegisteredCommand::primary));
             for (var c : list) {
-                String primary = c.primary == null ? "" : c.primary.trim();
-                String aliasVal = c.alias == null ? "" : c.alias.trim();
+                String primary = c.primary() == null ? "" : c.primary().trim();
+                String aliasVal = c.alias() == null ? "" : c.alias().trim();
                 boolean showAlias = !aliasVal.isBlank() && !aliasVal.equalsIgnoreCase(primary);
                 if (primary.isBlank()) {
                     // Skip unnamed commands (e.g., chat routes that have no explicit command binding)

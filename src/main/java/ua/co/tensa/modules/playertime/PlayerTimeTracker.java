@@ -27,11 +27,11 @@ public class PlayerTimeTracker {
 
 
     public void playerLeft(UUID playerId) {
-        Long joinTime = playerOnlineTime.get(playerId);
+        // Atomic remove to prevent race condition
+        Long joinTime = playerOnlineTime.remove(playerId);
         if (joinTime != null) {
             long totalTimeOnline = System.currentTimeMillis() - joinTime;
             updatePlayerTimeInDatabase(playerId, totalTimeOnline);
-            playerOnlineTime.remove(playerId);
         }
     }
 
@@ -49,17 +49,30 @@ public class PlayerTimeTracker {
 
     public CompletableFuture<Long> getPlayerTimeByName(String playerName) {
         return database.selectAsync("player_times", "play_time", "name = ?",
-                rs -> rs.next() ? rs.getLong(1) : null,
-                playerName);
+                rs -> rs.next() ? rs.getLong(1) : 0L,
+                playerName)
+            .exceptionally(ex -> {
+                ua.co.tensa.Message.error("Failed to get player time for " + playerName + ": " + ex.getMessage());
+                return 0L;
+            });
     }
 
     public CompletableFuture<Long> getCurrentPlayerTime(UUID playerId) {
         return database.selectAsync("player_times", "play_time", "uuid = ?",
-                rs -> rs.next() ? rs.getLong(1) : null,
-                playerId.toString());
+                rs -> rs.next() ? rs.getLong(1) : 0L,
+                playerId.toString())
+            .exceptionally(ex -> {
+                ua.co.tensa.Message.error("Failed to get player time for " + playerId + ": " + ex.getMessage());
+                return 0L;
+            });
     }
 
     public CompletableFuture<List<PlayerTimeEntry>> getTopPlayers(int limit) {
+        // Validate input to prevent issues
+        if (limit < 1 || limit > 1000) {
+            return CompletableFuture.completedFuture(new ArrayList<>());
+        }
+
         String where = "play_time > 0 ORDER BY play_time DESC LIMIT ?";
         return database.selectAsync("player_times", "name, play_time", where,
                 rs -> {
@@ -68,7 +81,11 @@ public class PlayerTimeTracker {
                         entries.add(new PlayerTimeEntry(rs.getString(1), rs.getLong(2)));
                     }
                     return entries;
-                }, limit);
+                }, limit)
+            .exceptionally(ex -> {
+                ua.co.tensa.Message.error("Failed to get top players: " + ex.getMessage());
+                return new ArrayList<>();
+            });
     }
 
     public void updateAllOnlineTimes() {

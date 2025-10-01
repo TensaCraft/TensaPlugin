@@ -8,6 +8,9 @@ import ua.co.tensa.Tensa;
 import java.math.BigInteger;
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class Database {
 
@@ -15,6 +18,17 @@ public class Database {
     private String tablePrefix;
 
     public boolean enabled = false;
+
+    // Dedicated executor for database operations to prevent blocking ForkJoinPool
+    private static final ExecutorService DB_EXECUTOR = Executors.newFixedThreadPool(
+        Math.max(4, Runtime.getRuntime().availableProcessors()),
+        runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setName("tensa-db-" + thread.getId());
+            thread.setDaemon(true);
+            return thread;
+        }
+    );
 
     public synchronized boolean connect() {
         String type = Tensa.config.getDatabaseType();
@@ -31,6 +45,21 @@ public class Database {
             dataSource.close();
             Message.database("POOL CLOSED", "Connection pool shutdown successfully");
             dataSource = null;
+        }
+    }
+
+    public static void shutdownExecutor() {
+        DB_EXECUTOR.shutdown();
+        try {
+            if (!DB_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+                DB_EXECUTOR.shutdownNow();
+                if (!DB_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+                    Message.database("EXECUTOR SHUTDOWN FAILED", "Database executor did not terminate");
+                }
+            }
+        } catch (InterruptedException e) {
+            DB_EXECUTOR.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -247,33 +276,33 @@ public class Database {
     }
 
     public void createTableAsync(String tableName, String columns) {
-        CompletableFuture.supplyAsync(() -> createTable(tableName, columns));
+        CompletableFuture.supplyAsync(() -> createTable(tableName, columns), DB_EXECUTOR);
     }
 
     public void insertAsync(String tableName, String columns, Object... values) {
-        CompletableFuture.supplyAsync(() -> insert(tableName, columns, castValuesToLong(values)));
+        CompletableFuture.supplyAsync(() -> insert(tableName, columns, castValuesToLong(values)), DB_EXECUTOR);
     }
 
     public void updateAsync(String tableName, String set, String where, Object... values) {
-        CompletableFuture.supplyAsync(() -> update(tableName, set, where, castValuesToLong(values)));
+        CompletableFuture.supplyAsync(() -> update(tableName, set, where, castValuesToLong(values)), DB_EXECUTOR);
     }
 
     public CompletableFuture<Boolean> deleteAsync(String tableName, String where, Object... values) {
-        return CompletableFuture.supplyAsync(() -> delete(tableName, where, castValuesToLong(values)));
+        return CompletableFuture.supplyAsync(() -> delete(tableName, where, castValuesToLong(values)), DB_EXECUTOR);
     }
 
     public <T> CompletableFuture<T> selectAsync(String tableName, String columns, String where, ResultSetHandler<T> handler, Object... values) {
         Object[] params = castValuesToLong(values);
-        return CompletableFuture.supplyAsync(() -> executeQuery(constructSelectQuery(tableName, columns, where), params, handler));
+        return CompletableFuture.supplyAsync(() -> executeQuery(constructSelectQuery(tableName, columns, where), params, handler), DB_EXECUTOR);
     }
 
     public <T> CompletableFuture<T> executeQueryAsync(String query, ResultSetHandler<T> handler, Object... parameters) {
         Object[] params = castValuesToLong(parameters);
-        return CompletableFuture.supplyAsync(() -> executeQuery(query, params, handler));
+        return CompletableFuture.supplyAsync(() -> executeQuery(query, params, handler), DB_EXECUTOR);
     }
 
     public CompletableFuture<Boolean> executeUpdateAsync(String query, Object... parameters) {
-        return CompletableFuture.supplyAsync(() -> executeUpdateSync(query, castValuesToLong(parameters)));
+        return CompletableFuture.supplyAsync(() -> executeUpdateSync(query, castValuesToLong(parameters)), DB_EXECUTOR);
     }
 
     public boolean exists(String tableName, String where, Object... values) {
