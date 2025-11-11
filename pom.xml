@@ -27,7 +27,7 @@
 
         <!-- Dependency versions -->
         <velocity.api.version>3.4.0-SNAPSHOT</velocity.api.version>
-        <netty.version>4.1.115.Final</netty.version>
+        <netty.version>4.1.125.Final</netty.version>
         <simple.yaml.version>1.8.4</simple.yaml.version>
         <mariadb.version>3.3.1</mariadb.version>
         <h2.version>2.2.224</h2.version>
