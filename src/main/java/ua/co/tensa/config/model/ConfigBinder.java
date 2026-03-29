@@ -43,6 +43,9 @@ final class ConfigBinder {
                 if (!allow) continue;
 
                 if (def instanceof java.util.Map<?,?> map) {
+                    if (!k.comment().isBlank()) {
+                        yaml.setComment(base, k.comment());
+                    }
                     // write nested keys recursively
                     writeMapDefaults(yaml, base, map);
                 } else {

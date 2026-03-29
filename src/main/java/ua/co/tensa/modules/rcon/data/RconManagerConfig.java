@@ -9,10 +9,10 @@ import java.util.*;
 public class RconManagerConfig extends ConfigBase {
     private static RconManagerConfig instance;
 
-    @CfgKey("servers")
+    @CfgKey(value = "servers", comment = "Named RCON targets. Each server entry may contain ip, port and pass")
     public Map<String, Object> servers = new LinkedHashMap<>();
 
-    @CfgKey("tab-complete-list")
+    @CfgKey(value = "tab-complete-list", comment = "Extra server aliases suggested in command tab completion")
     public List<String> tabComplete = new ArrayList<>();
 
     private RconManagerConfig() { super("rcon/rcon-manager.yml"); }

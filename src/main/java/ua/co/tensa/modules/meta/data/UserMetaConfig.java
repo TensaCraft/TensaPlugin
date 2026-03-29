@@ -9,13 +9,13 @@ import ua.co.tensa.config.model.ann.CfgKey;
 public class UserMetaConfig extends ConfigBase {
     private static UserMetaConfig instance;
 
-    @CfgKey("storage.type")
+    @CfgKey(value = "storage.type", comment = "Storage backend for user meta: database, file or memory")
     public String storageType = "database"; // database | file | memory
 
-    @CfgKey("storage.file")
+    @CfgKey(value = "storage.file", comment = "Relative file path used when storage.type = file")
     public String storageFile = "user_meta/data.yml";
 
-    @CfgKey("default_persist")
+    @CfgKey(value = "default_persist", comment = "Persist values by default unless a command overrides it")
     public boolean defaultPersist = true;
 
     private UserMetaConfig() {

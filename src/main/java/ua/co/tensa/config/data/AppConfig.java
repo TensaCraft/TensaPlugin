@@ -17,42 +17,42 @@ import java.util.Map;
 public class AppConfig extends ConfigBase {
 
     // General
-    @CfgKey(value = "language", comment = "Default language file under /lang")
+    @CfgKey(value = "language", comment = "Default language file under /langs")
     public String language = "en";
 
     @CfgKey(value = "use_uuid", comment = "Use UUID instead of name for player data")
     public boolean useUuid = false;
 
     // Modules section as deep map
-    @CfgKey("modules")
+    @CfgKey(value = "modules", comment = "Enable or disable individual Tensa modules by id")
     public Map<String, Object> modules = new LinkedHashMap<>();
 
     // Database
-    @CfgKey("database.enable")
+    @CfgKey(value = "database.enable", comment = "Enable the shared database connection for modules that support it")
     public boolean databaseEnable = false;
 
-    @CfgKey("database.type")
+    @CfgKey(value = "database.type", comment = "Database driver: mysql, mariadb or h2")
     public String databaseType = "mysql";
 
-    @CfgKey("database.name")
+    @CfgKey(value = "database.name", comment = "Database name or H2 file/database id")
     public String databaseName = "server";
 
-    @CfgKey("database.user")
+    @CfgKey(value = "database.user", comment = "Database username")
     public String databaseUser = "root";
 
-    @CfgKey("database.password")
+    @CfgKey(value = "database.password", comment = "Database password")
     public String databasePassword = "password";
 
-    @CfgKey("database.host")
+    @CfgKey(value = "database.host", comment = "Database host")
     public String databaseHost = "localhost";
 
-    @CfgKey("database.port")
+    @CfgKey(value = "database.port", comment = "Database port")
     public int databasePort = 3306;
 
-    @CfgKey("database.use_ssl")
+    @CfgKey(value = "database.use_ssl", comment = "Enable SSL for the database connection when supported")
     public boolean useSsl = false;
 
-    @CfgKey("database.table_prefix")
+    @CfgKey(value = "database.table_prefix", comment = "Prefix added to plugin-managed database tables")
     public String tablePrefix = "tensa_";
 
     @CfgKey(value = "velocity.log_cleanup.enable", comment = "Clean Velocity log files when the plugin starts")
