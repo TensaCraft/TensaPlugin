@@ -15,6 +15,9 @@ import java.util.concurrent.CompletableFuture;
 
 public class ChatCommands implements SimpleCommand {
 
+    public record ChatRoute(String key, boolean privateRoute) {
+    }
+
     // Access chats.yml via section maps
     private static YamlAdapter chatCfg = ChatConfig.get().adapter();
 
@@ -133,6 +136,27 @@ public class ChatCommands implements SimpleCommand {
         }
     }
 
+    public static ChatRoute findRoute(String command) {
+        String normalized = normalizeCmd(command);
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+
+        for (String key : chatCfg.getKeys(false)) {
+            Map<String, Object> sec = chatCfg.getSection(key);
+            if (sec == null || sec.isEmpty()) continue;
+            if (!secBool(sec, "enabled", true)) continue;
+
+            List<String> cmds = secCommands(sec);
+            if (!cmds.contains(normalized)) continue;
+
+            String type = secString(sec, "type", "public");
+            return new ChatRoute(key, "private".equalsIgnoreCase(type));
+        }
+
+        return null;
+    }
+
     /**
      * Command execution entry-point.
      */
@@ -183,12 +207,11 @@ public class ChatCommands implements SimpleCommand {
         }
 
         String targetName = invocation.arguments()[0];
-        Optional<Player> opt = Tensa.server.getPlayer(targetName);
-        if (opt.isEmpty()) {
+        Player target = Tensa.server.getPlayer(targetName).orElse(null);
+        if (target == null) {
             Message.sendLang(sender, Lang.player_not_found, "{player}", targetName);
             return;
         }
-        Player target = opt.get();
 
         String[] args = invocation.arguments();
         String msg = (args.length <= 1) ? "" : String.join(" ", Arrays.copyOfRange(args, 1, args.length));

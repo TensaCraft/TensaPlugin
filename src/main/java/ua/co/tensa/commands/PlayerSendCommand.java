@@ -28,26 +28,28 @@ public class PlayerSendCommand implements SimpleCommand {
         }
 
         Optional<RegisteredServer> toServer = Tensa.server.getServer(args[1]);
-        if (toServer.isEmpty()) {
+        RegisteredServer destination = toServer.orElse(null);
+        if (destination == null) {
             Message.sendLang(source, Lang.server_not_found, "{server}", args[1]);
             return;
         }
 
         if (args[0].equals("all")) {
             for (Player p : Tensa.server.getAllPlayers()) {
-                p.createConnectionRequest(toServer.get()).fireAndForget();
+                p.createConnectionRequest(destination).fireAndForget();
             }
             Message.sendLang(source, Lang.send_success, "{player}", "all", "{server}", args[1]);
             return;
         }
 
         Optional<Player> player = Tensa.server.getPlayer(args[0]);
-        if (player.isEmpty()) {
+        Player target = player.orElse(null);
+        if (target == null) {
             Message.sendLang(source, Lang.player_not_found, "{player}", args[0]);
             return;
         }
 
-        player.get().createConnectionRequest(toServer.get()).fireAndForget();
+        target.createConnectionRequest(destination).fireAndForget();
         Message.sendLang(source, Lang.send_success, "{player}", args[0], "{server}", args[1]);
     }
 

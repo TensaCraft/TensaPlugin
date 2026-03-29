@@ -42,6 +42,7 @@ public class RconCommandSource implements CommandSource {
 	}
 
 	@Override
+	@SuppressWarnings("deprecation")
 	public void sendMessage(@NotNull Identity source, @NotNull Component message) {
 		addToBuffer(message);
 	}

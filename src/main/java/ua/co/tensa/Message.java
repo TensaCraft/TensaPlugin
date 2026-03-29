@@ -5,14 +5,15 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.placeholders.PlaceholderManager;
+
+import java.util.Map;
 
 
 public class Message {
     // Hardcoded console prefix - used for ALL console messages
-    private static final String CONSOLE_PREFIX = "<white>[<dark_aqua><bold>TENSA</bold></dark_aqua>]</white> <gray>";
+    private static final String CONSOLE_PREFIX = "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>";
 
     // Category prefixes for structured logging
     private static final String PREFIX_INFO = CONSOLE_PREFIX + "<white>[INFO]</white> <gray>";
@@ -28,7 +29,32 @@ public class Message {
     private static final String PREFIX_RCON = CONSOLE_PREFIX + "<gold>[RCON]</gold> <gray>";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
-    private static final LegacyComponentSerializer LEGACY_AMP = LegacyComponentSerializer.legacyAmpersand();
+    private static final java.util.regex.Pattern LEGACY_COLOR_PATTERN =
+            java.util.regex.Pattern.compile("&([0-9a-fk-or])(?![>])", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final Map<Character, String> LEGACY_TO_MINIMESSAGE = Map.ofEntries(
+            Map.entry('0', "<black>"),
+            Map.entry('1', "<dark_blue>"),
+            Map.entry('2', "<dark_green>"),
+            Map.entry('3', "<dark_aqua>"),
+            Map.entry('4', "<dark_red>"),
+            Map.entry('5', "<dark_purple>"),
+            Map.entry('6', "<gold>"),
+            Map.entry('7', "<gray>"),
+            Map.entry('8', "<dark_gray>"),
+            Map.entry('9', "<blue>"),
+            Map.entry('a', "<green>"),
+            Map.entry('b', "<aqua>"),
+            Map.entry('c', "<red>"),
+            Map.entry('d', "<light_purple>"),
+            Map.entry('e', "<yellow>"),
+            Map.entry('f', "<white>"),
+            Map.entry('k', "<obfuscated>"),
+            Map.entry('l', "<bold>"),
+            Map.entry('m', "<strikethrough>"),
+            Map.entry('n', "<underlined>"),
+            Map.entry('o', "<italic>"),
+            Map.entry('r', "<reset>")
+    );
 
     private static String langPrefix() {
         String p = Lang.LangConfig.prefix;
@@ -37,10 +63,11 @@ public class Message {
 
     public static Component convert(String message) {
         if (message == null) return Component.empty();
-        if (message.indexOf('&') >= 0 || message.indexOf('§') >= 0) {
-            return LEGACY_AMP.deserialize(message.replace('§', '&'));
+        String normalized = message.replace('§', '&');
+        if (normalized.indexOf('&') >= 0) {
+            return MM.deserialize(convertLegacyToMiniMessage(normalized));
         }
-        return MM.deserialize(message);
+        return MM.deserialize(normalized);
     }
 
     // Unified render with placeholders and formatting, using recipient context if player
@@ -54,14 +81,31 @@ public class Message {
             return;
         }
         Player player = recipient instanceof Player p ? p : null;
-        String[] lines = message.split("\n");
+        String[] lines = message.split("\\R", -1);
         java.util.concurrent.CompletableFuture<Void> chain = java.util.concurrent.CompletableFuture.completedFuture(null);
         for (String line : lines) {
             String current = line;
             chain = chain.thenCompose(ignored ->
                     PlaceholderManager.resolveComponentAsync(player, current)
-                            .thenAccept(recipient::sendMessage));
+                            .thenAccept(component -> sendResolved(recipient, component)));
         }
+        chain.exceptionally(throwable -> {
+            warn("Message delivery failed: " + throwable.getMessage());
+            return null;
+        });
+    }
+
+    private static void sendResolved(CommandSource recipient, Component component) {
+        if (recipient == null || component == null) {
+            return;
+        }
+        if (Tensa.server == null || Tensa.pluginContainer == null) {
+            recipient.sendMessage(component);
+            return;
+        }
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, () -> recipient.sendMessage(component))
+                .schedule();
     }
 
     // Curly-brace template renderer with placeholder + MiniMessage support
@@ -98,20 +142,20 @@ public class Message {
     // Utility: escape a string so MiniMessage does not interpret it as tags
     public static String escapeMiniMessage(String s) {
         if (s == null) return null;
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return s.replace("\\", "\\\\").replace("<", "\\<");
     }
 
     private static void sendMessageWithPrefix(String prefixStr, String message) {
         message = prefixStr + message;
         if (Tensa.server == null) return; // test environment/no server
-        for (String string : message.split("\n")) {
+        for (String string : message.split("\\R", -1)) {
             Tensa.server.getConsoleCommandSource().sendMessage(render(Tensa.server.getConsoleCommandSource(), string));
         }
     }
 
     private static void send(String message) {
         if (Tensa.server == null) return; // test environment/no server
-        for (String string : message.split("\n")) {
+        for (String string : message.split("\\R", -1)) {
             Tensa.server.getConsoleCommandSource().sendMessage(render(Tensa.server.getConsoleCommandSource(), string));
         }
     }
@@ -207,5 +251,19 @@ public class Message {
         info(version);
         info(author);
         info(headerLine);
+    }
+
+    private static String convertLegacyToMiniMessage(String input) {
+        java.util.regex.Matcher matcher = LEGACY_COLOR_PATTERN.matcher(input);
+        StringBuilder result = new StringBuilder(input.length() + 32);
+
+        while (matcher.find()) {
+            char code = Character.toLowerCase(matcher.group(1).charAt(0));
+            String replacement = LEGACY_TO_MINIMESSAGE.getOrDefault(code, matcher.group(0));
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(result);
+
+        return result.toString();
     }
 }

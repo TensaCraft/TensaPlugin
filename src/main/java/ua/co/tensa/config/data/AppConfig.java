@@ -55,6 +55,18 @@ public class AppConfig extends ConfigBase {
     @CfgKey("database.table_prefix")
     public String tablePrefix = "tensa_";
 
+    @CfgKey(value = "velocity.log_cleanup.enable", comment = "Clean Velocity log files when the plugin starts")
+    public boolean velocityLogCleanupEnable = false;
+
+    @CfgKey(value = "velocity.log_cleanup.latest_log", comment = "Try to clear logs/latest.log on startup. This can fail on Windows if Velocity still holds the file handle")
+    public boolean velocityLogCleanupLatestLog = false;
+
+    @CfgKey(value = "velocity.log_cleanup.rotated_logs", comment = "Delete old uncompressed *.log files in the Velocity logs directory")
+    public boolean velocityLogCleanupRotatedLogs = true;
+
+    @CfgKey(value = "velocity.log_cleanup.compressed_logs", comment = "Delete compressed *.log.gz archives in the Velocity logs directory")
+    public boolean velocityLogCleanupCompressedLogs = true;
+
     public AppConfig() {
         super("config.yml");
         // After base reload, field initializers are applied; seed module defaults if missing

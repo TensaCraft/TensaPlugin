@@ -31,26 +31,24 @@ public class PlayerTimeModule {
 
     public static void initialize() {
         if (Tensa.config == null || !Tensa.config.databaseEnable()){
-            ua.co.tensa.Message.warn("The PlayerTime module requires the use of a database, enable it in the configuration file");
-            return;
+            throw new IllegalStateException("PlayerTime module requires database.enable=true");
         }
         Database database = Tensa.database;
-        if (database.enabled){
-            if (!database.tableExists("player_times")){
-                DatabaseInitializer databaseInitializer = new DatabaseInitializer(database);
-                databaseInitializer.createPlayerTimeTable();
-            }
-            PlayerTimeTracker timeTracker = new PlayerTimeTracker(database);
-            PlayerEventListener eventListener = new PlayerEventListener(timeTracker);
-            ((AbstractModule) IMPL).registerListener(eventListener);
-            AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
-            AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
-
-            ((AbstractModule) IMPL).scheduleRepeating(timeTracker::updateAllOnlineTimes, 1, 1, TimeUnit.MINUTES);
-        } else {
-            ua.co.tensa.Message.warn("PlayerTime module. A database connection could not be established");
-            disable();
+        if (database == null || !database.enabled) {
+            throw new IllegalStateException("PlayerTime module requires an active database connection");
         }
+
+        if (!database.tableExists("player_times")){
+            DatabaseInitializer databaseInitializer = new DatabaseInitializer(database);
+            databaseInitializer.createPlayerTimeTable();
+        }
+        PlayerTimeTracker timeTracker = new PlayerTimeTracker(database);
+        PlayerEventListener eventListener = new PlayerEventListener(timeTracker);
+        ((AbstractModule) IMPL).registerListener(eventListener);
+        AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
+        AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
+
+        ((AbstractModule) IMPL).scheduleRepeating(timeTracker::updateAllOnlineTimes, 1, 1, TimeUnit.MINUTES);
     }
 
     public static String formatTime(long timeMillis) {

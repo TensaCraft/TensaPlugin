@@ -59,7 +59,7 @@ public class RequestsModule {
         List<Map<String, String>> triggers = getTriggerToFileMapping();
         for (Map<String, String> triggerMap : triggers) {
             String trigger = triggerMap.get("trigger");
-            AbstractModule.registerCommand(trigger, trigger, new RequestCommand());
+            AbstractModule.registerCommand(trigger, "", new RequestCommand());
         }
         // status logging handled centrally
     }
@@ -77,7 +77,14 @@ public class RequestsModule {
     public static void disable() { IMPL.disable(); }
 
 	private static List<String> getConfigurationFiles(String directory) {
-		return Arrays.stream(new File(directory).listFiles()).filter(File::isFile).map(File::getName)
+        File[] files = new File(directory).listFiles();
+        if (files == null) {
+            return List.of();
+        }
+		return Arrays.stream(files)
+                .filter(File::isFile)
+                .map(File::getName)
+                .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
 				.collect(Collectors.toList());
 	}
 
@@ -96,6 +103,18 @@ public class RequestsModule {
 		return result;
 	}
 
+    public static String fileByTrigger(String trigger) {
+        if (trigger == null || trigger.isBlank()) {
+            return "";
+        }
+        for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
+            if (trigger.equalsIgnoreCase(triggerMap.get("trigger"))) {
+                return triggerMap.getOrDefault("file", "");
+            }
+        }
+        return "";
+    }
+
 	public static YamlConfiguration configByTrigger(String trigger) {
 		for (YamlConfiguration config : configs) {
 			List<String> triggers = config.getStringList("triggers");
@@ -112,10 +131,10 @@ public class RequestsModule {
 
 	public static YamlConfiguration config(String filename) {
 		for (YamlConfiguration config : configs) {
-			if (config.getCurrentPath().equals(filename)) {
-				return config;
-			}
-		}
+            if (filename.equals(FILE_NAMES.get(config))) {
+                return config;
+            }
+        }
 		return null;
 	}
 

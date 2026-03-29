@@ -28,12 +28,10 @@ public class UserMetaModule {
         // If using database storage, require DB to be enabled and connected
         if ("database".equalsIgnoreCase(type)) {
             if (Tensa.config == null || !Tensa.config.databaseEnable()) {
-                ua.co.tensa.Message.warn("UserMeta module requires database to be enabled");
-                return;
+                throw new IllegalStateException("UserMeta module requires database.enable=true");
             }
             if (db == null || !db.enabled) {
-                ua.co.tensa.Message.warn("UserMeta module: database not connected");
-                return;
+                throw new IllegalStateException("UserMeta module requires an active database connection");
             }
         }
 
@@ -68,6 +66,9 @@ public class UserMetaModule {
         PlaceholderManager.unregisterRawPrefixResolver("tensa_meta_");
         PlaceholderManager.unregisterAnglePrefixResolver("meta_");
         PlaceholderManager.unregisterAnglePrefixResolver("tensa_meta_");
+        if (store != null) {
+            store.close();
+        }
         store = null;
     }
 
@@ -81,7 +82,7 @@ public class UserMetaModule {
     @Subscribe
     public void onJoin(PostLoginEvent event) {
         if (store != null) {
-            store.preload(event.getPlayer().getUniqueId());
+            store.preloadAsync(event.getPlayer().getUniqueId());
         }
     }
 }

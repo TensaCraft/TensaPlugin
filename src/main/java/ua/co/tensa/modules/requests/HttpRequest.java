@@ -3,30 +3,60 @@ package ua.co.tensa.modules.requests;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
-import org.apache.http.HttpEntity;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
 import ua.co.tensa.Message;
 
+import java.io.IOException;
+import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
+import java.util.StringJoiner;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class HttpRequest {
+
+	private static final String GET = "GET";
+	private static final String POST = "POST";
+	private static final String USER_AGENT = "Tensa-Requests/1.0";
+
+	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+	private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(20);
+
+	private static final ExecutorService HTTP_EXECUTOR = Executors.newFixedThreadPool(
+			Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors())),
+			runnable -> {
+				Thread thread = new Thread(runnable);
+				thread.setName("tensa-http-" + thread.threadId());
+				thread.setDaemon(true);
+				return thread;
+			}
+	);
+
+	private static final HttpClient CLIENT = HttpClient.newBuilder()
+			.connectTimeout(CONNECT_TIMEOUT)
+			.executor(HTTP_EXECUTOR)
+			.followRedirects(HttpClient.Redirect.NORMAL)
+			.build();
+
+	private static final int MAX_ATTEMPTS = 2;
 
 	private final String url;
 	private final String method;
 	private final Map<String, String> parameters;
+
+	public record Result(int statusCode, String body, JsonElement json) {
+		public boolean isSuccess() {
+			return statusCode >= 200 && statusCode < 300;
+		}
+	}
 
 	public HttpRequest(String url, String method, Map<String, String> parameters) {
 		this.url = url;
@@ -34,87 +64,176 @@ public class HttpRequest {
 		this.parameters = parameters;
 	}
 
-	public JsonElement send() throws Exception {
-		RequestConfig config = RequestConfig.custom()
-				.setConnectTimeout(10_000)
-				.setConnectionRequestTimeout(10_000)
-				.setSocketTimeout(20_000)
-				.build();
-
-        try (CloseableHttpClient httpClient = HttpClients.custom()
-                .setDefaultRequestConfig(config)
-                .setUserAgent("TENSA-Requests/1.0")
-                .disableAutomaticRetries() // manual single retry below
-                .build()) {
-            int attempts = 0;
-            Exception last = null;
-            while (attempts < 2) { // 1 retry on failure
-                attempts++;
-                try {
-                    return switch (method.toUpperCase()) {
-                        case "POST" -> {
-                            HttpPost httpPost = new HttpPost(url);
-                            httpPost.setHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-                            httpPost.setEntity(new UrlEncodedFormEntity(getParamsList(), "UTF-8"));
-                            try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
-                                yield processResponse(response);
-                            }
-                        }
-                        case "GET" -> {
-                            HttpGet httpGet = new HttpGet(getUrlWithParams());
-                            try (CloseableHttpResponse response = httpClient.execute(httpGet)) {
-                                yield processResponse(response);
-                            }
-                        }
-                        default -> null;
-                    };
-                } catch (Exception e) {
-                    last = e;
-                    // if first attempt fails, loop will retry once
-                }
-            }
-            if (last != null) throw last;
-        }
-
-		return null;
+	public CompletableFuture<Result> sendAsync() {
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				return send();
+			} catch (Exception e) {
+				throw new CompletionException(e);
+			}
+		}, HTTP_EXECUTOR);
 	}
 
-	private List<NameValuePair> getParamsList() {
-		List<NameValuePair> params = new ArrayList<>();
-		for (Map.Entry<String, String> entry : parameters.entrySet()) {
-			params.add(new BasicNameValuePair(entry.getKey(), entry.getValue()));
+	public Result send() throws Exception {
+		String type = getMethod();
+		int maxAttempts = shouldRetry(type) ? MAX_ATTEMPTS : 1;
+		IOException lastError = null;
+
+		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				return send(type);
+			} catch (IOException e) {
+				lastError = e;
+				if (attempt < maxAttempts) {
+					Message.warn("HTTP " + type + " retry " + (attempt + 1) + "/" + maxAttempts + " for " + url + " -> " + e.getMessage());
+				}
+			}
 		}
-		return params;
+
+		if (lastError != null) {
+			throw lastError;
+		}
+
+		throw new IllegalStateException("HTTP request failed without a specific exception.");
+	}
+
+	private Result send(String type) throws IOException {
+		return switch (type) {
+			case POST -> sendPost();
+			case GET -> sendGet();
+			default -> throw new IllegalArgumentException("Unsupported HTTP method: " + method);
+		};
+	}
+
+	private Result sendPost() throws IOException {
+		java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(URI.create(url))
+				.timeout(RESPONSE_TIMEOUT)
+				.header("Accept", "application/json")
+				.header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+				.header("User-Agent", USER_AGENT)
+				.POST(java.net.http.HttpRequest.BodyPublishers.ofString(getFormBody()))
+				.build();
+
+		return processResponse(execute(request));
+	}
+
+	private Result sendGet() throws IOException {
+		java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(URI.create(getUrlWithParams()))
+				.timeout(RESPONSE_TIMEOUT)
+				.header("Accept", "application/json")
+				.header("User-Agent", USER_AGENT)
+				.GET()
+				.build();
+
+		return processResponse(execute(request));
+	}
+
+	private HttpResponse<String> execute(java.net.http.HttpRequest request) throws IOException {
+		try {
+			return CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("HTTP request interrupted.", e);
+		}
+	}
+
+	private String getMethod() {
+		if (method == null) {
+			return "";
+		}
+
+		return method.trim().toUpperCase(Locale.ROOT);
+	}
+
+	private String getFormBody() {
+		if (parameters == null || parameters.isEmpty()) {
+			return "";
+		}
+
+		StringJoiner joiner = new StringJoiner("&");
+		for (Map.Entry<String, String> entry : parameters.entrySet()) {
+			joiner.add(encode(entry.getKey()) + "=" + encode(entry.getValue()));
+		}
+		return joiner.toString();
 	}
 
 	private String getUrlWithParams() {
-        StringBuilder sb = new StringBuilder(url);
-        sb.append('?');
-        for (Map.Entry<String, String> param : parameters.entrySet()) {
-            String encodedValue = URLEncoder.encode(param.getValue(), StandardCharsets.UTF_8);
-            sb.append(param.getKey()).append('=').append(encodedValue).append('&');
-        }
-		sb.deleteCharAt(sb.length() - 1);
-		return sb.toString();
+		if (parameters == null || parameters.isEmpty()) {
+			return url;
+		}
+
+		return url + (url.contains("?") ? "&" : "?") + getFormBody();
 	}
 
-	private JsonElement processResponse(CloseableHttpResponse httpResponse) throws Exception {
-		int status = httpResponse.getStatusLine().getStatusCode();
-		HttpEntity entity = httpResponse.getEntity();
-		if (entity == null) return null;
+	private Result processResponse(HttpResponse<String> response) {
+		int status = response.statusCode();
+		String body = response.body() == null ? "" : response.body();
 
-		String result = EntityUtils.toString(entity);
+		if (body.isBlank()) {
+			logEmptyResponse(status);
+			return new Result(status, body, null);
+		}
+
 		try {
-			JsonElement jsonElement = JsonParser.parseString(result);
-			Message.info("HTTP " + method + " → " + url + " [" + status + "]");
-			return jsonElement;
-		} catch (JsonSyntaxException ex) {
-			if (status == 200) {
-				Message.warn("HTTP " + method + " → Non-JSON response from " + url);
+			JsonElement json = JsonParser.parseString(body);
+			logResponse(status, json, body);
+			return new Result(status, body, json);
+		} catch (JsonSyntaxException e) {
+			logResponse(status, null, body);
+			return new Result(status, body, null);
+		}
+	}
+
+	private void logResponse(int status, JsonElement json, String body) {
+		if (isSuccess(status)) {
+			if (json == null) {
+				Message.warn("HTTP " + getMethod() + " -> Non-JSON response from " + url + " [" + status + "]");
 			} else {
-				Message.error("HTTP " + method + " → Failed [" + status + "] " + url + "\nResponse: " + result);
+				Message.info("HTTP " + getMethod() + " -> " + url + " [" + status + "]");
 			}
-			return null;
+			return;
+		}
+
+		Message.error("HTTP " + getMethod() + " -> Failed [" + status + "] " + url + "\nResponse: " + summarizeForLog(json, body));
+	}
+
+	private String summarizeForLog(JsonElement json, String body) {
+		String summary = json == null ? body : json.toString();
+		if (summary == null) {
+			return "";
+		}
+		return summary.length() > 1000 ? summary.substring(0, 1000) + "..." : summary;
+	}
+
+	private void logEmptyResponse(int status) {
+		if (isSuccess(status)) {
+			Message.warn("HTTP " + getMethod() + " -> Empty response from " + url + " [" + status + "]");
+		} else {
+			Message.error("HTTP " + getMethod() + " -> Empty failed response [" + status + "] " + url);
+		}
+	}
+
+	private boolean isSuccess(int status) {
+		return status >= 200 && status < 300;
+	}
+
+	private boolean shouldRetry(String type) {
+		return GET.equals(type);
+	}
+
+	private String encode(String value) {
+		return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+	}
+
+	public static void shutdown() {
+		HTTP_EXECUTOR.shutdown();
+		try {
+			if (!HTTP_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+				HTTP_EXECUTOR.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			HTTP_EXECUTOR.shutdownNow();
+			Thread.currentThread().interrupt();
 		}
 	}
 }

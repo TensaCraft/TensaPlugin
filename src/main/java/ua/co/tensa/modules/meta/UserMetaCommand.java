@@ -36,13 +36,16 @@ public class UserMetaCommand implements SimpleCommand {
         String sub = args[0].toLowerCase();
         int index = 1;
         UUID target;
-        if (args.length >= 3 && !args[1].contains(":") && Tensa.server.getPlayer(args[1]).isPresent()) {
+        Player targetPlayer = args.length >= 3 && !args[1].contains(":")
+                ? Tensa.server.getPlayer(args[1]).orElse(null)
+                : null;
+        if (targetPlayer != null) {
             // Admin form with player name
             if (!sender.hasPermission("tensa.meta.admin")) {
                 Message.sendLang(sender, Lang.no_perms);
                 return;
             }
-            target = Tensa.server.getPlayer(args[1]).get().getUniqueId();
+            target = targetPlayer.getUniqueId();
             index = 2;
         } else {
             if (!(sender instanceof Player)) {
@@ -72,8 +75,14 @@ public class UserMetaCommand implements SimpleCommand {
                     return;
                 }
                 String key = args[index];
-                String value = store.get(target, key);
-                Message.sendLang(sender, Lang.meta_get_ok, "{key}", key, "{value}", value);
+                store.getAsync(target, key)
+                        .thenAccept(value -> schedule(() ->
+                                Message.sendLang(sender, Lang.meta_get_ok, "{key}", key, "{value}", value)))
+                        .exceptionally(ex -> {
+                            schedule(() -> Message.sendLang(sender, Lang.unknown_error));
+                            ua.co.tensa.Message.error("UserMeta get failed: " + ex.getMessage());
+                            return null;
+                        });
                 break;
             }
             case "del": {
@@ -88,13 +97,20 @@ public class UserMetaCommand implements SimpleCommand {
                 break;
             }
             case "list": {
-                var map = store.getAll(target);
-                if (map.isEmpty()) {
-                    Message.sendLang(sender, Lang.meta_no_meta);
-                } else {
-                    Message.sendLang(sender, Lang.meta_list_header);
-                    map.forEach((k, v) -> Message.send(sender, " - <green>" + k + ":</green> <gray>" + v + "</gray>"));
-                }
+                store.getAllAsync(target)
+                        .thenAccept(map -> schedule(() -> {
+                            if (map.isEmpty()) {
+                                Message.sendLang(sender, Lang.meta_no_meta);
+                                return;
+                            }
+                            Message.sendLang(sender, Lang.meta_list_header);
+                            map.forEach((k, v) -> Message.send(sender, " - <green>" + k + ":</green> <gray>" + v + "</gray>"));
+                        }))
+                        .exceptionally(ex -> {
+                            schedule(() -> Message.sendLang(sender, Lang.unknown_error));
+                            ua.co.tensa.Message.error("UserMeta list failed: " + ex.getMessage());
+                            return null;
+                        });
                 break;
             }
             default:
@@ -120,7 +136,7 @@ public class UserMetaCommand implements SimpleCommand {
         UUID target = opt.map(Player::getUniqueId).orElseGet(() -> (invocation.source() instanceof Player pl ? pl.getUniqueId() : null));
         java.util.ArrayList<String> out = new java.util.ArrayList<>();
         if (target != null) {
-            var keys = UserMetaModule.getStore().getAll(target).keySet();
+            var keys = UserMetaModule.getStore().getCached(target).keySet();
             out.addAll(keys);
         }
         if (sub.equals("set") || sub.equals("del")) {
@@ -136,5 +152,11 @@ public class UserMetaCommand implements SimpleCommand {
     private static String stripFlags(String value) {
         if (value == null) return null;
         return value.replace("--session", "").trim();
+    }
+
+    private static void schedule(Runnable task) {
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, task)
+                .schedule();
     }
 }

@@ -41,7 +41,7 @@ public class PlayerTimeCommand implements SimpleCommand {
                 Message.sendLang(sender, Lang.player_time,
                         "{time}", PlayerTimeModule.formatTime(playTime));
             });
-        } else if (args.length == 1 && sender.hasPermission("TENSA.playertime.admin")) {
+        } else if (args.length == 1 && sender.hasPermission("tensa.playertime.admin")) {
             String playerName = args[0];
             timeTracker.getPlayerTimeByName(playerName).thenAccept(playTime -> {
                 if (playTime == null) {

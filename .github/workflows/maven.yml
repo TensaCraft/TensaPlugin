@@ -1,4 +1,4 @@
-name: TENSA
+name: Tensa
 
 permissions:
   contents: write
@@ -14,16 +14,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Create Tag
         id: create_tag
         run: echo "RELEASE_TAG=$(date +'%Y-%m-%d-%H-%M')" >> $GITHUB_ENV
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: maven
 
@@ -36,13 +36,13 @@ jobs:
       - name: Find JAR File
         id: find_jar
         run: |
-          FILE="target/TENSA.jar"
+          FILE="target/Tensa.jar"
           echo "JAR_PATH=$FILE" >> $GITHUB_ENV
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TENSA
+          name: Tensa
           path: ${{ env.JAR_PATH }}
 
       - name: Create Release
@@ -65,5 +65,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ env.JAR_PATH }}
-          asset_name: TENSA.jar
+          asset_name: Tensa.jar
           asset_content_type: application/java-archive

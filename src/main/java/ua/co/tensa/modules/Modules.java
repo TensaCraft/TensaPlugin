@@ -11,7 +11,8 @@ public class Modules {
     private static final Map<String, ModuleEntry> REGISTRY = new LinkedHashMap<>();
 
     public Modules() {
-        ua.co.tensa.Message.info("TENSA loading modules...");
+        REGISTRY.clear();
+        ua.co.tensa.Message.info("Tensa loading modules...");
         // Auto-discover modules via ServiceLoader
         try {
             java.util.ServiceLoader<ModuleProvider> loader = java.util.ServiceLoader.load(ModuleProvider.class, Modules.class.getClassLoader());
@@ -39,7 +40,7 @@ public class Modules {
                 initializer.initializeTables();
             }
         }
-        applyConfig();
+        synchronizeModules(false);
         registerCommands();
     }
 
@@ -48,27 +49,16 @@ public class Modules {
     }
 
     public static void applyConfig() {
-        for (Map.Entry<String, ModuleEntry> e : REGISTRY.entrySet()) {
-            String id = e.getKey();
-            ModuleEntry m = e.getValue();
-            boolean desired = Tensa.config != null && Tensa.config.isModuleEnabled(id);
-            if (desired && !m.isEnabled()) m.enable();
-            if (!desired && m.isEnabled()) m.disable();
-        }
+        synchronizeModules(false);
     }
 
     public static void reloadAll() {
-        for (ModuleEntry m : REGISTRY.values()) {
-            if (m.isEnabled()) {
-                try { m.reload(); } catch (Throwable t) { ua.co.tensa.Message.warn("Module reload failed: " + m.id() + " - " + t.getMessage()); }
-            }
-        }
+        synchronizeModules(true);
     }
 
     /** Apply config states (enable/disable) and soft-reload enabled modules. */
     public static void refresh() {
-        applyConfig();
-        reloadAll();
+        synchronizeModules(true);
     }
 
     // Snapshot view for info commands or admin tools
@@ -76,16 +66,57 @@ public class Modules {
         return java.util.Collections.unmodifiableMap(REGISTRY);
     }
 
+    public static void disableAll() {
+        for (ModuleEntry module : REGISTRY.values()) {
+            if (module.isEnabled()) {
+                try {
+                    module.disable();
+                } catch (Throwable t) {
+                    ua.co.tensa.Message.warn("Module disable failed: " + module.id() + " - " + t.getMessage());
+                }
+            }
+        }
+    }
+
     // no-op: modules are applied via applyConfig()
 
     private void registerCommands() {
         Util.registerCommand("tensareload", "treload", new ReloadCommand());
-        Util.registerCommand("tensa", "tensahelp", new HelpCommand());
+        Util.registerCommand("tensa", "", new HelpCommand());
+        Util.registerCommand("tensahelp", "", new HelpCommand());
         Util.registerCommand("tensamodules", "tmodules", new ModulesCommand());
         Util.registerCommand("tpl", "tplugins", new PluginsCommand());
         Util.registerCommand("psend", "tpsend", new PlayerSendCommand());
         Util.registerCommand("tparse", "tph", new PlaceholderParseCommand());
-        Util.registerCommand("tinfo", "tinfo", new TensaInfoCommand());
+        Util.registerCommand("tinfo", "", new TensaInfoCommand());
+    }
+
+    private static void synchronizeModules(boolean reloadEnabled) {
+        for (Map.Entry<String, ModuleEntry> entry : REGISTRY.entrySet()) {
+            String id = entry.getKey();
+            ModuleEntry module = entry.getValue();
+            boolean desired = Tensa.config != null && Tensa.config.isModuleEnabled(id);
+
+            if (!desired) {
+                if (module.isEnabled()) {
+                    module.disable();
+                }
+                continue;
+            }
+
+            if (!module.isEnabled()) {
+                module.enable();
+                continue;
+            }
+
+            if (reloadEnabled) {
+                try {
+                    module.reload();
+                } catch (Throwable t) {
+                    ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + t.getMessage());
+                }
+            }
+        }
     }
 
     // wrappers replaced by module-provided ENTRY

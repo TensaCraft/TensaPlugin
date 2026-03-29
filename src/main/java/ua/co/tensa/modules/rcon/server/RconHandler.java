@@ -35,12 +35,9 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
 	private final RconServer rconServer;
 
-	private final RconCommandSource commandSender;
-
 	public RconHandler(RconServer rconServer, String password) {
 		this.rconServer = rconServer;
 		this.password = password;
-		this.commandSender = new RconCommandSource(rconServer.getServer());
 	}
 
 	@Override
@@ -130,9 +127,6 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 			sendResponse(ctx, FAILURE, TYPE_COMMAND, "");
 			return;
 		}
-		boolean stop = false;
-		boolean success;
-		String message;
 		String ip = ctx.channel().remoteAddress().toString().replace("/", "");
         // Optional debug logging (configurable to prevent spam)
         if (RconServerModule.isDebugEnabled()) {
@@ -142,7 +136,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		// Only notify players if debug is enabled (to prevent spam)
 		if (RconServerModule.isDebugEnabled()) {
 			Tensa.server.getAllPlayers().forEach(p -> {
-				if (p.getPermissionValue("TENSA.rcon.notify").asBoolean()) {
+				if (p.getPermissionValue("tensa.rcon.notify").asBoolean()) {
 	                Message.sendLang(p, ua.co.tensa.config.Lang.rcon_connect_notify,
 	                        "{address}", ip, "{command}", payload);
 				}
@@ -150,52 +144,62 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 		}
 
 		if (payload.equalsIgnoreCase("end") || payload.equalsIgnoreCase("stop")) {
-			stop = true;
-			success = true;
-			message = "Shutting down the proxy...";
+			String message = "Shutting down the proxy...";
+            if (!RconServerModule.isColored()) {
+                message = RconServerModule.stripColor(message);
+            }
+            sendCommandResponse(ctx, requestId, message);
+            Tensa.server.shutdown();
+            return;
 		} else {
-			try {
-				success = rconServer.getServer().getCommandManager().executeAsync(commandSender, payload).join();
-				if (success) {
-					message = commandSender.flush();
-				} else {
-					message = Lang.no_command.getClean();
-				}
-            } catch (Exception e) {
-                // Only log exceptions if error logging is enabled
-                if (RconServerModule.isErrorLoggingEnabled()) {
-                    ua.co.tensa.Message.rcon("EXECUTION ERROR", e.getMessage());
-                }
-				success = false;
-				message = Lang.unknown_error.getClean();
-			}
-		}
+            RconCommandSource commandSender = new RconCommandSource(rconServer.getServer());
+            rconServer.getServer().getCommandManager().executeAsync(commandSender, payload)
+                    .whenComplete((executed, throwable) -> {
+                        boolean commandSuccess = throwable == null && Boolean.TRUE.equals(executed);
+                        String responseMessage;
+                        if (throwable != null) {
+                            if (RconServerModule.isErrorLoggingEnabled()) {
+                                ua.co.tensa.Message.rcon("EXECUTION ERROR", throwable.getMessage());
+                            }
+                            responseMessage = Lang.unknown_error.getClean();
+                        } else if (commandSuccess) {
+                            responseMessage = commandSender.flush();
+                        } else {
+                            responseMessage = Lang.no_command.getClean();
+                        }
 
-		if (!success) {
-			// Only log and format detailed errors if error logging is enabled
-			if (RconServerModule.isErrorLoggingEnabled()) {
-				String errorMsg = String.format(Lang.error_executing.getClean() + " %s (%s)", payload, message);
-				ua.co.tensa.Message.info(String.format("RCON Error from %s: %s", ip, errorMsg));
-				message = errorMsg;
-			} else {
-				// Just return a generic error without logging details to console or sending to RCON client
-				message = "Command failed";
-			}
-		}
+                        if (!commandSuccess) {
+                            if (RconServerModule.isErrorLoggingEnabled()) {
+                                String errorMsg = String.format(Lang.error_executing.getClean() + " %s (%s)", payload, responseMessage);
+                                ua.co.tensa.Message.info(String.format("RCON Error from %s: %s", ip, errorMsg));
+                                responseMessage = errorMsg;
+                            } else {
+                                responseMessage = "Command failed";
+                            }
+                        }
 
-        if (!RconServerModule.isColored()) {
-            message = RconServerModule.stripColor(message);
-        }
+                        if (!RconServerModule.isColored()) {
+                            responseMessage = RconServerModule.stripColor(responseMessage);
+                        }
 
-        // Send the actual response first so clients that stop at the first packet don't miss the output
-        sendLargeResponse(ctx, requestId, message);
-        // Follow up with an empty RESPONSE_VALUE to signal the end of the reply (matches Valve RCON behaviour)
-        sendResponse(ctx, requestId, TYPE_RESPONSE, "");
-
-		if (stop) {
-			Tensa.server.shutdown();
+                        sendCommandResponse(ctx, requestId, responseMessage);
+                    });
+            return;
 		}
 	}
+
+    private void sendCommandResponse(ChannelHandlerContext ctx, int requestId, String message) {
+        if (!ctx.channel().isActive()) {
+            return;
+        }
+        ctx.executor().execute(() -> {
+            if (!ctx.channel().isActive()) {
+                return;
+            }
+            sendLargeResponse(ctx, requestId, message);
+            sendResponse(ctx, requestId, TYPE_RESPONSE, "");
+        });
+    }
 
     private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {
 		@SuppressWarnings("deprecation")

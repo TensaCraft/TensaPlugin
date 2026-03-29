@@ -15,15 +15,17 @@ import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.data.LangYAML;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
+import ua.co.tensa.modules.requests.HttpRequest;
 import ua.co.tensa.placeholders.PlaceholderManager;
+import ua.co.tensa.velocity.VelocityLogCleaner;
 
 import java.nio.file.Path;
 
 @Plugin(
         id = "tensa",
-        name = "TENSA",
-        version = "2.0.0",
-        description = "TENSA - Velocity Content Manager Plugin",
+        name = "Tensa",
+        version = "3.0.0",
+        description = "Tensa - Velocity Content Manager Plugin",
         authors = {"GIGABAIT"},
         dependencies = {
                 @Dependency(id = "papiproxybridge", optional = true)
@@ -55,6 +57,7 @@ public class Tensa {
         } catch (Throwable e) {
             Message.warn("Language file reload failed: " + e.getMessage());
         }
+        VelocityLogCleaner.cleanOnStartup(config);
         Modules.load();
     }
 
@@ -68,10 +71,12 @@ public class Tensa {
 
     @Subscribe
     public void onShutdown(ProxyShutdownEvent event) {
+        Modules.disableAll();
         RconServerModule.disable();
         if (database != null) {
             database.close();
         }
+        HttpRequest.shutdown();
         // Shutdown database executor pool
         Database.shutdownExecutor();
     }

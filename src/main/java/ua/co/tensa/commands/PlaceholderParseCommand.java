@@ -3,7 +3,6 @@ package ua.co.tensa.commands;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
-import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 
@@ -29,7 +28,6 @@ public class PlaceholderParseCommand implements SimpleCommand {
         }
 
         String input = String.join(" ", args);
-        Player player = sender instanceof Player ? (Player) sender : null;
         Message.send(sender, input);
     }
 

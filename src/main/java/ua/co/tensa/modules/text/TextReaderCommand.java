@@ -25,7 +25,7 @@ public final class TextReaderCommand implements SimpleCommand {
             return;
         }
         try {
-            for (String line : TextReaderModule.readTxt(filename).split("\r\n")) {
+            for (String line : TextReaderModule.readTxt(filename).split("\\R", -1)) {
                 if (line.contains("[center]")) {
                     line = line.replace("[center]", "");
                     Message.send(source, centerText(line));

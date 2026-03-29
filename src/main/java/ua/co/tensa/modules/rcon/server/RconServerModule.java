@@ -33,7 +33,6 @@ public class RconServerModule {
     public static final ModuleEntry ENTRY = IMPL;
 
 	private static RconServer rconServer;
-	private static final ProxyServer server = Tensa.server;
 	public static final char COLOR_CHAR = '\u00A7';
 	public static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)" + COLOR_CHAR + "[0-9A-FK-OR]");
 	public static final Pattern STRIP_MC_COLOR_PATTERN = Pattern.compile("§[0-8abcdefklmnor]");
@@ -79,7 +78,8 @@ public class RconServerModule {
 
     private static void startRconListener() {
         InetSocketAddress address = new InetSocketAddress(getPort());
-        rconServer = new RconServer(server, getPass());
+        ProxyServer proxyServer = Tensa.server;
+        rconServer = new RconServer(proxyServer, getPass());
         try {
             ChannelFuture future = rconServer.bind(address).syncUninterruptibly();
             Channel channel = future.channel();
@@ -99,6 +99,7 @@ public class RconServerModule {
 		if (rconServer != null) {
 			ua.co.tensa.Message.rcon("STOPPING", "Shutting down RCON listener");
 			rconServer.shutdown();
+            rconServer = null;
 		}
 	}
 

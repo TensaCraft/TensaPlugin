@@ -1,8 +1,6 @@
 package ua.co.tensa.modules.requests;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.reflect.TypeToken;
+import com.google.gson.JsonObject;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
@@ -17,14 +15,12 @@ import java.util.*;
 
 public class RequestCommand implements SimpleCommand {
 
-    private YamlConfiguration config;
-
     @Override
     public void execute(Invocation invocation) {
         CommandSource sender = invocation.source();
         String[] args = invocation.arguments();
         try {
-            config = RequestsModule.configByTrigger(invocation.alias());
+            YamlConfiguration config = RequestsModule.configByTrigger(invocation.alias());
             if (config == null) {
                 Message.sendLang(sender, Lang.no_command);
                 return;
@@ -33,13 +29,13 @@ public class RequestCommand implements SimpleCommand {
                 Message.sendLang(sender, Lang.no_perms);
                 return;
             }
-            runCommand(args, sender);
+            runCommand(config, args, sender);
         } catch (Exception e) {
             Message.error("Requests: execution error - " + e.getMessage());
         }
     }
 
-    private void runCommand(String[] args, CommandSource sender) throws Exception {
+    private void runCommand(YamlConfiguration config, String[] args, CommandSource sender) {
         Map<String, String> params = placeholderPrepare(args, sender);
         java.util.Map<String, Object> rawParams = config.getConfigurationSection("parameters") != null
                 ? config.getConfigurationSection("parameters").getMapValues(true)
@@ -53,84 +49,148 @@ public class RequestCommand implements SimpleCommand {
         }
 
         String url = parsePlaceholder(config.getString("url"), params);
-        HttpRequest req = new HttpRequest(url, config.getString("method"), parameters);
-        JsonElement resp = req.send();
+        String method = config.getString("method", "GET");
+        HttpRequest req = new HttpRequest(url, method, parameters);
+        req.sendAsync().whenComplete((resp, throwable) ->
+                scheduleOnProxy(() -> handleRequestResult(config, sender, url, method, parameters, params, resp, throwable))
+        );
+    }
 
-        if (resp != null) {
-            if (!resp.isJsonObject()) {
-                Message.error("Requests: Invalid JSON object in response (type="
-                        + (resp.isJsonArray() ? "array" : resp.isJsonPrimitive() ? "primitive" : resp.isJsonNull() ? "null" : "unknown") + ")");
-                Message.error("Requests: Raw response from " + url + ": " + resp.toString());
-                return;
+    private void handleRequestResult(YamlConfiguration config, CommandSource sender, String url, String method,
+                                     Map<String, String> parameters, Map<String, String> params,
+                                     HttpRequest.Result response, Throwable throwable) {
+        Throwable cause = unwrap(throwable);
+        if (cause != null) {
+            Message.error("Requests: HTTP " + method + " failed for " + url + " - " + cause.getMessage());
+            executeResponseCommands(config, "failure", sender, params, Collections.emptyMap());
+            return;
+        }
+
+        if (response == null) {
+            Message.warn("Requests: empty HTTP result from URL: " + url);
+            executeResponseCommands(config, "failure", sender, params, Collections.emptyMap());
+            return;
+        }
+
+        Map<String, String> responseParams = responseParams(response);
+        String outcome = response.isSuccess() ? "success" : "failure";
+
+        if (config.getBoolean("debug")) {
+            StringBuilder dbg = new StringBuilder();
+            dbg.append("<gold>—— Request Debug ——\n");
+            dbg.append("<green>URL: <yellow>").append(url).append("\n");
+            dbg.append("<green>Method: <yellow>").append(method).append("\n");
+            dbg.append("<green>Status: <yellow>").append(response.statusCode()).append("\n");
+            if (!parameters.isEmpty()) {
+                dbg.append("<green>Params:\n");
+                parameters.forEach((k, v) -> {
+                    String shown = isSensitiveKey(k) ? mask(v) : v;
+                    dbg.append("  <gray>").append(k).append("<yellow>=").append(Message.escapeMiniMessage(shown)).append("\n");
+                });
             }
-
-            Map<String, String> responseParams = new Gson().fromJson(resp, new TypeToken<Map<String, String>>() {
-            }.getType());
-
-            if (config.getBoolean("debug")) {
-                StringBuilder dbg = new StringBuilder();
-                dbg.append("<gold>—— Request Debug ——\n");
-                dbg.append("<green>URL: <yellow>").append(url).append("\n");
-                dbg.append("<green>Method: <yellow>").append(config.getString("method", "GET")).append("\n");
-                if (!parameters.isEmpty()) {
-                    dbg.append("<green>Params:\n");
-                    parameters.forEach((k,v) -> {
-                        String shown = isSensitiveKey(k) ? mask(v) : v;
-                        dbg.append("  <gray>").append(k).append("<yellow>=").append(shown).append("\n");
-                    });
-                }
-                if (!responseParams.isEmpty()) {
-                    dbg.append("<green>Response placeholders:\n");
-                    // Avoid any placeholder engines touching sample tokens by doubling '%'
-                    responseParams.forEach((k,v) -> dbg.append("  <gray>").append(k)
-                            .append("<yellow>=</yellow>").append(v)
-                            .append(" <dark_gray>(%%" + k + "%%)</dark_gray>\n"));
-                }
-                String out = dbg.toString().trim();
-                // Always use Message.send to ensure consistent formatting
-                Message.send(sender, out);
+            if (!responseParams.isEmpty()) {
+                dbg.append("<green>Response placeholders:\n");
+                responseParams.forEach((k, v) -> dbg.append("  <gray>").append(k)
+                        .append("<yellow>=</yellow>").append(v)
+                        .append(" <dark_gray>(%%").append(k).append("%%)</dark_gray>\n"));
             }
+            Message.send(sender, dbg.toString().trim());
+        }
 
-        // First apply response placeholders only
-        List<String> successTemplates = parsePlaceholdersInList(
-                config.getConfigurationSection("response").getStringList("success"), responseParams);
+        executeResponseCommands(config, outcome, sender, params, responseParams);
+    }
 
-        // If executed from console, skip commands that require a player placeholder
+    private void executeResponseCommands(YamlConfiguration config, String outcome, CommandSource sender,
+                                         Map<String, String> params, Map<String, String> responseParams) {
+        List<String> templates = parsePlaceholdersInList(getResponseCommands(config, outcome), escapeMiniMessageValues(responseParams));
         boolean isPlayer = sender instanceof Player;
-        List<String> filteredSuccess = new ArrayList<>();
-        for (String cmd : successTemplates) {
+        List<String> filtered = new ArrayList<>();
+
+        for (String cmd : templates) {
             if (!isPlayer && cmd.contains("%player_name%")) {
                 Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
                 continue;
             }
-            filteredSuccess.add(cmd);
+            filtered.add(cmd);
         }
 
-        List<String> successCommands = parsePlaceholdersInList(filteredSuccess, params);
+        List<String> commands = parsePlaceholdersInList(filtered, params);
         boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
-        for (String command : successCommands) {
+        for (String command : commands) {
             dispatchCommand(sender, command, translate);
         }
-        } else {
-            Message.warn("Requests: null/invalid JSON response from URL: " + url);
+    }
 
-            List<String> failureTemplates = parsePlaceholdersInList(
-                    config.getConfigurationSection("response").getStringList("failure"), java.util.Collections.emptyMap());
-            boolean isPlayer = sender instanceof Player;
-            List<String> filteredFailure = new ArrayList<>();
-            for (String cmd : failureTemplates) {
-                if (!isPlayer && cmd.contains("%player_name%")) {
-                    Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
-                    continue;
-                }
-                filteredFailure.add(cmd);
-            }
-            List<String> errorCmd = parsePlaceholdersInList(filteredFailure, params);
-            boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
-            for (String command : errorCmd) {
-                dispatchCommand(sender, command, translate);
-            }
+    private List<String> getResponseCommands(YamlConfiguration config, String outcome) {
+        if (config.getConfigurationSection("response") == null) {
+            return Collections.emptyList();
         }
+        return config.getConfigurationSection("response").getStringList(outcome);
+    }
+
+    private Map<String, String> responseParams(HttpRequest.Result response) {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("http_status", Integer.toString(response.statusCode()));
+        values.put("http_success", Boolean.toString(response.isSuccess()));
+        values.put("response_body", response.body() == null ? "" : response.body());
+
+        if (response.json() == null) {
+            if (response.body() != null && !response.body().isBlank()) {
+                values.put("response", response.body());
+            }
+            return values;
+        }
+
+        if (response.json().isJsonObject()) {
+            values.putAll(toStringMap(response.json().getAsJsonObject()));
+            values.putIfAbsent("response", response.json().toString());
+            return values;
+        }
+
+        if (response.json().isJsonPrimitive()) {
+            values.put("response", response.json().getAsString());
+        } else {
+            values.put("response", response.json().toString());
+        }
+
+        return values;
+    }
+
+    private Map<String, String> toStringMap(JsonObject object) {
+        Map<String, String> response = new LinkedHashMap<>();
+        object.entrySet().forEach(entry -> response.put(entry.getKey(),
+                entry.getValue() == null || entry.getValue().isJsonNull()
+                        ? ""
+                        : entry.getValue().isJsonPrimitive() ? entry.getValue().getAsString() : entry.getValue().toString()));
+        return response;
+    }
+
+    private Map<String, String> escapeMiniMessageValues(Map<String, String> values) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> escaped = new LinkedHashMap<>();
+        values.forEach((key, value) -> escaped.put(key, Message.escapeMiniMessage(value == null ? "" : value)));
+        return escaped;
+    }
+
+    private Throwable unwrap(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+        Throwable cause = throwable;
+        while (cause.getCause() != null && (cause instanceof java.util.concurrent.CompletionException
+                || cause instanceof java.util.concurrent.ExecutionException)) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
+    private void scheduleOnProxy(Runnable task) {
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, task)
+                .schedule();
     }
 
 
@@ -149,7 +209,9 @@ public class RequestCommand implements SimpleCommand {
             params.put("player_name", player.getUsername());
             params.put("player_uuid", player.getUniqueId().toString());
             params.put("player_ip", player.getRemoteAddress().getAddress().toString().replace("/", ""));
-            params.put("server", player.getCurrentServer().isPresent() ? player.getCurrentServer().get().getServerInfo().getName() : "Not server connected");
+            params.put("server", player.getCurrentServer()
+                    .map(connection -> connection.getServerInfo().getName())
+                    .orElse("Not server connected"));
         } else {
             // Do not guess player name from first arg when executed from console
             params.put("player_name", "Console");
@@ -174,7 +236,7 @@ public class RequestCommand implements SimpleCommand {
     private Map<String, String> parsePlaceholders(Map<String, Object> map, Map<String, String> params) {
         Map<String, String> stringMap = new HashMap<>();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
-            String value = entry.getValue().toString();
+            String value = entry.getValue() == null ? "" : entry.getValue().toString();
             value = Message.renderPercentString(value, params);
             stringMap.put(entry.getKey(), value);
         }
@@ -236,7 +298,7 @@ public class RequestCommand implements SimpleCommand {
     }
 
     private boolean hasPermission(final CommandSource sender, String permission) {
-        return sender.hasPermission(permission) || sender.hasPermission("TENSA.requests.*");
+        return sender.hasPermission(permission) || sender.hasPermission("tensa.requests.*");
     }
 
     // Smart dispatcher: handle in-plugin private messages with proper formatting, else fall back to command execution
@@ -251,9 +313,9 @@ public class RequestCommand implements SimpleCommand {
                 String target = rest.substring(0, sp).trim();
                 String message = rest.substring(sp + 1).trim();
                 // Send directly through Message to preserve formatting (MiniMessage/legacy)
-                java.util.Optional<Player> p = Tensa.server.getPlayer(target);
-                if (p.isPresent()) {
-                    Message.send(p.get(), message);
+                Player targetPlayer = Tensa.server.getPlayer(target).orElse(null);
+                if (targetPlayer != null) {
+                    Message.send(targetPlayer, message);
                     return;
                 } else {
                     // If target not online, warn and skip

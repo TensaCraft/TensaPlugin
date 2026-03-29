@@ -48,7 +48,7 @@ public class RconManagerCommand implements SimpleCommand {
             return;
         }
 
-		String command = buildCommand(args, server);
+		String command = buildCommand(args);
 
 		if (command.isEmpty()) {
 			Message.sendLang(sender, Lang.rcon_empty_command);
@@ -78,7 +78,7 @@ public class RconManagerCommand implements SimpleCommand {
 		ArrayList<String> args = new ArrayList<>();
 		int argNum = invocation.arguments().length;
 		if (argNum == 0) {
-			args = (ArrayList<String>) RconManagerModule.getServers();
+            args.addAll(RconManagerModule.getServers());
 			args.add("all");
 			args.add("reload");
 		}
@@ -104,20 +104,31 @@ public class RconManagerCommand implements SimpleCommand {
 	private void executeCommandForServer(Invocation invocation, String command, CommandSource sender,
 										 String server) {
 		if (hasPermission(invocation, "all") || hasPermission(invocation, server)) {
-			tryExecuteRconCommand(command, sender, server);
+            RconManagerModule.supplyAsync(() -> {
+                tryExecuteRconCommand(command, sender, server);
+                return null;
+            });
 		} else {
 			Message.sendLang(sender, Lang.no_perms);
 		}
 	}
 
 	private void executeCommandForAllServers(Invocation invocation, String command, CommandSource sender) {
-		for (String server_name : RconManagerModule.getServers()) {
-			if (hasPermission(invocation, "all") || hasPermission(invocation, server_name)) {
-				tryExecuteRconCommand(command, sender, server_name);
-			} else {
-				Message.sendLang(sender, Lang.no_perms);
-			}
-		}
+        List<String> allowedServers = RconManagerModule.getServers().stream()
+                .filter(serverName -> hasPermission(invocation, "all") || hasPermission(invocation, serverName))
+                .toList();
+
+        if (allowedServers.isEmpty()) {
+            Message.sendLang(sender, Lang.no_perms);
+            return;
+        }
+
+        RconManagerModule.supplyAsync(() -> {
+            for (String serverName : allowedServers) {
+                tryExecuteRconCommand(command, sender, serverName);
+            }
+            return null;
+        });
 	}
 
 	private void tryExecuteRconCommand(String command, CommandSource sender, String server) {
@@ -158,7 +169,7 @@ public class RconManagerCommand implements SimpleCommand {
         }
 	}
 
-	private String buildCommand(String[] args, String server) {
+	private String buildCommand(String[] args) {
 		if (args.length <= 1) return "";
 		return String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
 	}

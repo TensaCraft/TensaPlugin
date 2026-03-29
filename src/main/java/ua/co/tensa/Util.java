@@ -11,14 +11,12 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 import static ua.co.tensa.Tensa.server;
 
 public class Util {
-    public record RegisteredCommand(String primary, String alias, String className, String module) {}
+    public record RegisteredCommand(String primary, String alias, String className, String module, SimpleCommand handler) {}
 
     private static final java.util.LinkedHashMap<String, RegisteredCommand> REGISTERED = new java.util.LinkedHashMap<>();
 
@@ -31,6 +29,15 @@ public class Util {
     }
 
     public static void registerCommand(String command, String alias, SimpleCommand CommandClass) {
+        if (command == null || command.isBlank() || CommandClass == null) {
+            return;
+        }
+
+        unregisterCommand(command);
+        if (alias != null && !alias.isBlank()) {
+            unregisterCommand(alias);
+        }
+
         CommandManager commandManager = server.getCommandManager();
         var builder = commandManager.metaBuilder(command)
                 .plugin(Tensa.pluginContainer);
@@ -42,12 +49,31 @@ public class Util {
         String className = CommandClass.getClass().getName();
         String module = inferModuleFromClass(className);
         // Track in registry (deduplicate by primary name)
-        REGISTERED.put(command, new RegisteredCommand(command, alias, className, module));
+        REGISTERED.put(command, new RegisteredCommand(command, alias, className, module, CommandClass));
     }
     
     public static void unregisterCommand(String string) {
-        server.getCommandManager().unregister(string);
-        REGISTERED.remove(string);
+        if (string == null || string.isBlank()) {
+            return;
+        }
+
+        CommandManager commandManager = server.getCommandManager();
+        var registeredCommands = REGISTERED.values().stream()
+                .filter(command -> string.equals(command.primary()) || string.equals(command.alias()))
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        if (registeredCommands.isEmpty()) {
+            commandManager.unregister(string);
+            return;
+        }
+
+        for (RegisteredCommand command : registeredCommands) {
+            commandManager.unregister(command.primary());
+            if (command.alias() != null && !command.alias().isBlank()) {
+                commandManager.unregister(command.alias());
+            }
+            REGISTERED.remove(command.primary());
+        }
     }
 
     public static ArrayList<RegisteredCommand> getRegisteredCommands() {

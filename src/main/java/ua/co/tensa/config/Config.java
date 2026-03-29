@@ -37,4 +37,8 @@ public class Config {
     public boolean getSsl() { return app.useSsl; }
     public String getDatabaseTablePrefix() { return app.tablePrefix; }
     public boolean useUUID() { return app.useUuid; }
+    public boolean velocityLogCleanupEnable() { return app.velocityLogCleanupEnable; }
+    public boolean velocityLogCleanupLatestLog() { return app.velocityLogCleanupLatestLog; }
+    public boolean velocityLogCleanupRotatedLogs() { return app.velocityLogCleanupRotatedLogs; }
+    public boolean velocityLogCleanupCompressedLogs() { return app.velocityLogCleanupCompressedLogs; }
 }

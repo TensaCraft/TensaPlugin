@@ -24,7 +24,7 @@ public class Database {
         Math.max(4, Runtime.getRuntime().availableProcessors()),
         runnable -> {
             Thread thread = new Thread(runnable);
-            thread.setName("tensa-db-" + thread.getId());
+            thread.setName("tensa-db-" + thread.threadId());
             thread.setDaemon(true);
             return thread;
         }

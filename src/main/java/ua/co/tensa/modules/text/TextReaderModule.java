@@ -21,20 +21,19 @@ public class TextReaderModule {
         @Override protected void onDisable() { TextReaderModule.disableImpl(); }
     };
     public static final ModuleEntry ENTRY = IMPL;
-
-    private static final Path dir = pluginPath.resolve("text");
+    private static Path dir() { return pluginPath.resolve("text"); }
 
     public static void load() {
-        if (dir.toFile().mkdirs()){
-            Util.copyFile(dir.toString(), "rules.txt");
-            Util.copyFile(dir.toString(), "readme.txt");
-        }
+        Path dir = dir();
+        dir.toFile().mkdirs();
+        Util.copyFile(dir.toString(), "rules.txt");
+        Util.copyFile(dir.toString(), "readme.txt");
     }
 
     private static void enableImpl() {
         load();
         for (String cmd: getTxtFileNamesWithoutExtension()) {
-            AbstractModule.registerCommand(cmd, cmd, new TextReaderCommand());
+            AbstractModule.registerCommand(cmd, "", new TextReaderCommand());
         }
     }
 
@@ -46,11 +45,11 @@ public class TextReaderModule {
     public static void disable() { IMPL.disable(); }
 
     public static String readTxt(String filename) throws IOException {
-        return Files.readString(dir.resolve(filename + ".txt"), StandardCharsets.UTF_8);
+        return Files.readString(dir().resolve(filename + ".txt"), StandardCharsets.UTF_8);
     }
 
     public static String[] getTxtFileNamesWithoutExtension() {
-        File directory = dir.toFile();
+        File directory = dir().toFile();
         if (directory.exists() && directory.isDirectory()) {
             String[] fileNames = directory.list((dir, name) -> name.endsWith(".txt"));
             if (fileNames != null) {

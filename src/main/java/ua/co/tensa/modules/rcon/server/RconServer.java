@@ -6,10 +6,12 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.MultiThreadIoEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.net.SocketAddress;
 
@@ -25,8 +27,16 @@ public class RconServer {
         this.server = server;
 
         int workers = Math.max(2, Runtime.getRuntime().availableProcessors());
-        this.bossGroup = new NioEventLoopGroup(1);
-        this.workerGroup = new NioEventLoopGroup(workers);
+        this.bossGroup = new MultiThreadIoEventLoopGroup(
+                1,
+                new DefaultThreadFactory("tensa-rcon-boss", true),
+                NioIoHandler.newFactory()
+        );
+        this.workerGroup = new MultiThreadIoEventLoopGroup(
+                workers,
+                new DefaultThreadFactory("tensa-rcon-worker", true),
+                NioIoHandler.newFactory()
+        );
 
         bootstrap.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)

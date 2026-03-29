@@ -6,43 +6,48 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com</groupId>
-    <artifactId>TENSA</artifactId>
-    <version>2.0.0</version>
+    <artifactId>Tensa</artifactId>
+    <version>3.0.0</version>
     <packaging>jar</packaging>
 
-    <name>TENSA</name>
+    <name>Tensa</name>
 
     <properties>
-        <!-- General properties -->
-        <java.version>17</java.version>
+        <java.version>21</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Skip tests by default on build -->
-        <skipTests>true</skipTests>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Plugin versions -->
-        <maven.compiler.plugin.version>3.8.1</maven.compiler.plugin.version>
-        <maven.source.plugin.version>3.2.0</maven.source.plugin.version>
-        <maven.javadoc.plugin.version>3.2.0</maven.javadoc.plugin.version>
-        <maven.shade.plugin.version>3.4.1</maven.shade.plugin.version>
+        <skipTests>false</skipTests>
 
-        <!-- Dependency versions -->
-        <velocity.api.version>3.4.0-SNAPSHOT</velocity.api.version>
-        <netty.version>4.1.125.Final</netty.version>
+        <velocity.api.version>3.5.0-SNAPSHOT</velocity.api.version>
+        <papiproxybridge.version>1.8.4</papiproxybridge.version>
+        <luckperms.api.version>5.5</luckperms.api.version>
+
+        <netty.version>4.2.12.Final</netty.version>
         <simple.yaml.version>1.8.4</simple.yaml.version>
-        <mariadb.version>3.3.1</mariadb.version>
-        <h2.version>2.2.224</h2.version>
-        <httpclient.version>4.5.14</httpclient.version>
-        <httpcore.version>4.4.16</httpcore.version>
-        <hikari.version>5.1.0</hikari.version>
+        <mariadb.version>3.5.7</mariadb.version>
+        <h2.version>2.4.240</h2.version>
+        <hikari.version>7.0.2</hikari.version>
+        <junit.jupiter.version>6.0.3</junit.jupiter.version>
+        <assertj.version>3.27.7</assertj.version>
+
+        <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+        <maven.resources.plugin.version>3.4.0</maven.resources.plugin.version>
+        <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
+        <maven.jar.plugin.version>3.5.0</maven.jar.plugin.version>
+        <maven.shade.plugin.version>3.6.2</maven.shade.plugin.version>
+        <maven.antrun.plugin.version>3.2.0</maven.antrun.plugin.version>
     </properties>
 
     <repositories>
         <repository>
-            <id>papermc-repo</id>
+            <id>papermc</id>
             <url>https://repo.papermc.io/repository/maven-public/</url>
         </repository>
         <repository>
-            <id>jitpack.io</id>
+            <id>jitpack</id>
             <url>https://jitpack.io</url>
         </repository>
         <repository>
@@ -51,8 +56,20 @@
         </repository>
     </repositories>
 
+    <dependencyManagement>
         <dependencies>
-        <!-- Velocity API -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Proxy APIs -->
         <dependency>
             <groupId>com.velocitypowered</groupId>
             <artifactId>velocity-api</artifactId>
@@ -60,135 +77,136 @@
             <scope>provided</scope>
         </dependency>
 
-        
-        <!-- PAPIProxyBridge API (provided; installed on proxy) -->
         <dependency>
             <groupId>net.william278</groupId>
             <artifactId>papiproxybridge</artifactId>
-            <version>1.7.2</version>
+            <version>${papiproxybridge.version}</version>
             <scope>provided</scope>
         </dependency>
 
-        <!-- LuckPerms API (provided; installed on proxy) -->
         <dependency>
             <groupId>net.luckperms</groupId>
             <artifactId>api</artifactId>
-            <version>5.5</version>
+            <version>${luckperms.api.version}</version>
             <scope>provided</scope>
         </dependency>
 
-        <!-- Netty залежності -->
+        <!-- Netty is provided by Velocity at runtime -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-buffer</artifactId>
-            <version>${netty.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport</artifactId>
-            <version>${netty.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-codec</artifactId>
-            <version>${netty.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler</artifactId>
-            <version>${netty.version}</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Simple-Yaml для роботи з YAML -->
+        <!-- Runtime libraries -->
         <dependency>
             <groupId>com.github.Carleslc.Simple-YAML</groupId>
             <artifactId>Simple-Yaml</artifactId>
             <version>${simple.yaml.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.Carleslc.Simple-YAML</groupId>
+                    <artifactId>Simple-Configuration</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.yaml</groupId>
+                    <artifactId>snakeyaml</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
-        <!-- MariaDB JDBC Driver -->
         <dependency>
             <groupId>org.mariadb.jdbc</groupId>
             <artifactId>mariadb-java-client</artifactId>
             <version>${mariadb.version}</version>
         </dependency>
 
-        <!-- H2 Database -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <version>${h2.version}</version>
         </dependency>
 
-        <!-- Apache HttpClient -->
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>${httpclient.version}</version>
-        </dependency>
-        
-        <!-- HikariCP Connection Pool -->
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
             <version>${hikari.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpcore</artifactId>
-            <version>${httpcore.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>commons-logging</groupId>
-            <artifactId>commons-logging</artifactId>
-            <version>1.2</version>
-        </dependency>
 
-        <!-- Test dependencies -->
+        <!-- Test libraries -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
+            <version>${junit.jupiter.version}</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>5.12.0</version>
-            <scope>test</scope>
-        </dependency>
+
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.27.7</version>
+            <version>${assertj.version}</version>
             <scope>test</scope>
         </dependency>
-        </dependencies>
+    </dependencies>
 
     <build>
-        <finalName>TENSA</finalName>
+        <finalName>Tensa</finalName>
+
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>
             </resource>
         </resources>
+
         <plugins>
-            <!-- Compiler plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven.resources.plugin.version}</version>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven.compiler.plugin.version}</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <release>${maven.compiler.release}</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.velocitypowered</groupId>
+                            <artifactId>velocity-api</artifactId>
+                            <version>${velocity.api.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.plugin.version}</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <version>${maven.surefire.plugin.version}</version>
                 <configuration>
                     <skipTests>${skipTests}</skipTests>
                     <useModulePath>false</useModulePath>
@@ -198,7 +216,6 @@
                 </configuration>
             </plugin>
 
-            <!-- Shade plugin for creating uber-jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -210,25 +227,25 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <minimizeJar>false</minimizeJar>
+
                             <artifactSet>
-                                <includes>
-                                    <include>io.netty:netty-buffer</include>
-                                    <include>io.netty:netty-transport</include>
-                                    <include>io.netty:netty-codec</include>
-                                    <include>org.apache.httpcomponents:httpclient</include>
-                                    <include>org.apache.httpcomponents:httpcore</include>
-                                    <include>commons-logging:commons-logging</include>
-                                    <include>com.github.Carleslc.Simple-YAML:Simple-Yaml</include>
-                                    <include>org.mariadb.jdbc:mariadb-java-client</include>
-                                    <include>com.h2database:h2</include>
-                                    <include>com.zaxxer:HikariCP</include>
-                                </includes>
+                                <excludes>
+                                    <exclude>com.velocitypowered:velocity-api</exclude>
+                                    <exclude>net.william278:papiproxybridge</exclude>
+                                    <exclude>net.luckperms:api</exclude>
+                                    <exclude>io.netty:*</exclude>
+                                    <exclude>org.slf4j:slf4j-api</exclude>
+                                    <exclude>org.yaml:snakeyaml</exclude>
+                                    <exclude>com.github.Carleslc.Simple-YAML:Simple-Configuration</exclude>
+                                </excludes>
                             </artifactSet>
+
                             <transformers>
-                                <!-- Integration of SPI services, if necessary -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
+
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -236,15 +253,12 @@
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
-                                        <!-- Reduce shade warnings for duplicate legal files and manifest -->
                                         <exclude>META-INF/DEPENDENCIES</exclude>
                                         <exclude>META-INF/LICENSE</exclude>
                                         <exclude>META-INF/NOTICE</exclude>
                                         <exclude>META-INF/MANIFEST.MF</exclude>
-                                        <!-- Exclude JPMS descriptors to avoid encapsulation warnings -->
                                         <exclude>module-info.class</exclude>
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
-                                        <!-- Silence Netty duplicate resource warning -->
                                         <exclude>META-INF/io.netty.versions.properties</exclude>
                                     </excludes>
                                 </filter>
@@ -253,22 +267,21 @@
                     </execution>
                 </executions>
             </plugin>
-            
-            <!-- After shading, prune target to keep only TENSA.jar -->
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>${maven.antrun.plugin.version}</version>
                 <executions>
                     <execution>
                         <id>prune-target</id>
                         <phase>package</phase>
                         <configuration>
                             <target>
-                                <echo message="Pruning target directory to only TENSA.jar"/>
+                                <echo message="Pruning target directory to only ${project.build.finalName}.jar"/>
                                 <delete includeemptydirs="true">
                                     <fileset dir="${project.build.directory}">
-                                        <exclude name="TENSA.jar"/>
+                                        <exclude name="${project.build.finalName}.jar"/>
                                     </fileset>
                                 </delete>
                             </target>
@@ -284,32 +297,10 @@
 
     <profiles>
         <profile>
-            <id>release</id>
-            <build>
-                <resources>
-                    <resource>
-                        <directory>src/main/resources</directory>
-                        <filtering>true</filtering>
-                    </resource>
-                </resources>
-            </build>
-        </profile>
-        <!-- Enable tests explicitly with -P tests -->
-        <profile>
-            <id>tests</id>
+            <id>skip-tests</id>
             <properties>
-                <skipTests>false</skipTests>
+                <skipTests>true</skipTests>
             </properties>
         </profile>
     </profiles>
-
-    <reporting>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${maven.javadoc.plugin.version}</version>
-            </plugin>
-        </plugins>
-    </reporting>
 </project>

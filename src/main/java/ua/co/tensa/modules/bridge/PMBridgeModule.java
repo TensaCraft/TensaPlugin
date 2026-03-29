@@ -14,15 +14,16 @@ import ua.co.tensa.modules.bridge.data.BridgeConfig;
 import java.nio.charset.StandardCharsets;
 
 public class PMBridgeModule {
+    private static volatile String resolvedToken = "";
+
     private static final ModuleEntry IMPL = new AbstractModule("pm-bridge", "PluginMessage Bridge") {
         private ChannelIdentifier id;
 
         @Override protected void onEnable() {
             BridgeConfig cfg = BridgeConfig.get();
             cfg.reloadCfg();
-            String ch = cfg.channel;
-            id = MinecraftChannelIdentifier.from(ch);
-            Tensa.server.getChannelRegistrar().register(id);
+            id = registerChannel(cfg.channel, id);
+            resolvedToken = resolveToken(cfg);
             registerListener(new PMBridgeModule());
             ua.co.tensa.modules.AbstractModule.registerCommand("tpmdebug", "tpmdbg", new PMBridgeDebugCommand());
             // status logging handled centrally
@@ -32,6 +33,7 @@ public class PMBridgeModule {
             if (id != null) {
                 try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
             }
+            resolvedToken = "";
             ua.co.tensa.modules.AbstractModule.unregisterCommands("tpmdebug", "tpmdbg");
         }
 
@@ -39,12 +41,8 @@ public class PMBridgeModule {
             try {
                 BridgeConfig cfg = BridgeConfig.get();
                 cfg.reloadCfg();
-                if (id != null) {
-                    try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
-                }
-                String ch = cfg.channel;
-                id = MinecraftChannelIdentifier.from(ch);
-                Tensa.server.getChannelRegistrar().register(id);
+                id = registerChannel(cfg.channel, id);
+                resolvedToken = resolveToken(cfg);
             } catch (Throwable t) {
                 ua.co.tensa.Message.warn("PM-Bridge reload failed: " + t.getMessage());
             }
@@ -70,7 +68,7 @@ public class PMBridgeModule {
         // Only accept from backend servers
         if (!(event.getSource() instanceof ServerConnection serverConn)) return;
 
-        String token = resolveToken(cfg);
+        String token = resolvedToken.isBlank() ? resolveToken(cfg) : resolvedToken;
         boolean log = cfg.log;
         java.util.List<String> allow = cfg.allowFrom;
         // Normalize allowlist: trim, lowercase, drop blanks
@@ -105,8 +103,6 @@ public class PMBridgeModule {
         }
 
         if (cmd.isEmpty()) return;
-
-        if (cmd.isEmpty()) return;
         if (log) ua.co.tensa.Message.info("PM-Bridge exec from " + serverName + ": /" + cmd);
         Util.executeCommand(cmd);
         event.setResult(PluginMessageEvent.ForwardResult.handled());
@@ -129,6 +125,15 @@ public class PMBridgeModule {
         String s = server.trim().toLowerCase(java.util.Locale.ROOT);
         if (allowNorm.contains("*") || allowNorm.contains("all")) return true;
         return allowNorm.contains(s);
+    }
+
+    private static ChannelIdentifier registerChannel(String channel, ChannelIdentifier previous) {
+        if (previous != null) {
+            try { Tensa.server.getChannelRegistrar().unregister(previous); } catch (Throwable ignored) {}
+        }
+        ChannelIdentifier channelIdentifier = MinecraftChannelIdentifier.from(channel);
+        Tensa.server.getChannelRegistrar().register(channelIdentifier);
+        return channelIdentifier;
     }
 
     public static String resolveToken(BridgeConfig cfg) {

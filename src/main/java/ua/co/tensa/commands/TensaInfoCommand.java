@@ -20,7 +20,7 @@ public class TensaInfoCommand implements SimpleCommand {
         }
 
         String version = Tensa.pluginContainer.getDescription().getVersion().orElse("unknown");
-        String name = Tensa.pluginContainer.getDescription().getName().orElse("TENSA");
+        String name = Tensa.pluginContainer.getDescription().getName().orElse("Tensa");
 
         Message.privateMessage(source, "<aqua>" + name + "</aqua> <gray>v</gray><green>" + version + "</green>");
 
@@ -50,6 +50,9 @@ public class TensaInfoCommand implements SimpleCommand {
             for (var c : list) {
                 String primary = c.primary() == null ? "" : c.primary().trim();
                 String aliasVal = c.alias() == null ? "" : c.alias().trim();
+                if (c.handler() instanceof HelpCommand && "tensahelp".equalsIgnoreCase(primary)) {
+                    continue;
+                }
                 boolean showAlias = !aliasVal.isBlank() && !aliasVal.equalsIgnoreCase(primary);
                 if (primary.isBlank()) {
                     // Skip unnamed commands (e.g., chat routes that have no explicit command binding)

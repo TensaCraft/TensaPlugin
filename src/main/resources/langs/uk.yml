@@ -1,6 +1,6 @@
 # UK localization file (MiniMessage)
 
-prefix: "<white>[<dark_aqua><bold>TENSA</bold></dark_aqua>]</white> <gray>"
+prefix: "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>"
 no_perms: "<red>Ви не маєте дозволу на використання цієї команди</red>"
 unknown_error: "<red>Невідома помилка</red>"
 unknown_request: "<red>Невідомий запит</red>"
@@ -47,19 +47,27 @@ server_not_found: "<red>Сервер {server} не знайдено</red>"
 chat_usage: "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>(гравець) (повідомлення)</gray>"
 
 # Help
-help: |-
-  <gold>Доступні команди:</gold>
-  <gold>/tensa</gold> <gray>-</gray> <green>Показати допомогу.</green>
-  <gold>/tensareload</gold> <gray>-</gray> <green>Перезавантажте всі конфігурації.</green>
-  <gold>/tensamodules</gold> <gray>-</gray> <green>Показати всі модулі.</green>
-  <gold>/tpl</gold> <gray>-</gray> <green>Показати всі плагіни.</green>
-  <gold>/tptime</gold> <gray>-</gray> <green>Повертає ваш загальний час гри.</green>
-  <gold>/tptime [player]</gold> <gray>-</gray> <green>Повертає загальний час гри вказаного гравця.</green>
-  <gold>/tptop</gold> <gray>-</gray> <green>Показує топ гравців за часом гри.</green>
-  <gold>/rcon [server/all/reload] [command]</gold> <gray>-</gray> <green>Надсилає вказану команду на вказаний сервер або на всі сервери.</green>
-  <gold>/rules</gold> <gray>-</gray> <green>Читає вказаний текстовий файл.</green>
-  <gold>/readme</gold> <gray>-</gray> <green>Читає вказаний текстовий файл.</green>
-  <gold>/psend [player/all] [server]</gold> <gray>-</gray> <green>Відправляє вказаного гравця на вказаний сервер.</green>
+help: "<gold>Доступні команди:</gold>"
+help_header: "<gold>Доступні команди:</gold>"
+help_empty: "<yellow>Зареєстрованих команд не знайдено.</yellow>"
+help_command_format: "<gold>{usage}</gold>{aliases} <gray>-</gray> <green>{description}</green>"
+help_alias_format: " <dark_gray>(</dark_gray><gray>аліаси:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>"
+help_desc_tensa: "Показати довідку."
+help_desc_tensareload: "Перезавантажити всі конфігурації плагіна."
+help_desc_tensamodules: "Показати всі налаштовані модулі."
+help_desc_tpl: "Показати встановлені плагіни проксі."
+help_desc_psend: "Відправити гравця на інший сервер."
+help_desc_tparse: "Розпарсити плейсхолдери в тексті."
+help_desc_tinfo: "Показати інформацію про плагін, модулі та команди."
+help_desc_tptime: "Показати час гри для себе або іншого гравця."
+help_desc_tptop: "Показати топ гравців за часом гри."
+help_desc_rcon: "Виконати RCON-команду на одному або кількох серверах."
+help_desc_tmeta: "Керувати тимчасовими та постійними метаданими користувачів."
+help_desc_tpmdebug: "Показати діагностичну інформацію PM-Bridge."
+help_desc_text_reader: "Прочитати текстовий файл {command}."
+help_desc_request_trigger: "Виконати request-тригер із конфігурації {file}."
+help_desc_chat_public: "Надіслати повідомлення в чат {command}."
+help_desc_chat_private: "Надіслати приватне повідомлення через {command}."
 
 # User Meta Module
 meta_usage: "<gold>Використання:</gold> <yellow>/vmeta</yellow> <gray><set|get|del|list> [гравець] <ключ> [значення…] [--session]</gray>"

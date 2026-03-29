@@ -25,8 +25,14 @@ public class PlaceholderManager {
     private static LuckPermsPlaceholderProvider luckPermsProvider;
 
     public static void initialise() {
+        reload();
+    }
+
+    public static synchronized void reload() {
+        custom.clear();
+        rawPrefixResolvers.clear();
+        anglePrefixResolvers.clear();
         registerDefaults();
-        // lazy load providers
         papiProvider = new PAPIProxyBridgeProvider();
         luckPermsProvider = new LuckPermsPlaceholderProvider();
         registerLuckPermsPlaceholders();
@@ -61,8 +67,10 @@ public class PlaceholderManager {
                 String out = Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse("");
                 return Tag.selfClosingInserting(net.kyori.adventure.text.Component.text(out));
             }));
-            // Also support namespaced form <tensa_id> in fallback path
-            String namespaced = "tensa_" + id;
+            String namespaced = namespacedKey(id);
+            if (namespaced.equals(id)) {
+                continue;
+            }
             builder.resolver(TagResolver.resolver(namespaced, (args, ctx) -> {
                 String out = Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse("");
                 return Tag.selfClosingInserting(net.kyori.adventure.text.Component.text(out));
@@ -88,8 +96,8 @@ public class PlaceholderManager {
     }
 
     private static String safePluginName() {
-        try { return Tensa.pluginContainer != null ? Tensa.pluginContainer.getDescription().getName().orElse("TENSA") : "TENSA"; } catch (Throwable ignored) {}
-        return "TENSA";
+        try { return Tensa.pluginContainer != null ? Tensa.pluginContainer.getDescription().getName().orElse("Tensa") : "Tensa"; } catch (Throwable ignored) {}
+        return "Tensa";
     }
 
     private static String safePluginVersion() {
@@ -116,8 +124,10 @@ public class PlaceholderManager {
             if (out.contains(token)) {
                 out = out.replace(token, Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse(""));
             }
-            // namespaced tensa_ form
-            String token2 = "%tensa_" + e.getKey() + "%";
+            String token2 = "%" + namespacedKey(e.getKey()) + "%";
+            if (token2.equals(token)) {
+                continue;
+            }
             if (out.contains(token2)) {
                 out = out.replace(token2, Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse(""));
             }
@@ -161,87 +171,10 @@ public class PlaceholderManager {
                 // Now we have PAPI placeholders resolved to raw strings (e.g. &aAdmin)
                 // Replace our custom angle placeholders before parsing
                 String replaced = replaceAnglePlaceholders(player, resolved);
-                // Convert to component - this handles both legacy and MiniMessage
-                return convertMixed(replaced);
+                return Message.convert(replaced);
             });
         }
         return java.util.concurrent.CompletableFuture.completedFuture(resolveComponent(player, input));
-    }
-
-    // Converts mixed legacy + MiniMessage format
-    private static Component convertMixed(String input) {
-        if (input == null || input.isEmpty()) return Component.empty();
-
-        // Check if contains legacy codes from PAPI
-        boolean hasLegacy = input.indexOf('&') >= 0 || input.indexOf('§') >= 0;
-
-        if (hasLegacy) {
-            // Use MiniMessage with legacy tag resolver to parse both formats
-            // This allows MiniMessage tags like <dark_gray> to work alongside legacy &a codes
-            net.kyori.adventure.text.minimessage.MiniMessage mm = net.kyori.adventure.text.minimessage.MiniMessage.builder()
-                    .tags(net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.resolver(
-                            net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.standard(),
-                            net.kyori.adventure.text.minimessage.tag.resolver.TagResolver.builder()
-                                    .resolver(net.kyori.adventure.text.minimessage.tag.standard.StandardTags.color())
-                                    .resolver(net.kyori.adventure.text.minimessage.tag.standard.StandardTags.decorations())
-                                    .build()
-                    ))
-                    .build();
-
-            // Pre-process: convert legacy codes to MiniMessage equivalents
-            String processed = convertLegacyToMiniMessage(input);
-            return mm.deserialize(processed);
-        }
-
-        return Message.convert(input);
-    }
-
-    // Cached pattern and map for legacy color code conversion
-    private static final java.util.regex.Pattern LEGACY_COLOR_PATTERN =
-        java.util.regex.Pattern.compile("&([0-9a-fk-or])(?![>])");
-
-    private static final Map<Character, String> LEGACY_TO_MINIMESSAGE = Map.ofEntries(
-        Map.entry('0', "<black>"),
-        Map.entry('1', "<dark_blue>"),
-        Map.entry('2', "<dark_green>"),
-        Map.entry('3', "<dark_aqua>"),
-        Map.entry('4', "<dark_red>"),
-        Map.entry('5', "<dark_purple>"),
-        Map.entry('6', "<gold>"),
-        Map.entry('7', "<gray>"),
-        Map.entry('8', "<dark_gray>"),
-        Map.entry('9', "<blue>"),
-        Map.entry('a', "<green>"),
-        Map.entry('b', "<aqua>"),
-        Map.entry('c', "<red>"),
-        Map.entry('d', "<light_purple>"),
-        Map.entry('e', "<yellow>"),
-        Map.entry('f', "<white>"),
-        Map.entry('k', "<obfuscated>"),
-        Map.entry('l', "<bold>"),
-        Map.entry('m', "<strikethrough>"),
-        Map.entry('n', "<underlined>"),
-        Map.entry('o', "<italic>"),
-        Map.entry('r', "<reset>")
-    );
-
-    // Convert legacy color codes to MiniMessage format using single-pass regex
-    private static String convertLegacyToMiniMessage(String input) {
-        if (input == null) return null;
-
-        input = input.replace("§", "&");
-
-        java.util.regex.Matcher matcher = LEGACY_COLOR_PATTERN.matcher(input);
-        StringBuilder result = new StringBuilder();
-
-        while (matcher.find()) {
-            char code = matcher.group(1).charAt(0);
-            String replacement = LEGACY_TO_MINIMESSAGE.getOrDefault(code, matcher.group(0));
-            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(replacement));
-        }
-        matcher.appendTail(result);
-
-        return result.toString();
     }
 
     private static String replaceAnglePlaceholders(Player player, String input) {
@@ -255,7 +188,10 @@ public class PlaceholderManager {
         // use exact match replacement to avoid breaking MiniMessage tags
         for (String key : custom.keySet()) {
             out = replaceExactTag(out, key, val.apply(key));
-            out = replaceExactTag(out, "tensa_" + key, val.apply(key));
+            String namespaced = namespacedKey(key);
+            if (!namespaced.equals(key)) {
+                out = replaceExactTag(out, namespaced, val.apply(key));
+            }
         }
         // replace registered angle prefix placeholders, e.g. <meta_key>
         for (Map.Entry<String, BiFunction<Player, String, String>> e : anglePrefixResolvers.entrySet()) {
@@ -299,7 +235,10 @@ public class PlaceholderManager {
             if (out.contains(token)) {
                 out = out.replace(token, Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse(""));
             }
-            String token2 = "%tensa_" + e.getKey() + "%";
+            String token2 = "%" + namespacedKey(e.getKey()) + "%";
+            if (token2.equals(token)) {
+                continue;
+            }
             if (out.contains(token2)) {
                 out = out.replace(token2, Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse(""));
             }
@@ -357,5 +296,12 @@ public class PlaceholderManager {
         // Append remaining text
         result.append(input.substring(lastEnd));
         return result.toString();
+    }
+
+    private static String namespacedKey(String key) {
+        if (key == null || key.isBlank() || key.startsWith("tensa_")) {
+            return key;
+        }
+        return "tensa_" + key;
     }
 }

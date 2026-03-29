@@ -6,13 +6,20 @@ import ua.co.tensa.modules.rcon.data.RconManagerConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public class RconManagerModule {
+    private static ExecutorService commandExecutor;
 
     private static final ModuleEntry IMPL = new AbstractModule(
             "rcon-manager", "Rcon Manager") {
         @Override protected void onEnable() {
             try {
+                commandExecutor = createExecutor();
                 RconManagerConfig.get().reloadCfg();
                 ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "trcon", new RconManagerCommand());
             } catch (Exception e) {
@@ -21,7 +28,8 @@ public class RconManagerModule {
         }
         @Override protected void onReload() { RconManagerConfig.get().reloadCfg(); }
         @Override protected void onDisable() {
-            ua.co.tensa.modules.AbstractModule.unregisterCommands("vurcon", "rcon", "velocityrcon");
+            ua.co.tensa.modules.AbstractModule.unregisterCommands("rcon", "trcon");
+            shutdownExecutor();
         }
     };
 
@@ -52,6 +60,47 @@ public class RconManagerModule {
         return new ArrayList<>(RconManagerConfig.get().tabComplete);
     }
 
+    public static <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+        return CompletableFuture.supplyAsync(supplier, executor());
+    }
+
     public static void enable() { IMPL.enable(); }
     public static void disable() { IMPL.disable(); }
+
+    private static ExecutorService executor() {
+        if (commandExecutor == null || commandExecutor.isShutdown()) {
+            commandExecutor = createExecutor();
+        }
+        return commandExecutor;
+    }
+
+    private static ExecutorService createExecutor() {
+        return Executors.newFixedThreadPool(
+                2,
+                runnable -> {
+                    Thread thread = new Thread(runnable);
+                    thread.setName("tensa-rcon-manager-" + thread.threadId());
+                    thread.setDaemon(true);
+                    return thread;
+                }
+        );
+    }
+
+    private static void shutdownExecutor() {
+        if (commandExecutor == null) {
+            return;
+        }
+
+        commandExecutor.shutdown();
+        try {
+            if (!commandExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                commandExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            commandExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        } finally {
+            commandExecutor = null;
+        }
+    }
 }

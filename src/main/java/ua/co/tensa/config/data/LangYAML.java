@@ -60,7 +60,7 @@ public class LangYAML extends YamlBackedFile {
         yamlFile.setHeader(getLangFile().toUpperCase() + " localization file (MiniMessage)");
 
         // Common
-        setConfigValue("prefix", "<white>[<dark_aqua><bold>TENSA</bold></dark_aqua>]</white> <gray>");
+        setConfigValue("prefix", "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>");
         setConfigValue("no_perms", "<red>You do not have permission to use this command</red>");
         setConfigValue("unknown_error", "<red>Unknown error</red>");
         setConfigValue("unknown_request", "<red>Unknown request</red>");
@@ -115,22 +115,63 @@ public class LangYAML extends YamlBackedFile {
 
         // Help
         yamlFile.setComment("help", "Help");
-        setConfigValue("help",
-                "<gold>Available commands:</gold>"
-                        + "\n<gold>/tensa</gold> <gray>-</gray> <green>Show help.</green>"
-                        + "\n<gold>/tensareload</gold> <gray>-</gray> <green>Reload all configurations.</green>"
-                        + "\n<gold>/tensamodules</gold> <gray>-</gray> <green>Show all modules.</green>"
-                        + "\n<gold>/tpl</gold> <gray>-</gray> <green>Show all plugins.</green>"
-                        + "\n<gold>/tptime</gold> <gray>-</gray> <green>Returns your total playing time.</green>"
-                        + "\n<gold>/tptime [player]</gold> <gray>-</gray> <green>Returns the specified player's total playing time.</green>"
-                        + "\n<gold>/tptop</gold> <gray>-</gray> <green>Shows the top players by time.</green>"
-                        + "\n<gold>/rcon [server/all/reload] [command]</gold> <gray>-</gray> <green>Sends the specified command to the specified server or all servers.</green>"
-                        + "\n<gold>/php [script/reload] [args]</gold> <gray>-</gray> <green>Executes the specified PHP script.</green>"
-                        + "\n<gold>/bash [script/reload] [args]</gold> <gray>-</gray> <green>Executes the specified Bash script.</green>"
-                        + "\n<gold>/rules</gold> <gray>-</gray> <green>Reads the specified text file.</green>"
-                        + "\n<gold>/readme</gold> <gray>-</gray> <green>Reads the specified text file.</green>"
-                        + "\n<gold>/psend [player/all] [server]</gold> <gray>-</gray> <green>Sends the specified player to the specified server.</green>"
-        );
+        setLocalizedConfigValue("help",
+                "<gold>Available commands:</gold>",
+                "<gold>Доступні команди:</gold>");
+        setLocalizedConfigValue("help_header",
+                "<gold>Available commands:</gold>",
+                "<gold>Доступні команди:</gold>");
+        setLocalizedConfigValue("help_empty",
+                "<yellow>No commands registered.</yellow>",
+                "<yellow>Зареєстрованих команд не знайдено.</yellow>");
+        setLocalizedConfigValue("help_command_format",
+                "<gold>{usage}</gold>{aliases} <gray>-</gray> <green>{description}</green>",
+                "<gold>{usage}</gold>{aliases} <gray>-</gray> <green>{description}</green>");
+        setLocalizedConfigValue("help_alias_format",
+                " <dark_gray>(</dark_gray><gray>aliases:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>",
+                " <dark_gray>(</dark_gray><gray>аліаси:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>");
+        setLocalizedConfigValue("help_desc_tensa", "Show help.", "Показати довідку.");
+        setLocalizedConfigValue("help_desc_tensareload", "Reload all plugin configurations.", "Перезавантажити всі конфігурації плагіна.");
+        setLocalizedConfigValue("help_desc_tensamodules", "Show all configured modules.", "Показати всі налаштовані модулі.");
+        setLocalizedConfigValue("help_desc_tpl", "Show installed proxy plugins.", "Показати встановлені плагіни проксі.");
+        setLocalizedConfigValue("help_desc_psend", "Send a player to another server.", "Відправити гравця на інший сервер.");
+        setLocalizedConfigValue("help_desc_tparse", "Parse placeholders in text.", "Розпарсити плейсхолдери в тексті.");
+        setLocalizedConfigValue("help_desc_tinfo", "Show plugin information, modules, and commands.", "Показати інформацію про плагін, модулі та команди.");
+        setLocalizedConfigValue("help_desc_tptime", "Show playing time for yourself or another player.", "Показати час гри для себе або іншого гравця.");
+        setLocalizedConfigValue("help_desc_tptop", "Show the top players by playing time.", "Показати топ гравців за часом гри.");
+        setLocalizedConfigValue("help_desc_rcon", "Execute an RCON command on one or more servers.", "Виконати RCON-команду на одному або кількох серверах.");
+        setLocalizedConfigValue("help_desc_tmeta", "Manage temporary and persistent user metadata.", "Керувати тимчасовими та постійними метаданими користувачів.");
+        setLocalizedConfigValue("help_desc_tpmdebug", "Show PM-Bridge debug information.", "Показати діагностичну інформацію PM-Bridge.");
+        setLocalizedConfigValue("help_desc_text_reader", "Read the text file {command}.", "Прочитати текстовий файл {command}.");
+        setLocalizedConfigValue("help_desc_request_trigger", "Execute the request trigger from {file}.", "Виконати request-тригер із конфігурації {file}.");
+        setLocalizedConfigValue("help_desc_chat_public", "Send a message to chat {command}.", "Надіслати повідомлення в чат {command}.");
+        setLocalizedConfigValue("help_desc_chat_private", "Send a private message through {command}.", "Надіслати приватне повідомлення через {command}.");
+    }
+
+    private void setLocalizedConfigValue(String path, String englishDefault, String ukrainianDefault) {
+        String localizedValue = isUkrainianLang() ? ukrainianDefault : englishDefault;
+        if (!yamlFile.contains(path)) {
+            yamlFile.set(path, localizedValue);
+            return;
+        }
+
+        String current = yamlFile.getString(path);
+        if (current == null) {
+            return;
+        }
+
+        if (isUkrainianLang() && englishDefault.equals(current)) {
+            yamlFile.set(path, ukrainianDefault);
+            return;
+        }
+
+        if (!isUkrainianLang() && ukrainianDefault.equals(current)) {
+            yamlFile.set(path, englishDefault);
+        }
+    }
+
+    private boolean isUkrainianLang() {
+        return "uk".equalsIgnoreCase(getLangFile());
     }
 
     private static String getLangFile() {

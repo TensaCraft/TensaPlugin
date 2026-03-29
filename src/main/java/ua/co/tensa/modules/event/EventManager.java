@@ -1,26 +1,54 @@
 package ua.co.tensa.modules.event;
 
 import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
+import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.player.KickedFromServerEvent;
+import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
-import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
-import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import com.velocitypowered.api.event.player.ServerPreConnectEvent;
+import com.velocitypowered.api.network.ListenerType;
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.InboundConnection;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ua.co.tensa.modules.event.EventsModule.Events.*;
 
 public class EventManager {
+    private static final String EMPTY = "";
+    private static final List<String> SUPPORTED_PLACEHOLDERS = List.of(
+            "event",
+            "player",
+            "uuid",
+            "server",
+            "fromServer",
+            "toServer",
+            "originalServer",
+            "initialServer",
+            "ip",
+            "host",
+            "port",
+            "address",
+            "protocol",
+            "intent",
+            "listener"
+    );
 
-    private static boolean isEnabled() {
+    private static boolean isModuleDisabled() {
         try { return Tensa.config == null || !Tensa.config.isModuleEnabled("events-manager"); } catch (Throwable ignored) { return true; }
     }
     private static final String DELAY = "[delay]";
@@ -28,32 +56,40 @@ public class EventManager {
 
     public static void reload() { /* dynamic check via isEnabled() */ }
 
-    private static void sendCommand(Player player, String command, boolean console) {
-        if (console) {
+    private static void sendCommand(EventContext context, String command, boolean console) {
+        if (console || context.player() == null) {
             Util.executeCommand(command);
         } else {
-            Util.executeCommand(player, command);
+            Util.executeCommand(context.player(), command);
         }
     }
 
-    private static List<String> commandsPrepare(List<String> commands, String player, String server, String preServer) {
+    static List<String> renderCommands(List<String> commands, Map<String, String> placeholders) {
         List<String> out = new ArrayList<>();
-        java.util.Map<String,String> ctx = new java.util.HashMap<>();
-        ctx.put("player", player);
-        ctx.put("server", server);
-        ctx.put("fromServer", preServer);
-        for (Object command : commands) {
-            String templ = String.valueOf(command);
-            out.add(Message.renderTemplateString(templ, ctx));
+        if (commands == null || commands.isEmpty()) {
+            return out;
+        }
+        Map<String, String> context = placeholders == null ? Map.of() : placeholders;
+        for (String command : commands) {
+            String template = command == null ? EMPTY : command;
+            out.add(Message.renderTemplateString(template, context));
         }
         return out;
     }
 
-    private static void runnable(Player player, List<String> commands, String currentServerName, String preServer) {
+    private static void execute(EventsModule.Events event, EventContext context) {
+        if (isModuleDisabled() || !event.enabled()) {
+            return;
+        }
+
         AtomicLong delayAccum = new AtomicLong(0);
-        for (String command : commandsPrepare(commands, player.getUsername(), currentServerName, preServer)) {
-            if (command.contains(DELAY)) {
-                String raw = command.replace(DELAY, "").trim();
+        for (String command : renderCommands(event.commands(), context.placeholders())) {
+            String trimmed = command == null ? EMPTY : command.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.startsWith(DELAY)) {
+                String raw = trimmed.substring(DELAY.length()).trim();
                 try {
                     long add = Long.parseLong(raw);
                     delayAccum.addAndGet(add);
@@ -62,87 +98,235 @@ public class EventManager {
                 }
                 continue;
             }
-            final String cmd = command.contains(CONSOLE) ? command.replace(CONSOLE, "").trim() : command;
-            final boolean asConsole = command.contains(CONSOLE);
-            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> sendCommand(player, cmd, asConsole))
+
+            final boolean asConsole = trimmed.startsWith(CONSOLE);
+            final String cmd = asConsole ? trimmed.substring(CONSOLE.length()).trim() : trimmed;
+            if (cmd.isBlank()) {
+                continue;
+            }
+
+            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> sendCommand(context, cmd, asConsole))
                     .delay(delayAccum.get(), TimeUnit.SECONDS)
                     .schedule();
         }
     }
 
-    private static void executeCommands(List<String> commands) {
-        AtomicLong delayAccum = new AtomicLong(0);
-        for (String command : commandsPrepare(commands, "", "", "")) {
-            if (command.contains(DELAY)) {
-                String raw = command.replace(DELAY, "").trim();
-                try {
-                    long add = Long.parseLong(raw);
-                    delayAccum.addAndGet(add);
-                } catch (NumberFormatException e) {
-                    Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
-                }
-                continue;
-            }
-            final String cmd = command.replace(CONSOLE, "").trim();
-            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> Util.executeCommand(cmd))
-                    .delay(delayAccum.get(), TimeUnit.SECONDS)
-                    .schedule();
-        }
+    private static EventContextBuilder context(String eventName) {
+        return new EventContextBuilder().put("event", eventName);
     }
 
     private static String getCurrentServerName(Player player) {
         return player.getCurrentServer().map(serverConnection -> serverConnection.getServerInfo().getName()).orElse("");
     }
 
-    @SuppressWarnings("unchecked")
+    private static EventContextBuilder withConnection(EventContextBuilder builder, InboundConnection connection) {
+        if (connection == null) {
+            return builder;
+        }
+
+        InetSocketAddress remoteAddress = connection.getRemoteAddress();
+        if (remoteAddress != null) {
+            builder
+                    .put("ip", safe(remoteAddress.getHostString()))
+                    .put("port", Integer.toString(remoteAddress.getPort()))
+                    .put("address", safe(remoteAddress.getHostString()) + ":" + remoteAddress.getPort());
+        }
+
+        connection.getVirtualHost().ifPresent(virtualHost -> builder.put("host", safe(virtualHost.getHostString())));
+        if (builder.isBlank("host")) {
+            connection.getRawVirtualHost().ifPresent(rawHost -> builder.put("host", safe(rawHost)));
+        }
+
+        builder
+                .put("protocol", safe(String.valueOf(connection.getProtocolVersion())))
+                .put("intent", safe(String.valueOf(connection.getHandshakeIntent())));
+
+        return builder;
+    }
+
+    private static EventContextBuilder withPlayer(EventContextBuilder builder, Player player) {
+        if (player == null) {
+            return builder;
+        }
+
+        builder.player(player)
+                .put("player", safe(player.getUsername()))
+                .put("uuid", safe(String.valueOf(player.getUniqueId())))
+                .put("server", getCurrentServerName(player));
+
+        return withConnection(builder, player);
+    }
+
+    private static EventContextBuilder withServerNames(EventContextBuilder builder, String currentServer, String previousServer) {
+        return builder
+                .put("server", currentServer)
+                .put("toServer", currentServer)
+                .put("fromServer", previousServer);
+    }
+
+    private static String serverName(RegisteredServer server) {
+        return server == null ? EMPTY : safe(server.getServerInfo().getName());
+    }
+
+    public static void onPreLogin(PreLoginEvent event) {
+        EventContext context = withConnection(context(on_pre_login_commands.name()), event.getConnection())
+                .put("player", safe(event.getUsername()))
+                .put("uuid", event.getUniqueId() == null ? EMPTY : event.getUniqueId().toString())
+                .build();
+        execute(on_pre_login_commands, context);
+    }
+
+    public static void onLogin(LoginEvent event) {
+        EventContext context = withPlayer(context(on_login_commands.name()), event.getPlayer()).build();
+        execute(on_login_commands, context);
+    }
+
     public static void onPlayerJoin(PostLoginEvent event) {
-        if (isEnabled() || !on_join_commands.enabled()) {
-            return;
-        }
-        runnable(event.getPlayer(), on_join_commands.commands(), getCurrentServerName(event.getPlayer()), "");
+        EventContext context = withPlayer(context(on_join_commands.name()), event.getPlayer()).build();
+        execute(on_join_commands, context);
     }
 
-    @SuppressWarnings("unchecked")
     public static void onPlayerLeave(DisconnectEvent event) {
-        if (isEnabled() || !on_leave_commands.enabled()) {
-            return;
-        }
-        runnable(event.getPlayer(), on_leave_commands.commands(), getCurrentServerName(event.getPlayer()), "");
+        EventContext context = withPlayer(context(on_leave_commands.name()), event.getPlayer()).build();
+        execute(on_leave_commands, context);
     }
 
-    @SuppressWarnings("unchecked")
     public static void onPlayerKick(KickedFromServerEvent event) {
-        if (isEnabled() || !on_server_kick.enabled()) {
-            return;
-        }
-        runnable(event.getPlayer(), on_server_kick.commands(), event.getServer().getServerInfo().getName(), "");
+        EventContext context = withServerNames(
+                withPlayer(context(on_server_kick.name()), event.getPlayer()),
+                serverName(event.getServer()),
+                getCurrentServerName(event.getPlayer())
+        ).build();
+        execute(on_server_kick, context);
     }
 
-    @SuppressWarnings("unchecked")
+    public static void onChooseInitialServer(PlayerChooseInitialServerEvent event) {
+        String initialServer = event.getInitialServer().map(EventManager::serverName).orElse(EMPTY);
+        EventContext context = withPlayer(context(on_initial_server_commands.name()), event.getPlayer())
+                .put("server", initialServer)
+                .put("toServer", initialServer)
+                .put("initialServer", initialServer)
+                .build();
+        execute(on_initial_server_commands, context);
+    }
+
+    public static void onServerPreConnect(ServerPreConnectEvent event) {
+        String previousServer = serverName(event.getPreviousServer());
+        String originalServer = serverName(event.getOriginalServer());
+        String targetServer = event.getResult().getServer().map(EventManager::serverName).orElse(originalServer);
+
+        EventContext context = withPlayer(context(on_server_pre_connect.name()), event.getPlayer())
+                .put("server", targetServer)
+                .put("toServer", targetServer)
+                .put("fromServer", previousServer)
+                .put("originalServer", originalServer)
+                .build();
+        execute(on_server_pre_connect, context);
+    }
+
     public static void onServerSwitch(ServerConnectedEvent event) {
-        if (isEnabled() || !on_server_switch.enabled() || event.getPreviousServer().isEmpty()) {
+        if (event.getPreviousServer().isEmpty()) {
             return;
         }
         String currentServerName = event.getServer().getServerInfo().getName();
         String preServer = event.getPreviousServer().map(serverConnection -> serverConnection.getServerInfo().getName())
                 .orElse("");
-        runnable(event.getPlayer(), on_server_switch.commands(), currentServerName, preServer);
+        EventContext context = withServerNames(
+                withPlayer(context(on_server_switch.name()), event.getPlayer()),
+                currentServerName,
+                preServer
+        ).build();
+        execute(on_server_switch, context);
     }
 
-    @SuppressWarnings("unchecked")
-    public static void onServerRunning(ProxyInitializeEvent event) {
-        if (isEnabled() || !on_server_running.enabled()) {
-            return;
+    public static void onServerPostConnect(ServerPostConnectEvent event) {
+        String currentServer = getCurrentServerName(event.getPlayer());
+        String previousServer = serverName(event.getPreviousServer());
+        EventContext context = withServerNames(
+                withPlayer(context(on_server_post_connect.name()), event.getPlayer()),
+                currentServer,
+                previousServer
+        ).build();
+        execute(on_server_post_connect, context);
+    }
+
+    public static void onListenerBound(com.velocitypowered.api.event.proxy.ListenerBoundEvent event) {
+        EventContext context = context(on_listener_bound.name())
+                .listener(event.getAddress(), event.getListenerType())
+                .build();
+        execute(on_listener_bound, context);
+    }
+
+    public static void onListenerClose(com.velocitypowered.api.event.proxy.ListenerCloseEvent event) {
+        EventContext context = context(on_listener_close.name())
+                .listener(event.getAddress(), event.getListenerType())
+                .build();
+        execute(on_listener_close, context);
+    }
+
+    public static void onServerRunning() {
+        execute(on_server_running, context(on_server_running.name()).build());
+    }
+
+    public static void onProxyReload() {
+        execute(on_proxy_reload, context(on_proxy_reload.name()).build());
+    }
+
+    public static void onServerPreStop() {
+        execute(on_server_pre_stop, context(on_server_pre_stop.name()).build());
+    }
+
+    public static void onServerStop() {
+        execute(on_server_stop, context(on_server_stop.name()).build());
+    }
+
+    private static String safe(String value) {
+        return value == null ? EMPTY : value;
+    }
+
+    private record EventContext(Player player, Map<String, String> placeholders) {
+    }
+
+    private static final class EventContextBuilder {
+        private Player player;
+        private final Map<String, String> placeholders = new LinkedHashMap<>();
+
+        private EventContextBuilder() {
+            for (String placeholder : SUPPORTED_PLACEHOLDERS) {
+                placeholders.put(placeholder, EMPTY);
+            }
         }
-        executeCommands(on_server_running.commands());
-    }
 
-    @SuppressWarnings("unchecked")
-    public static void onServerStop(ProxyShutdownEvent event) {
-        if (isEnabled() || !on_server_stop.enabled()) {
-            return;
+        private EventContextBuilder player(Player player) {
+            this.player = player;
+            return this;
         }
-        executeCommands(on_server_stop.commands());
-    }
 
+        private EventContextBuilder put(String key, String value) {
+            if (key == null || key.isBlank()) {
+                return this;
+            }
+            placeholders.put(key, safe(value));
+            return this;
+        }
+
+        private boolean isBlank(String key) {
+            String value = placeholders.get(key);
+            return value == null || value.isBlank();
+        }
+
+        private EventContextBuilder listener(InetSocketAddress address, ListenerType listenerType) {
+            put("listener", listenerType == null ? EMPTY : listenerType.name());
+            if (address != null) {
+                put("host", address.getHostString());
+                put("port", Integer.toString(address.getPort()));
+                put("address", address.getHostString() + ":" + address.getPort());
+            }
+            return this;
+        }
+
+        private EventContext build() {
+            return new EventContext(player, Collections.unmodifiableMap(new LinkedHashMap<>(placeholders)));
+        }
+    }
 }

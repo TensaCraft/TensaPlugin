@@ -36,11 +36,20 @@ public class PlayerTimeTracker {
     }
 
     private void updatePlayerNameInDatabase(UUID playerId, String playerName) {
-        if (database.exists("player_times", "uuid = ?", playerId.toString())) {
-            database.updateAsync("player_times", "name = ?", "uuid = ?", playerName, playerId.toString());
-        } else {
-            database.insertAsync("player_times", "uuid, name, play_time", playerId.toString(), playerName, 0);
-        }
+        database.selectAsync("player_times", "1", "uuid = ?",
+                rs -> rs.next(),
+                playerId.toString())
+            .thenAccept(exists -> {
+                if (Boolean.TRUE.equals(exists)) {
+                    database.updateAsync("player_times", "name = ?", "uuid = ?", playerName, playerId.toString());
+                } else {
+                    database.insertAsync("player_times", "uuid, name, play_time", playerId.toString(), playerName, 0);
+                }
+            })
+            .exceptionally(ex -> {
+                ua.co.tensa.Message.error("Failed to update player name for " + playerId + ": " + ex.getMessage());
+                return null;
+            });
     }
 
     private void updatePlayerTimeInDatabase(UUID playerId, long timeOnline) {

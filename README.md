@@ -1,7 +1,29 @@
 
-# TENSA Plugin
+# Tensa Plugin
 
-TENSA Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
+Tensa Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
+
+## Dev Server
+- Run the local Velocity dev server from the project root with `.\.run\run-velocity.cmd`.
+- The script builds `target/Tensa.jar`, downloads the matching Velocity runtime from Fill v3, copies the plugin into `.run/velocity/plugins/`, and starts the proxy.
+- Optional flags:
+  - `.\.run\run-velocity.cmd -WithTests` to build and run tests before launch
+  - `.\.run\run-velocity.cmd -SkipBuild` to restart the proxy with the already-built jar
+  - `.\.run\run-velocity.cmd -VelocityVersion 3.5.0-SNAPSHOT` to pin a specific runtime version
+
+## Velocity Log Cleanup
+You can let the plugin clean old Velocity logs on startup through `config.yml`:
+
+```yaml
+velocity:
+  log_cleanup:
+    enable: true
+    latest_log: false
+    rotated_logs: true
+    compressed_logs: true
+```
+
+- `latest_log` is best-effort only. On Windows, Velocity may still hold the file handle, so truncation can fail while rotated `.log` and `.log.gz` files are cleaned normally.
 
 ## Config Models
 - Typed config classes with annotations live under `ua.co.tensa.config.model`.
