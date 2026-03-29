@@ -71,6 +71,7 @@ public class RequestsModule {
             String trigger = triggerMap.get("trigger");
             AbstractModule.unregisterCommands(trigger);
         }
+        HttpRequest.shutdown();
     }
 
     public static void enable() { IMPL.enable(); }

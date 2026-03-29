@@ -29,22 +29,9 @@ public class HttpRequest {
 
 	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
 	private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(20);
-
-	private static final ExecutorService HTTP_EXECUTOR = Executors.newFixedThreadPool(
-			Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors())),
-			runnable -> {
-				Thread thread = new Thread(runnable);
-				thread.setName("tensa-http-" + thread.threadId());
-				thread.setDaemon(true);
-				return thread;
-			}
-	);
-
-	private static final HttpClient CLIENT = HttpClient.newBuilder()
-			.connectTimeout(CONNECT_TIMEOUT)
-			.executor(HTTP_EXECUTOR)
-			.followRedirects(HttpClient.Redirect.NORMAL)
-			.build();
+	private static final Object HTTP_LOCK = new Object();
+	private static volatile ExecutorService httpExecutor;
+	private static volatile HttpClient client;
 
 	private static final int MAX_ATTEMPTS = 2;
 
@@ -71,7 +58,7 @@ public class HttpRequest {
 			} catch (Exception e) {
 				throw new CompletionException(e);
 			}
-		}, HTTP_EXECUTOR);
+		}, executor());
 	}
 
 	public Result send() throws Exception {
@@ -130,7 +117,7 @@ public class HttpRequest {
 
 	private HttpResponse<String> execute(java.net.http.HttpRequest request) throws IOException {
 		try {
-			return CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+			return client().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("HTTP request interrupted.", e);
@@ -226,14 +213,54 @@ public class HttpRequest {
 	}
 
 	public static void shutdown() {
-		HTTP_EXECUTOR.shutdown();
+		ExecutorService executorToShutdown;
+		synchronized (HTTP_LOCK) {
+			executorToShutdown = httpExecutor;
+			httpExecutor = null;
+			client = null;
+		}
+		if (executorToShutdown == null) {
+			return;
+		}
+		executorToShutdown.shutdown();
 		try {
-			if (!HTTP_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
-				HTTP_EXECUTOR.shutdownNow();
+			if (!executorToShutdown.awaitTermination(5, TimeUnit.SECONDS)) {
+				executorToShutdown.shutdownNow();
 			}
 		} catch (InterruptedException e) {
-			HTTP_EXECUTOR.shutdownNow();
+			executorToShutdown.shutdownNow();
 			Thread.currentThread().interrupt();
+		}
+	}
+
+	private static ExecutorService executor() {
+		synchronized (HTTP_LOCK) {
+			if (httpExecutor == null || httpExecutor.isShutdown() || httpExecutor.isTerminated()) {
+				httpExecutor = Executors.newFixedThreadPool(
+						Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors())),
+						runnable -> {
+							Thread thread = new Thread(runnable);
+							thread.setName("tensa-http-" + thread.threadId());
+							thread.setDaemon(true);
+							return thread;
+						}
+				);
+				client = null;
+			}
+			return httpExecutor;
+		}
+	}
+
+	private static HttpClient client() {
+		synchronized (HTTP_LOCK) {
+			if (client == null) {
+				client = HttpClient.newBuilder()
+						.connectTimeout(CONNECT_TIMEOUT)
+						.executor(executor())
+						.followRedirects(HttpClient.Redirect.NORMAL)
+						.build();
+			}
+			return client;
 		}
 	}
 }

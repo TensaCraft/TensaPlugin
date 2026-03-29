@@ -15,7 +15,6 @@ import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.data.LangYAML;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
-import ua.co.tensa.modules.requests.HttpRequest;
 import ua.co.tensa.placeholders.PlaceholderManager;
 import ua.co.tensa.velocity.VelocityLogCleaner;
 
@@ -76,7 +75,6 @@ public class Tensa {
         if (database != null) {
             database.close();
         }
-        HttpRequest.shutdown();
         // Shutdown database executor pool
         Database.shutdownExecutor();
     }
