@@ -15,13 +15,17 @@ public class EventsModule {
             "events-manager", "Events Manager") {
         @Override protected void onEnable() {
             EventsConfig.get().reloadCfg();
+            EventManager.initialise(ua.co.tensa.Tensa.pluginPath);
             // Register event listener only when module is enabled
             ((AbstractModule) IMPL).registerListener(new EventsListener());
             // Fire server-running sequence at enable-time in case we missed initial ProxyInitializeEvent
             try { EventManager.onServerRunning(); } catch (Throwable ignored) { }
         }
-        @Override protected void onReload() { EventsConfig.get().reloadCfg(); }
-        @Override protected void onDisable() { /* listeners are auto-unregistered */ }
+        @Override protected void onReload() {
+            EventsConfig.get().reloadCfg();
+            EventManager.reload();
+        }
+        @Override protected void onDisable() { EventManager.shutdown(); }
     };
     public static final ModuleEntry ENTRY = IMPL;
 
@@ -32,6 +36,7 @@ public class EventsModule {
 		on_pre_login_commands("on_pre_login_commands", c -> c.onPreLoginEnabled, c -> c.onPreLoginCommands),
         on_login_commands("on_login_commands", c -> c.onLoginEnabled, c -> c.onLoginCommands),
         on_join_commands("on_join_commands", c -> c.onJoinEnabled, c -> c.onJoinCommands),
+        on_first_join_commands("on_first_join_commands", c -> c.onFirstJoinEnabled, c -> c.onFirstJoinCommands),
         on_leave_commands("on_leave_commands", c -> c.onLeaveEnabled, c -> c.onLeaveCommands),
         on_initial_server_commands("on_initial_server_commands", c -> c.onInitialServerEnabled, c -> c.onInitialServerCommands),
         on_server_pre_connect("on_server_pre_connect", c -> c.onServerPreConnectEnabled, c -> c.onServerPreConnectCommands),

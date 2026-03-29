@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.net.InetSocketAddress;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,8 +46,10 @@ public class EventManager {
             "address",
             "protocol",
             "intent",
-            "listener"
+            "listener",
+            "firstJoinAt"
     );
+    private static volatile FirstJoinRegistry firstJoinRegistry;
 
     private static boolean isModuleDisabled() {
         try { return Tensa.config == null || !Tensa.config.isModuleEnabled("events-manager"); } catch (Throwable ignored) { return true; }
@@ -54,7 +57,27 @@ public class EventManager {
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";
 
-    public static void reload() { /* dynamic check via isEnabled() */ }
+    public static synchronized void initialise(Path pluginPath) {
+        shutdown();
+        firstJoinRegistry = new FirstJoinRegistry(pluginPath.resolve("events").resolve("first-join.yml"));
+    }
+
+    public static synchronized void reload() {
+        if (firstJoinRegistry != null) {
+            firstJoinRegistry.reload();
+        }
+    }
+
+    public static synchronized void shutdown() {
+        if (firstJoinRegistry == null) {
+            return;
+        }
+        try {
+            firstJoinRegistry.close();
+        } finally {
+            firstJoinRegistry = null;
+        }
+    }
 
     private static void sendCommand(EventContext context, String command, boolean console) {
         if (console || context.player() == null) {
@@ -182,8 +205,26 @@ public class EventManager {
     }
 
     public static void onPlayerJoin(PostLoginEvent event) {
-        EventContext context = withPlayer(context(on_join_commands.name()), event.getPlayer()).build();
-        execute(on_join_commands, context);
+        EventContextBuilder builder = withPlayer(context(on_join_commands.name()), event.getPlayer());
+        execute(on_join_commands, builder.build());
+
+        FirstJoinRegistry registry = firstJoinRegistry;
+        if (registry == null) {
+            return;
+        }
+
+        FirstJoinRegistry.MarkResult markResult = registry.markFirstJoin(
+                event.getPlayer().getUniqueId(),
+                event.getPlayer().getUsername()
+        );
+        if (!markResult.firstJoin()) {
+            return;
+        }
+
+        EventContext firstJoinContext = withPlayer(context(on_first_join_commands.name()), event.getPlayer())
+                .put("firstJoinAt", markResult.firstSeenAt())
+                .build();
+        execute(on_first_join_commands, firstJoinContext);
     }
 
     public static void onPlayerLeave(DisconnectEvent event) {

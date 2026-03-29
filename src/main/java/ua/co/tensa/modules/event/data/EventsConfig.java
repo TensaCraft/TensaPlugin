@@ -11,6 +11,7 @@ public class EventsConfig extends ConfigBase {
 
     private static final String COMMAND_HINT = "Use [console] to run a command as the proxy console and [delay] <seconds> to postpone execution.";
     private static final String PLAYER_PLACEHOLDERS = "Placeholders: {event}, {player}, {uuid}, {ip}, {host}, {port}, {address}, {protocol}, {intent}, {server}. " + COMMAND_HINT;
+    private static final String FIRST_JOIN_PLACEHOLDERS = "Placeholders: {event}, {player}, {uuid}, {ip}, {host}, {port}, {address}, {protocol}, {intent}, {server}, {firstJoinAt}. " + COMMAND_HINT;
     private static final String SERVER_PLACEHOLDERS = "Placeholders: {event}, {player}, {uuid}, {ip}, {host}, {port}, {address}, {protocol}, {intent}, {server}, {fromServer}, {toServer}, {originalServer}, {initialServer}. " + COMMAND_HINT;
     private static final String PROXY_PLACEHOLDERS = "Placeholders: {event}. " + COMMAND_HINT;
     private static final String LISTENER_PLACEHOLDERS = "Placeholders: {event}, {listener}, {address}, {host}, {port}. " + COMMAND_HINT;
@@ -30,6 +31,11 @@ public class EventsConfig extends ConfigBase {
     public boolean onJoinEnabled = false;
     @CfgKey(value = "events.on_join_commands.commands", comment = COMMANDS_COMMENT)
     public List<String> onJoinCommands = new ArrayList<>();
+
+    @CfgKey(value = "events.on_first_join_commands.enabled", comment = "Runs only once for each player, the first time they join the proxy while the events module is active. " + FIRST_JOIN_PLACEHOLDERS)
+    public boolean onFirstJoinEnabled = false;
+    @CfgKey(value = "events.on_first_join_commands.commands", comment = COMMANDS_COMMENT)
+    public List<String> onFirstJoinCommands = new ArrayList<>();
 
     @CfgKey(value = "events.on_leave_commands.enabled", comment = "Runs when a player disconnects from the proxy. " + PLAYER_PLACEHOLDERS)
     public boolean onLeaveEnabled = false;
