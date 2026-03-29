@@ -232,11 +232,6 @@ public class Database {
         T execute(PreparedStatement preparedStatement) throws SQLException;
     }
 
-    @FunctionalInterface
-    public interface ResultSetHandler<T> {
-        T handle(ResultSet resultSet) throws SQLException;
-    }
-
     private String constructInsertQuery(String tableName, String columns, int valueCount) {
         StringBuilder query = new StringBuilder();
         query.append("INSERT INTO ").append(appendPrefix(tableName)).append(" (").append(columns).append(") VALUES (");
