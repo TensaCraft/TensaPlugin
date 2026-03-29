@@ -45,9 +45,14 @@ final class ConfigBinder {
                 if (def instanceof java.util.Map<?,?> map) {
                     // write nested keys recursively
                     writeMapDefaults(yaml, base, map);
-                } else if (!yaml.contains(base)) {
-                    if (!k.comment().isBlank()) yaml.setComment(base, k.comment());
-                    yaml.set(base, def);
+                } else {
+                    if (!yaml.contains(base)) {
+                        yaml.set(base, def);
+                    }
+                    // Re-apply comments on every save cycle so they survive library rewrites.
+                    if (!k.comment().isBlank()) {
+                        yaml.setComment(base, k.comment());
+                    }
                 }
             } catch (IllegalAccessException e) {
                 Message.warn("Config model default write failed for " + base + ": " + e.getMessage());
