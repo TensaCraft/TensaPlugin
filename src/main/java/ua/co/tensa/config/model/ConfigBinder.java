@@ -1,5 +1,6 @@
 package ua.co.tensa.config.model;
 
+import org.simpleyaml.configuration.ConfigurationSection;
 import org.simpleyaml.configuration.file.YamlConfiguration;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Message;
@@ -7,6 +8,7 @@ import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,112 +22,190 @@ final class ConfigBinder {
 
     ConfigBinder(Object target) {
         this.target = target;
+
         for (Class<?> c = target.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-            for (Field f : c.getDeclaredFields()) {
-                if (f.isAnnotationPresent(CfgKey.class)) {
-                    f.setAccessible(true);
-                    fields.add(f);
+            for (Field field : c.getDeclaredFields()) {
+                if (field.isAnnotationPresent(CfgKey.class)) {
+                    field.setAccessible(true);
+                    fields.add(field);
                 }
             }
         }
     }
 
-    void writeMissingDefaults(YamlFile yaml) {
-        for (Field f : fields) {
-            CfgKey k = f.getAnnotation(CfgKey.class);
-            String base = k.value();
+    boolean writeMissingDefaults(YamlFile yaml) {
+        boolean changed = false;
+
+        for (Field field : fields) {
+            CfgKey key = field.getAnnotation(CfgKey.class);
+            String base = key.value();
+
             try {
-                Object def = f.get(target);
+                Object def = field.get(target);
+
                 boolean allow = true;
                 if (target instanceof ConfigBase cm) {
                     allow = cm.shouldWriteDefault(base, def, yaml);
                 }
-                if (!allow) continue;
+                if (!allow) {
+                    continue;
+                }
 
-                if (def instanceof java.util.Map<?,?> map) {
-                    if (!k.comment().isBlank()) {
-                        yaml.setComment(base, k.comment());
+                if (def instanceof Map<?, ?> map) {
+                    boolean mapChanged = writeMapDefaults(yaml, base, map);
+                    if (mapChanged) {
+                        changed = true;
+                        if (!key.comment().isBlank()) {
+                            yaml.setComment(base, key.comment());
+                        }
                     }
-                    // write nested keys recursively
-                    writeMapDefaults(yaml, base, map);
-                } else {
-                    if (!yaml.contains(base)) {
-                        yaml.set(base, def);
-                    }
-                    // Re-apply comments on every save cycle so they survive library rewrites.
-                    if (!k.comment().isBlank()) {
-                        yaml.setComment(base, k.comment());
+                    continue;
+                }
+
+                if (!yaml.contains(base)) {
+                    yaml.set(base, copyValue(def));
+                    changed = true;
+
+                    if (!key.comment().isBlank()) {
+                        yaml.setComment(base, key.comment());
                     }
                 }
             } catch (IllegalAccessException e) {
                 Message.warn("Config model default write failed for " + base + ": " + e.getMessage());
             }
         }
+
+        return changed;
     }
 
-    @SuppressWarnings("unchecked")
-    private void writeMapDefaults(YamlFile yaml, String base, java.util.Map<?,?> map) {
-        for (var e : map.entrySet()) {
-            String key = String.valueOf(e.getKey());
+    private boolean writeMapDefaults(YamlFile yaml, String base, Map<?, ?> map) {
+        boolean changed = false;
+
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String key = String.valueOf(entry.getKey());
             String full = (base == null || base.isBlank()) ? key : base + "." + key;
-            Object val = e.getValue();
-            if (val instanceof java.util.Map<?,?> m2) {
-                writeMapDefaults(yaml, full, (java.util.Map<?,?>) m2);
-            } else {
-                if (!yaml.contains(full)) yaml.set(full, val);
+            Object value = entry.getValue();
+
+            if (value instanceof Map<?, ?> nested) {
+                if (writeMapDefaults(yaml, full, nested)) {
+                    changed = true;
+                }
+                continue;
+            }
+
+            if (!yaml.contains(full)) {
+                yaml.set(full, copyValue(value));
+                changed = true;
             }
         }
+
+        return changed;
     }
 
     void loadFromYaml(YamlConfiguration cfg) {
-        for (Field f : fields) {
-            CfgKey k = f.getAnnotation(CfgKey.class);
-            String path = k.value();
-            Class<?> t = f.getType();
+        for (Field field : fields) {
+            CfgKey key = field.getAnnotation(CfgKey.class);
+            String path = key.value();
+            Class<?> type = field.getType();
+
             try {
-                if (t == String.class) {
-                    String def = (String) f.get(target);
-                    String val = cfg.getString(path, def);
-                    f.set(target, val);
-                } else if (t == boolean.class || t == Boolean.class) {
-                    boolean cur = (f.get(target) instanceof Boolean b) ? b : false;
-                    boolean val = cfg.contains(path) ? cfg.getBoolean(path) : cur;
-                    f.set(target, val);
-                } else if (t == int.class || t == Integer.class) {
-                    int def = (f.get(target) instanceof Integer i) ? i : 0;
-                    f.set(target, cfg.getInt(path, def));
-                } else if (t == long.class || t == Long.class) {
-                    long def = (f.get(target) instanceof Long l) ? l : 0L;
-                    f.set(target, cfg.getLong(path, def));
-                } else if (t == double.class || t == Double.class) {
-                    double def = (f.get(target) instanceof Double d) ? d : 0D;
-                    f.set(target, cfg.getDouble(path, def));
-                } else if (List.class.isAssignableFrom(t)) {
+                if (type == String.class) {
+                    String def = (String) field.get(target);
+                    field.set(target, cfg.getString(path, def));
+                    continue;
+                }
+
+                if (type == boolean.class || type == Boolean.class) {
+                    boolean def = field.get(target) instanceof Boolean b ? b : false;
+                    field.set(target, cfg.contains(path) ? cfg.getBoolean(path) : def);
+                    continue;
+                }
+
+                if (type == int.class || type == Integer.class) {
+                    int def = field.get(target) instanceof Integer i ? i : 0;
+                    field.set(target, cfg.contains(path) ? cfg.getInt(path) : def);
+                    continue;
+                }
+
+                if (type == long.class || type == Long.class) {
+                    long def = field.get(target) instanceof Long l ? l : 0L;
+                    field.set(target, cfg.contains(path) ? cfg.getLong(path) : def);
+                    continue;
+                }
+
+                if (type == double.class || type == Double.class) {
+                    double def = field.get(target) instanceof Double d ? d : 0D;
+                    field.set(target, cfg.contains(path) ? cfg.getDouble(path) : def);
+                    continue;
+                }
+
+                if (List.class.isAssignableFrom(type)) {
                     @SuppressWarnings("unchecked")
-                    List<String> def = (List<String>) f.get(target);
-                    List<String> list = cfg.getStringList(path);
-                    f.set(target, (list == null || list.isEmpty()) && def != null ? def : list);
-                } else if (Map.class.isAssignableFrom(t)) {
-                    org.simpleyaml.configuration.ConfigurationSection sec = cfg.getConfigurationSection(path);
-                    if (sec != null) {
-                        java.util.LinkedHashMap<String, Object> m = new java.util.LinkedHashMap<>();
-                        for (String child : sec.getKeys(false)) {
-                            if (sec.isConfigurationSection(child)) {
-                                // shallow map of child section (no deep flattening)
-                                org.simpleyaml.configuration.ConfigurationSection childSec = sec.getConfigurationSection(child);
-                                m.put(child, childSec == null ? java.util.Map.of() : new java.util.LinkedHashMap<>(childSec.getMapValues(false)));
-                            } else {
-                                m.put(child, sec.get(child));
-                            }
-                        }
-                        f.set(target, m);
+                    List<String> def = (List<String>) field.get(target);
+
+                    if (cfg.contains(path)) {
+                        List<String> list = cfg.getStringList(path);
+                        field.set(target, list == null ? new ArrayList<>() : new ArrayList<>(list));
+                    } else {
+                        field.set(target, def == null ? new ArrayList<>() : new ArrayList<>(def));
                     }
-                } else {
-                    if (cfg.contains(path)) f.set(target, cfg.get(path));
+                    continue;
+                }
+
+                if (Map.class.isAssignableFrom(type)) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> def = (Map<String, Object>) field.get(target);
+
+                    ConfigurationSection section = cfg.getConfigurationSection(path);
+                    if (section != null) {
+                        LinkedHashMap<String, Object> map = new LinkedHashMap<>();
+                        readSection(section, map);
+                        field.set(target, map);
+                    } else if (def != null) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> copy = (Map<String, Object>) copyValue(def);
+                        field.set(target, copy);
+                    }
+                    continue;
+                }
+
+                if (cfg.contains(path)) {
+                    field.set(target, cfg.get(path));
                 }
             } catch (IllegalAccessException e) {
                 Message.warn("Config model load failed for " + path + ": " + e.getMessage());
             }
         }
+    }
+
+    private void readSection(ConfigurationSection section, Map<String, Object> out) {
+        for (String child : section.getKeys(false)) {
+            if (section.isConfigurationSection(child)) {
+                ConfigurationSection childSection = section.getConfigurationSection(child);
+                LinkedHashMap<String, Object> nested = new LinkedHashMap<>();
+                if (childSection != null) {
+                    readSection(childSection, nested);
+                }
+                out.put(child, nested);
+            } else {
+                out.put(child, copyValue(section.get(child)));
+            }
+        }
+    }
+
+    private Object copyValue(Object value) {
+        if (value instanceof List<?> list) {
+            return new ArrayList<>(list);
+        }
+
+        if (value instanceof Map<?, ?> map) {
+            LinkedHashMap<String, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                copy.put(String.valueOf(entry.getKey()), copyValue(entry.getValue()));
+            }
+            return copy;
+        }
+
+        return value;
     }
 }

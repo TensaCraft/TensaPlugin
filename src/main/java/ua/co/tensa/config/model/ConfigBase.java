@@ -1,6 +1,6 @@
 package ua.co.tensa.config.model;
 
-import org.simpleyaml.configuration.file.YamlConfiguration;
+import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Message;
 
 /**
@@ -22,35 +22,42 @@ public abstract class ConfigBase extends YamlBackedFile {
     @Override
     protected final void populateConfigFile() {
         ensureBinder();
-        // Avoid writing defaults on the very first load (constructor-time) before field initializers apply
-        if (!isFirstLoad()) {
-            try {
-                binder.writeMissingDefaults(this.yamlFile);
-            } catch (Exception e) {
-                Message.warn("Failed to write defaults for model " + getClass().getSimpleName() + ": " + e.getMessage());
-            }
+
+        /*
+         * During the constructor-time load, subclass field initializers
+         * are not ready yet, so defaults must not be written/read here.
+         */
+        if (isFirstLoad()) {
+            return;
         }
-        if (!isFirstLoad()) {
-            try {
-                YamlConfiguration cfg = getConfig();
-                binder.loadFromYaml(cfg);
-            } catch (Exception e) {
-                Message.warn("Failed to load model values for " + getClass().getSimpleName() + ": " + e.getMessage());
+
+        try {
+            boolean changed = binder.writeMissingDefaults(this.yamlFile);
+            if (changed) {
+                markDirty();
             }
+        } catch (Exception e) {
+            Message.warn("Failed to write defaults for model " + getClass().getSimpleName() + ": " + e.getMessage());
+        }
+
+        try {
+            binder.loadFromYaml(getConfig());
+        } catch (Exception e) {
+            Message.warn("Failed to load model values for " + getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
     public synchronized void reloadCfg() {
         super.reload();
-        ensureBinder();
-        try { binder.loadFromYaml(getConfig()); } catch (Exception ignored) {}
     }
 
     /** Backwards-compatible name used by callers. */
-    public synchronized void reloadModel() { reloadCfg(); }
+    public synchronized void reloadModel() {
+        reloadCfg();
+    }
 
-    /** Hook for subclasses to skip writing specific defaults (module-specific policies). */
-    protected boolean shouldWriteDefault(String basePath, Object defaultValue, org.simpleyaml.configuration.file.YamlFile yaml) {
+    /** Hook for subclasses to skip writing specific defaults. */
+    protected boolean shouldWriteDefault(String basePath, Object defaultValue, YamlFile yaml) {
         return true;
     }
 }
