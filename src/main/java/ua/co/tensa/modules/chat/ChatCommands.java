@@ -2,7 +2,9 @@ package ua.co.tensa.modules.chat;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
@@ -18,83 +20,153 @@ public class ChatCommands implements SimpleCommand {
     public record ChatRoute(String key, boolean privateRoute) {
     }
 
-    // Access chats.yml via section maps
+    private static final MiniMessage MINI = MiniMessage.miniMessage();
+
     private static YamlAdapter chatCfg = ChatConfig.get().adapter();
 
-    /**
-     * Read module flag dynamically to respect reload().
-     */
     private static boolean isChatEnabled() {
         return Tensa.config != null && Tensa.config.isModuleEnabled("chat-manager");
     }
 
-    /**
-     * Normalize a command label: strip leading '/', trim.
-     */
+    private static boolean isConsole(CommandSource source) {
+        return source instanceof ConsoleCommandSource;
+    }
+
     private static String normalizeCmd(String cmd) {
         if (cmd == null) return null;
-        String c = cmd.trim();
-        if (c.startsWith("/")) c = c.substring(1);
-        return c.trim();
+        String value = cmd.trim();
+        if (value.startsWith("/")) {
+            value = value.substring(1);
+        }
+        return value.trim();
     }
 
-    /**
-     * Safe String getter from a section map.
-     */
     private static String secString(Map<String, Object> sec, String key, String def) {
         if (sec == null) return def;
-        Object v = sec.get(key);
-        if (v == null) return def;
-        if (v instanceof String s) return s;
-        return String.valueOf(v);
+
+        Object value = sec.get(key);
+        if (value == null) return def;
+        if (value instanceof String text) return text;
+
+        return String.valueOf(value);
     }
 
-    /**
-     * Safe boolean getter from a section map.
-     */
     private static boolean secBool(Map<String, Object> sec, String key, boolean def) {
         if (sec == null) return def;
-        Object v = sec.get(key);
-        if (v == null) return def;
-        if (v instanceof Boolean b) return b;
-        if (v instanceof String s) return Boolean.parseBoolean(s.trim());
+
+        Object value = sec.get(key);
+        if (value == null) return def;
+        if (value instanceof Boolean bool) return bool;
+        if (value instanceof String text) return Boolean.parseBoolean(text.trim());
+
         return def;
     }
 
-    /**
-     * Produce a list of commands for a section.
-     * Supports:
-     * - commands: [a, b, c]
-     * - command: "a b,c;d"
-     */
     private static List<String> secCommands(Map<String, Object> sec) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         if (sec == null) return List.of();
 
-        Object c = sec.get("commands");
-        if (c instanceof Collection<?> col) {
-            for (Object o : col) {
-                if (o == null) continue;
-                String s = normalizeCmd(String.valueOf(o));
-                if (s != null && !s.isBlank()) out.add(s);
+        Object commands = sec.get("commands");
+        if (commands instanceof Collection<?> col) {
+            for (Object item : col) {
+                if (item == null) continue;
+
+                String cmd = normalizeCmd(String.valueOf(item));
+                if (cmd != null && !cmd.isBlank()) {
+                    out.add(cmd);
+                }
             }
         }
 
-        String one = normalizeCmd(secString(sec, "command", ""));
-        if (one != null && !one.isBlank()) {
-            String[] tokens = one.split("[,;\\s]+");
-            for (String t : tokens) {
-                String s = normalizeCmd(t);
-                if (s != null && !s.isBlank()) out.add(s);
+        String single = normalizeCmd(secString(sec, "command", ""));
+        if (single != null && !single.isBlank()) {
+            String[] parts = single.split("[,;\\s]+");
+            for (String part : parts) {
+                String cmd = normalizeCmd(part);
+                if (cmd != null && !cmd.isBlank()) {
+                    out.add(cmd);
+                }
             }
         }
 
         return new ArrayList<>(out);
     }
 
-    /**
-     * Reload configuration and re-register commands.
-     */
+    private static Map<String, Object> findSection(String alias) {
+        String used = normalizeCmd(alias);
+        if (used == null || used.isBlank()) {
+            return null;
+        }
+
+        for (String key : chatCfg.getKeys(false)) {
+            Map<String, Object> sec = chatCfg.getSection(key);
+            if (sec == null || sec.isEmpty()) continue;
+            if (!secBool(sec, "enabled", true)) continue;
+
+            if (secCommands(sec).contains(used)) {
+                return sec;
+            }
+        }
+
+        return null;
+    }
+
+    private static boolean isPrivate(Map<String, Object> sec) {
+        return "private".equalsIgnoreCase(secString(sec, "type", "public"));
+    }
+
+    private static String getServerName(CommandSource source) {
+        if (source instanceof Player player) {
+            return player.getCurrentServer()
+                    .map(server -> server.getServerInfo().getName())
+                    .orElse("");
+        }
+
+        return "";
+    }
+
+    private static String getSenderName(CommandSource source) {
+        if (source instanceof Player player) {
+            return player.getUsername();
+        }
+
+        if (source instanceof ConsoleCommandSource) {
+            return "Console";
+        }
+
+        return "Unknown";
+    }
+
+    private static Map<String, String> publicCtx(String server, String player, String msg) {
+        Map<String, String> ctx = new HashMap<>();
+        ctx.put("server", server);
+        ctx.put("player", player);
+        ctx.put("message", msg);
+        return ctx;
+    }
+
+    private static Map<String, String> privateCtx(String server, String from, String to, String msg) {
+        Map<String, String> ctx = new HashMap<>();
+        ctx.put("server", server);
+        ctx.put("from", from);
+        ctx.put("to", to);
+        ctx.put("target", to);
+        ctx.put("message", msg);
+        return ctx;
+    }
+
+    private static void sendMini(CommandSource target, String msg) {
+        target.sendMessage(MINI.deserialize(msg));
+    }
+
+    private static void sendMiniToPlayers(String msg, String perm, boolean seeAll) {
+        for (Player target : Tensa.server.getAllPlayers()) {
+            if (seeAll || perm.isEmpty() || target.hasPermission(perm)) {
+                sendMini(target, msg);
+            }
+        }
+    }
+
     public static void reload() {
         ChatConfig.get().reloadCfg();
         chatCfg = ChatConfig.get().adapter();
@@ -102,9 +174,6 @@ public class ChatCommands implements SimpleCommand {
         register();
     }
 
-    /**
-     * Register commands (no aliases), multiple names per section allowed.
-     */
     public static void register() {
         if (!isChatEnabled()) return;
 
@@ -113,18 +182,12 @@ public class ChatCommands implements SimpleCommand {
             if (sec == null || sec.isEmpty()) continue;
             if (!secBool(sec, "enabled", true)) continue;
 
-            List<String> cmds = secCommands(sec);
-            if (cmds.isEmpty()) continue;
-
-            for (String cmd : cmds) {
+            for (String cmd : secCommands(sec)) {
                 Util.registerCommand(cmd, "", new ChatCommands());
             }
         }
     }
 
-    /**
-     * Unregister previously registered commands.
-     */
     public static void unregister() {
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
@@ -147,59 +210,36 @@ public class ChatCommands implements SimpleCommand {
             if (sec == null || sec.isEmpty()) continue;
             if (!secBool(sec, "enabled", true)) continue;
 
-            List<String> cmds = secCommands(sec);
-            if (!cmds.contains(normalized)) continue;
+            if (!secCommands(sec).contains(normalized)) continue;
 
-            String type = secString(sec, "type", "public");
-            return new ChatRoute(key, "private".equalsIgnoreCase(type));
+            return new ChatRoute(key, isPrivate(sec));
         }
 
         return null;
     }
 
-    /**
-     * Command execution entry-point.
-     */
     @Override
     public void execute(Invocation invocation) {
         if (!isChatEnabled()) return;
 
-        final String used = invocation.alias();
+        CommandSource source = invocation.source();
+        Map<String, Object> sec = findSection(invocation.alias());
+        if (sec == null) return;
 
-        String server;
-        String playerName;
-        if (invocation.source() instanceof Player p) {
-            server = p.getCurrentServer().map(s -> s.getServerInfo().getName()).orElse("");
-            playerName = p.getUsername();
-        } else {
-            server = "";
-            playerName = "";
-        }
+        String server = getServerName(source);
+        String playerName = getSenderName(source);
 
-        for (String key : chatCfg.getKeys(false)) {
-            Map<String, Object> sec = chatCfg.getSection(key);
-            if (sec == null || sec.isEmpty()) continue;
-            if (!secBool(sec, "enabled", true)) continue;
-
-            List<String> cmds = secCommands(sec);
-            if (cmds.isEmpty() || !cmds.contains(used)) continue;
-
-            String type = secString(sec, "type", "public");
-            if ("private".equalsIgnoreCase(type)) {
-                handlePrivateChat(invocation, key, sec, server, playerName);
-            } else {
-                handlePublicChat(invocation, key, sec, server, playerName);
-            }
+        if (isPrivate(sec)) {
+            handlePrivateChat(invocation, sec, server, playerName);
             return;
         }
+
+        handlePublicChat(invocation, sec, server, playerName);
     }
 
-    /**
-     * Private chat handler: /pm <target> <message...>
-     */
-    private void handlePrivateChat(Invocation invocation, String key, Map<String, Object> sec, String server, String playerName) {
+    private void handlePrivateChat(Invocation invocation, Map<String, Object> sec, String server, String playerName) {
         CommandSource sender = invocation.source();
-        boolean console = !(sender instanceof Player);
+        boolean console = isConsole(sender);
 
         if (invocation.arguments().length < 2) {
             Message.sendLang(sender, Lang.chat_usage, "{command}", invocation.alias());
@@ -213,19 +253,14 @@ public class ChatCommands implements SimpleCommand {
             return;
         }
 
-        String[] args = invocation.arguments();
-        String msg = (args.length <= 1) ? "" : String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+        String msg = String.join(" ", Arrays.copyOfRange(invocation.arguments(), 1, invocation.arguments().length));
 
         if (console) {
-            Message.send(target, msg);
+            sendMini(target, msg);
             return;
         }
 
-        Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", server);
-        ctx.put("from", playerName);
-        ctx.put("target", target.getUsername());
-        ctx.put("message", msg);
+        Map<String, String> ctx = privateCtx(server, playerName, target.getUsername(), msg);
 
         String toFmt = secString(sec, "to_format", "{from}: {message}");
         String fromFmt = secString(sec, "from_format", "{to}: {message}");
@@ -233,75 +268,62 @@ public class ChatCommands implements SimpleCommand {
         String toMsg = Message.renderTemplateString(toFmt, ctx);
         Message.privateMessage(target, toMsg);
 
-        ctx.put("to", target.getUsername());
         String fromMsg = Message.renderTemplateString(fromFmt, ctx);
         Message.privateMessage(sender, fromMsg);
     }
 
-    /**
-     * Public chat handler.
-     */
-    private void handlePublicChat(Invocation invocation, String key, Map<String, Object> sec, String server, String playerName) {
-
+    private void handlePublicChat(Invocation invocation, Map<String, Object> sec, String server, String playerName) {
+        CommandSource source = invocation.source();
         String perm = secString(sec, "permission", "");
-        if (!perm.isEmpty() && !invocation.source().hasPermission(perm)) {
-            Message.sendLang(invocation.source(), Lang.no_perms);
+        boolean seeAll = secBool(sec, "see_all", false);
+
+        if (source instanceof Player && !perm.isEmpty() && !source.hasPermission(perm)) {
+            Message.sendLang(source, Lang.no_perms);
             return;
         }
 
         String msg = String.join(" ", invocation.arguments());
 
-        Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", server);
-        ctx.put("player", playerName);
-        ctx.put("message", msg);
+        if (isConsole(source)) {
+            sendMiniToPlayers(msg, perm, seeAll);
+            return;
+        }
 
+        Map<String, String> ctx = publicCtx(server, playerName, msg);
         String fmt = secString(sec, "format", "{player}: {message}");
         String rendered = Message.renderTemplateString(fmt, ctx);
-        boolean seeAll = secBool(sec, "see_all", false);
 
         if (seeAll) {
             ChatModule.sendMessageToPermittedPlayers(rendered, "");
-        } else {
-            ChatModule.sendMessageToPermittedPlayers(rendered, perm);
+            return;
         }
+
+        ChatModule.sendMessageToPermittedPlayers(rendered, perm);
     }
 
-    /**
-     * Tab-completion: for private chats, suggest online player names for the first arg.
-     */
     @Override
-    public CompletableFuture<List<String>> suggestAsync(final Invocation invocation) {
-        final String used = invocation.alias();
-
-        boolean isPrivate = false;
-        for (String key : chatCfg.getKeys(false)) {
-            Map<String, Object> sec = chatCfg.getSection(key);
-            if (sec == null || sec.isEmpty()) continue;
-            if (!secBool(sec, "enabled", true)) continue;
-
-            List<String> cmds = secCommands(sec);
-            if (cmds.isEmpty() || !cmds.contains(used)) continue;
-
-            String type = secString(sec, "type", "public");
-            if ("private".equalsIgnoreCase(type)) {
-                isPrivate = true;
-                break;
-            }
+    public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
+        Map<String, Object> sec = findSection(invocation.alias());
+        if (sec == null || !isPrivate(sec)) {
+            return CompletableFuture.completedFuture(List.of());
         }
 
-        if (!isPrivate) return CompletableFuture.completedFuture(List.of());
-
-        List<String> names = Tensa.server.getAllPlayers().stream().map(Player::getUsername).toList();
+        List<String> names = Tensa.server.getAllPlayers().stream()
+                .map(Player::getUsername)
+                .toList();
 
         if (invocation.arguments().length == 0) {
             return CompletableFuture.completedFuture(names);
         }
+
         if (invocation.arguments().length == 1) {
             String typed = invocation.arguments()[0].toLowerCase(Locale.ROOT);
-            List<String> sug = names.stream().filter(n -> n.toLowerCase(Locale.ROOT).startsWith(typed)).toList();
-            return CompletableFuture.completedFuture(sug);
+            List<String> out = names.stream()
+                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(typed))
+                    .toList();
+            return CompletableFuture.completedFuture(out);
         }
+
         return CompletableFuture.completedFuture(List.of());
     }
 }
