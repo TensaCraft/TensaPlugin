@@ -11,9 +11,13 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
+import ua.co.tensa.config.DatabaseInitializer;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.config.data.LangYAML;
+import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.Modules;
+import ua.co.tensa.modules.event.EventManager;
+import ua.co.tensa.modules.event.EventsListener;
+import ua.co.tensa.modules.event.data.EventsConfig;
 import ua.co.tensa.modules.rcon.server.RconServerModule;
 import ua.co.tensa.placeholders.PlaceholderManager;
 import ua.co.tensa.velocity.VelocityLogCleaner;
@@ -37,7 +41,9 @@ public class Tensa {
     public static Path pluginPath;
     public static PluginContainer pluginContainer;
     public static Database database;
+    public static UserDataService userData;
     public static Config config;
+    private static EventsListener coreEventsListener;
 
     @Inject
     public Tensa(ProxyServer server, @DataDirectory Path dataDirectory) {
@@ -47,17 +53,71 @@ public class Tensa {
 
     public static void loadPlugin() {
         config = new Config();
-        // Lang and other singletons can use adapter from manager if needed later
+        initialiseDatabase();
+        initialiseUserData();
         Lang.initialise();
         PlaceholderManager.initialise();
-        // Global localization/config init (module configs are handled by modules themselves)
-        try {
-            LangYAML.getInstance().reload();
-        } catch (Throwable e) {
-            Message.warn("Language file reload failed: " + e.getMessage());
-        }
         VelocityLogCleaner.cleanOnStartup(config);
+        initialiseCoreEvents();
         Modules.load();
+        try {
+            EventManager.onServerRunning();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void reloadPlugin() {
+        closeCoreServices();
+        config = config == null ? new Config() : config;
+        config.reload();
+        initialiseDatabase();
+        initialiseUserData();
+        Lang.initialise();
+        PlaceholderManager.reload();
+        EventManager.reload();
+        Modules.refresh();
+    }
+
+    private static void initialiseDatabase() {
+        if (database != null) {
+            database.close();
+            database = null;
+        }
+        if (config != null && config.databaseEnable()) {
+            database = new Database();
+            if (database.connect()) {
+                new DatabaseInitializer(database).initializeTables();
+            }
+        }
+    }
+
+    private static void initialiseUserData() {
+        if (userData != null) {
+            userData.close();
+            userData = null;
+        }
+        userData = UserDataService.createFromConfig(database);
+        userData.importLegacyData(pluginPath, database);
+    }
+
+    private static void initialiseCoreEvents() {
+        EventsConfig.get().reloadCfg();
+        EventManager.initialise(pluginPath);
+        if (coreEventsListener == null) {
+            coreEventsListener = new EventsListener();
+            server.getEventManager().register(pluginContainer, coreEventsListener);
+        }
+    }
+
+    private static void closeCoreServices() {
+        if (userData != null) {
+            userData.close();
+            userData = null;
+        }
+        if (database != null) {
+            database.close();
+            database = null;
+        }
     }
 
 
@@ -72,9 +132,8 @@ public class Tensa {
     public void onShutdown(ProxyShutdownEvent event) {
         Modules.disableAll();
         RconServerModule.disable();
-        if (database != null) {
-            database.close();
-        }
+        EventManager.shutdown();
+        closeCoreServices();
         // Shutdown database executor pool
         Database.shutdownExecutor();
     }

@@ -32,14 +32,6 @@ public class Modules {
         } catch (Throwable t) {
             ua.co.tensa.Message.warn("Module discovery failed: " + t.getMessage());
         }
-        ua.co.tensa.config.DatabaseInitializer initializer;
-        if (Tensa.config != null && Tensa.config.databaseEnable()) {
-            Tensa.database = new ua.co.tensa.config.Database();
-            if (Tensa.database.connect()) {
-                initializer = new ua.co.tensa.config.DatabaseInitializer(Tensa.database);
-                initializer.initializeTables();
-            }
-        }
         synchronizeModules(false);
         registerCommands();
     }

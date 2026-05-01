@@ -1,0 +1,5 @@
+enable: false
+host: 0.0.0.0
+port: 25575
+password: REDACTED_RCON_PASSWORD
+log: false

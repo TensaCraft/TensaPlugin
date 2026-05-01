@@ -1,13 +1,8 @@
 package ua.co.tensa.modules.meta;
 
-import com.velocitypowered.api.event.Subscribe;
-import com.velocitypowered.api.event.connection.PostLoginEvent;
-import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
-import ua.co.tensa.config.Database;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
-import ua.co.tensa.modules.meta.data.UserMetaConfig;
 import ua.co.tensa.placeholders.PlaceholderManager;
 
 public class UserMetaModule {
@@ -20,26 +15,8 @@ public class UserMetaModule {
     private static UserMetaStore store;
 
     private static void enableImpl() {
-        // Determine storage type from config
-        String type = UserMetaConfig.get().storageType;
-
-        Database db = Tensa.database;
-
-        // If using database storage, require DB to be enabled and connected
-        if ("database".equalsIgnoreCase(type)) {
-            if (Tensa.config == null || !Tensa.config.databaseEnable()) {
-                throw new IllegalStateException("UserMeta module requires database.enable=true");
-            }
-            if (db == null || !db.enabled) {
-                throw new IllegalStateException("UserMeta module requires an active database connection");
-            }
-        }
-
-        // For file/memory storage, proceed without DB; constructor handles modes
-        store = new UserMetaStore(db);
+        store = new UserMetaStore();
         store.ensureTable();
-        // Track listener via AbstractModule helper, so it is auto-unregistered
-        ((AbstractModule) IMPL).registerListener(new UserMetaModule());
         AbstractModule.registerCommand("tmeta", "usermeta", new UserMetaCommand(store));
         // register meta placeholders with PlaceholderManager
         PlaceholderManager.registerRawPrefixResolver("meta_", (player, key) -> {
@@ -79,10 +56,9 @@ public class UserMetaModule {
         return store;
     }
 
-    @Subscribe
-    public void onJoin(PostLoginEvent event) {
+    public static void preload(java.util.UUID uuid) {
         if (store != null) {
-            store.preloadAsync(event.getPlayer().getUniqueId());
+            store.preloadAsync(uuid);
         }
     }
 }

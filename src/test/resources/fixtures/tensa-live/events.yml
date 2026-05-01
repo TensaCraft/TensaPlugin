@@ -1,0 +1,35 @@
+events:
+  on_login_commands:
+    enabled: true
+    commands:
+      - "[delay] 10"
+      - "[console] activity login {player}"
+  on_join_commands:
+    enabled: true
+    commands:
+      - "[delay] 5"
+      - "[console] skin update {player}"
+  on_first_join_commands:
+    enabled: true
+    commands:
+      - "[console] broadcast <gradient:#ff0000:#ffaa00>Новий гравець {player}</gradient>"
+  on_leave_commands:
+    enabled: true
+    commands:
+      - "[console] presence logout {player}"
+  on_initial_server_commands:
+    enabled: true
+    commands:
+      - "[console] presence server_change {originalServer} {initialServer}"
+  on_server_switch:
+    enabled: true
+    commands:
+      - "[console] presence server_change {fromServer} {toServer}"
+  on_server_kick:
+    enabled: true
+    commands:
+      - "[console] presence logout {fromServer} {toServer}"
+  on_server_pre_stop:
+    enabled: true
+    commands:
+      - "[console] clearonline server_shutdown proxy_stop"

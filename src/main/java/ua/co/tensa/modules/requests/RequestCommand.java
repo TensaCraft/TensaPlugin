@@ -5,11 +5,11 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
-import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.config.model.YamlAdapter;
 
 import java.util.*;
 
@@ -20,12 +20,12 @@ public class RequestCommand implements SimpleCommand {
         CommandSource sender = invocation.source();
         String[] args = invocation.arguments();
         try {
-            YamlConfiguration config = RequestsModule.configByTrigger(invocation.alias());
+            YamlAdapter config = RequestsModule.configByTrigger(invocation.alias());
             if (config == null) {
                 Message.sendLang(sender, Lang.no_command);
                 return;
             }
-            if (config.get("permission") != null && !hasPermission(sender, config.getString("permission"))) {
+            if (config.contains("permission") && !hasPermission(sender, config.getString("permission", ""))) {
                 Message.sendLang(sender, Lang.no_perms);
                 return;
             }
@@ -35,19 +35,17 @@ public class RequestCommand implements SimpleCommand {
         }
     }
 
-    private void runCommand(YamlConfiguration config, String[] args, CommandSource sender) {
+    private void runCommand(YamlAdapter config, String[] args, CommandSource sender) {
         Map<String, String> params = placeholderPrepare(args, sender);
-        Map<String, Object> rawParams = config.getConfigurationSection("parameters") != null
-                ? config.getConfigurationSection("parameters").getMapValues(true)
-                : Collections.emptyMap();
+        Map<String, Object> rawParams = config.getSection("parameters");
         Map<String, String> parameters = parsePlaceholders(rawParams, params);
 
-        if (config.contains("require_player") && config.getBoolean("require_player") && !(sender instanceof Player)) {
+        if (config.getBoolean("require_player", false) && !(sender instanceof Player)) {
             Message.info("This request requires a player context. Skipping.", true);
             return;
         }
 
-        String url = parsePlaceholder(config.getString("url"), params);
+        String url = parsePlaceholder(config.getString("url", ""), params);
         String method = config.getString("method", "GET");
         HttpRequest req = new HttpRequest(url, method, parameters);
         req.sendAsync().whenComplete((resp, throwable) ->
@@ -56,7 +54,7 @@ public class RequestCommand implements SimpleCommand {
     }
 
     private void handleRequestResult(
-            YamlConfiguration config,
+            YamlAdapter config,
             CommandSource sender,
             String url,
             String method,
@@ -81,7 +79,7 @@ public class RequestCommand implements SimpleCommand {
         Map<String, String> responseParams = responseParams(response);
         String outcome = response.isSuccess() ? "success" : "failure";
 
-        if (config.getBoolean("debug")) {
+        if (config.getBoolean("debug", false)) {
             StringBuilder dbg = new StringBuilder();
             dbg.append("<gold>—— Request Debug ——\n");
             dbg.append("<green>URL: <yellow>").append(url).append("\n");
@@ -114,7 +112,7 @@ public class RequestCommand implements SimpleCommand {
     }
 
     private void executeResponseCommands(
-            YamlConfiguration config,
+            YamlAdapter config,
             String outcome,
             CommandSource sender,
             Map<String, String> params,
@@ -133,18 +131,18 @@ public class RequestCommand implements SimpleCommand {
         }
 
         List<String> commands = parsePlaceholdersInList(filtered, params);
-        boolean translate = !config.contains("translate_legacy_colors") || config.getBoolean("translate_legacy_colors");
+        boolean translate = config.getBoolean("translate_legacy_colors", true);
 
         for (String command : commands) {
             dispatchCommand(command, translate);
         }
     }
 
-    private List<String> getResponseCommands(YamlConfiguration config, String outcome) {
-        if (config.getConfigurationSection("response") == null) {
+    private List<String> getResponseCommands(YamlAdapter config, String outcome) {
+        if (!config.contains("response")) {
             return Collections.emptyList();
         }
-        return config.getConfigurationSection("response").getStringList(outcome);
+        return config.getStringList("response." + outcome);
     }
 
     private Map<String, String> responseParams(HttpRequest.Result response) {

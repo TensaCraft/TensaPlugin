@@ -1,16 +1,18 @@
 package ua.co.tensa.modules.requests;
 
-import org.simpleyaml.configuration.file.YamlConfiguration;
-import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
+import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.config.model.YamlBackedFile;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class RequestsModule {
@@ -23,54 +25,36 @@ public class RequestsModule {
     };
     public static final ModuleEntry ENTRY = IMPL;
 
-	private static List<YamlConfiguration> configs;
-    private static final Map<YamlConfiguration, String> FILE_NAMES = new HashMap<>();
+    private static List<RequestConfig> configs;
 
-	private static Path requestsDir() { return Tensa.pluginPath.resolve("requests"); }
+    private static Path requestsDir() { return Tensa.pluginPath.resolve("requests"); }
 
-	public static void load() {
-		File directory = requestsDir().toFile();
-        FILE_NAMES.clear();
-		if (!directory.exists()) {
-			directory.mkdirs();
-		}
+    public static void load() {
+        File directory = requestsDir().toFile();
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IllegalStateException("Failed to create requests directory: " + directory);
+        }
         Util.copyFile(directory.getPath(), "linkaccount.yml");
 
-		List<String> fileNames = getConfigurationFiles(directory.getPath());
-
-		configs = new ArrayList<>();
-            for (String fileName : fileNames) {
-                File file = new File(directory, fileName);
-			if (file.isFile()) {
-				YamlFile config = new YamlFile(file);
-				try {
-					config.load();
-					configs.add(config);
-                        FILE_NAMES.put(config, file.getName());
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-
-			}
-		}
-	}
+        configs = new ArrayList<>();
+        for (String fileName : getConfigurationFiles(directory.getPath())) {
+            File file = new File(directory, fileName);
+            if (file.isFile()) {
+                configs.add(new RequestConfig(file.toPath(), file.getName()));
+            }
+        }
+    }
 
     private static void enableImpl() {
         load();
-        List<Map<String, String>> triggers = getTriggerToFileMapping();
-        for (Map<String, String> triggerMap : triggers) {
-            String trigger = triggerMap.get("trigger");
-            AbstractModule.registerCommand(trigger, "", new RequestCommand());
+        for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
+            AbstractModule.registerCommand(triggerMap.get("trigger"), "", new RequestCommand());
         }
-        // status logging handled centrally
     }
 
     private static void disableImpl() {
-        // Unregister all known triggers
-        List<Map<String, String>> triggers = getTriggerToFileMapping();
-        for (Map<String, String> triggerMap : triggers) {
-            String trigger = triggerMap.get("trigger");
-            AbstractModule.unregisterCommands(trigger);
+        for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
+            AbstractModule.unregisterCommands(triggerMap.get("trigger"));
         }
         HttpRequest.shutdown();
     }
@@ -78,38 +62,33 @@ public class RequestsModule {
     public static void enable() { IMPL.enable(); }
     public static void disable() { IMPL.disable(); }
 
-	private static List<String> getConfigurationFiles(String directory) {
+    private static List<String> getConfigurationFiles(String directory) {
         File[] files = new File(directory).listFiles();
         if (files == null) {
             return List.of();
         }
-		return Arrays.stream(files)
+        return Arrays.stream(files)
                 .filter(File::isFile)
                 .map(File::getName)
                 .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
-				.collect(Collectors.toList());
-	}
+                .collect(Collectors.toList());
+    }
 
     public static List<Map<String, String>> getTriggerToFileMapping() {
-		List<Map<String, String>> result = new ArrayList<>();
+        List<Map<String, String>> result = new ArrayList<>();
         if (configs == null || configs.isEmpty()) {
             return result;
         }
-		for (YamlConfiguration config : configs) {
-			List<String> triggers = config.getStringList("triggers");
-			for (String trigger : triggers) {
+        for (RequestConfig config : configs) {
+            for (String trigger : config.getStringList("triggers")) {
                 if (trigger == null || trigger.isBlank()) {
                     continue;
                 }
-				Map<String, String> map = Map.of(
-					"trigger", trigger,
-					"file", FILE_NAMES.getOrDefault(config, "unknown")
-				);
-				result.add(map);
-			}
-		}
-		return result;
-	}
+                result.add(Map.of("trigger", trigger, "file", config.fileName()));
+            }
+        }
+        return result;
+    }
 
     public static String fileByTrigger(String trigger) {
         if (trigger == null || trigger.isBlank()) {
@@ -123,38 +102,56 @@ public class RequestsModule {
         return "";
     }
 
-	public static YamlConfiguration configByTrigger(String trigger) {
+    public static YamlAdapter configByTrigger(String trigger) {
         if (trigger == null || configs == null) {
             return null;
         }
-		for (YamlConfiguration config : configs) {
-			List<String> triggers = config.getStringList("triggers");
-			if (triggers.stream().anyMatch(item -> item != null && item.equalsIgnoreCase(trigger))) {
-				return config;
-			}
-		}
-		return null;
-	}
-
-	public static List<String> getRequestsFiles() {
-		return getConfigurationFiles(requestsDir().toString());
-	}
-
-	public static YamlConfiguration config(String filename) {
-		for (YamlConfiguration config : configs) {
-            if (filename.equals(FILE_NAMES.get(config))) {
-                return config;
+        for (RequestConfig config : configs) {
+            if (config.getStringList("triggers").stream().anyMatch(item -> item != null && item.equalsIgnoreCase(trigger))) {
+                return config.adapter();
             }
         }
-		return null;
-	}
+        return null;
+    }
+
+    public static List<String> getRequestsFiles() {
+        return getConfigurationFiles(requestsDir().toString());
+    }
+
+    public static YamlAdapter config(String filename) {
+        if (configs == null) {
+            return null;
+        }
+        for (RequestConfig config : configs) {
+            if (filename.equals(config.fileName())) {
+                return config.adapter();
+            }
+        }
+        return null;
+    }
 
     private static void reloadImpl() {
-        // Unregister all, reload files, register again
         disableImpl();
-        if (configs != null) configs.clear();
-        FILE_NAMES.clear();
+        if (configs != null) {
+            configs.clear();
+        }
         enableImpl();
-        // status logging handled centrally
+    }
+
+    private static final class RequestConfig extends YamlBackedFile {
+        private final String fileName;
+
+        private RequestConfig(Path path, String fileName) {
+            super(path.toString(), true);
+            this.fileName = fileName;
+        }
+
+        @Override
+        protected void populateConfigFile() {
+        }
+
+        private String fileName() {
+            return fileName;
+        }
     }
 }

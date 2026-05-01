@@ -16,6 +16,8 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
+import ua.co.tensa.core.user.UserDataService;
+import ua.co.tensa.modules.meta.UserMetaModule;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -49,34 +52,18 @@ public class EventManager {
             "listener",
             "firstJoinAt"
     );
-    private static volatile FirstJoinRegistry firstJoinRegistry;
-
-    private static boolean isModuleDisabled() {
-        try { return Tensa.config == null || !Tensa.config.isModuleEnabled("events-manager"); } catch (Throwable ignored) { return true; }
-    }
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";
 
     public static synchronized void initialise(Path pluginPath) {
-        shutdown();
-        firstJoinRegistry = new FirstJoinRegistry(pluginPath.resolve("events").resolve("first-join.yml"));
+        reload();
     }
 
     public static synchronized void reload() {
-        if (firstJoinRegistry != null) {
-            firstJoinRegistry.reload();
-        }
+        ua.co.tensa.modules.event.data.EventsConfig.get().reloadCfg();
     }
 
     public static synchronized void shutdown() {
-        if (firstJoinRegistry == null) {
-            return;
-        }
-        try {
-            firstJoinRegistry.close();
-        } finally {
-            firstJoinRegistry = null;
-        }
     }
 
     private static void sendCommand(EventContext context, String command, boolean console) {
@@ -101,7 +88,7 @@ public class EventManager {
     }
 
     private static void execute(EventsModule.Events event, EventContext context) {
-        if (isModuleDisabled() || !event.enabled()) {
+        if (!event.enabled()) {
             return;
         }
 
@@ -133,7 +120,7 @@ public class EventManager {
             }
 
             Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> {
-                        if (isModuleDisabled() || !event.enabled()) {
+                        if (!event.enabled()) {
                             return;
                         }
                         sendCommand(context, cmd, asConsole);
@@ -217,27 +204,41 @@ public class EventManager {
         EventContextBuilder builder = withPlayer(context(on_join_commands.name()), event.getPlayer());
         execute(on_join_commands, builder.build());
 
-        FirstJoinRegistry registry = firstJoinRegistry;
-        if (registry == null) {
+        if (Tensa.userData == null) {
             return;
         }
 
-        FirstJoinRegistry.MarkResult markResult = registry.markFirstJoin(
-                event.getPlayer().getUniqueId(),
-                event.getPlayer().getUsername()
-        );
-        if (!markResult.firstJoin()) {
-            return;
-        }
-
-        EventContext firstJoinContext = withPlayer(context(on_first_join_commands.name()), event.getPlayer())
-                .put("firstJoinAt", markResult.firstSeenAt())
-                .build();
-        execute(on_first_join_commands, firstJoinContext);
+        Tensa.userData.recordLoginAsync(UserDataService.fromPlayer(event.getPlayer()))
+                .thenAccept(result -> Tensa.server.getScheduler()
+                        .buildTask(Tensa.pluginContainer, () -> {
+                            UserMetaModule.preload(event.getPlayer().getUniqueId());
+                            if (!result.firstJoin()) {
+                                return;
+                            }
+                            EventContext firstJoinContext = withPlayer(context(on_first_join_commands.name()), event.getPlayer())
+                                    .put("firstJoinAt", Instant.ofEpochMilli(result.profile().firstSeenAt()).toString())
+                                    .build();
+                            execute(on_first_join_commands, firstJoinContext);
+                        })
+                        .schedule())
+                .exceptionally(ex -> {
+                    Message.error("Events: failed to record user login for " + event.getPlayer().getUsername() + ": " + ex.getMessage());
+                    return null;
+                });
     }
 
     public static void onPlayerLeave(DisconnectEvent event) {
         EventContext context = withPlayer(context(on_leave_commands.name()), event.getPlayer()).build();
+        if (Tensa.userData != null) {
+            Tensa.userData.recordDisconnectAsync(
+                    event.getPlayer().getUniqueId(),
+                    System.currentTimeMillis(),
+                    getCurrentServerName(event.getPlayer())
+            ).exceptionally(ex -> {
+                Message.error("Events: failed to record user disconnect for " + event.getPlayer().getUsername() + ": " + ex.getMessage());
+                return null;
+            });
+        }
         execute(on_leave_commands, context);
     }
 

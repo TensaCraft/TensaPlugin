@@ -13,7 +13,7 @@
     <name>Tensa</name>
 
     <properties>
-        <java.version>21</java.version>
+        <java.version>25</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -29,7 +29,7 @@
         <guice.version>7.0.0</guice.version>
 
         <netty.version>4.2.12.Final</netty.version>
-        <simple.yaml.version>1.8.4</simple.yaml.version>
+        <configurate.version>4.2.0</configurate.version>
         <mariadb.version>3.5.7</mariadb.version>
         <h2.version>2.4.240</h2.version>
         <hikari.version>7.0.2</hikari.version>
@@ -152,22 +152,21 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Runtime libraries -->
+        <!-- Direct imports from Velocity's provided configuration stack -->
         <dependency>
-            <groupId>com.github.Carleslc.Simple-YAML</groupId>
-            <artifactId>Simple-Yaml</artifactId>
-            <version>${simple.yaml.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.github.Carleslc.Simple-YAML</groupId>
-                    <artifactId>Simple-Configuration</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.yaml</groupId>
-                    <artifactId>snakeyaml</artifactId>
-                </exclusion>
-            </exclusions>
+            <groupId>org.spongepowered</groupId>
+            <artifactId>configurate-core</artifactId>
+            <version>${configurate.version}</version>
+            <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.spongepowered</groupId>
+            <artifactId>configurate-yaml</artifactId>
+            <version>${configurate.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Runtime libraries -->
 
         <dependency>
             <groupId>org.mariadb.jdbc</groupId>
@@ -286,7 +285,7 @@
                                     <exclude>io.netty:*</exclude>
                                     <exclude>org.slf4j:slf4j-api</exclude>
                                     <exclude>org.yaml:snakeyaml</exclude>
-                                    <exclude>com.github.Carleslc.Simple-YAML:Simple-Configuration</exclude>
+                                    <exclude>org.spongepowered:configurate-*</exclude>
                                 </excludes>
                             </artifactSet>
 

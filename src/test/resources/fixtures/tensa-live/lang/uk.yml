@@ -1,0 +1,5 @@
+prefix: "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>"
+help_header: "<gold>Доступні команди:</gold>"
+help_command_format: "<gold>{usage}</gold>{aliases} <gray>-</gray> <green>{description}</green>"
+queue_usage: "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:секунди]</gray>"
+player_time: "<green>Ваш час гри:</green> <white>{time}</white>"

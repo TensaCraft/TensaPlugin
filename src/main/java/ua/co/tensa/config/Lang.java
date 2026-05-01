@@ -1,7 +1,7 @@
 package ua.co.tensa.config;
 
 import net.kyori.adventure.text.Component;
-import org.simpleyaml.configuration.file.YamlConfiguration;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 import ua.co.tensa.Message;
 import ua.co.tensa.config.data.LangYAML;
 
@@ -53,10 +53,10 @@ public enum Lang {
         LangConfig.initialise();
     }
 
-    public static class LangConfig extends YamlConfiguration {
+    public static class LangConfig {
 
         public static String prefix;
-        private static YamlConfiguration config;
+        private static CommentedConfigurationNode config;
 
 
         public static void initialise() {
@@ -70,7 +70,7 @@ public enum Lang {
             if (config == null) {
                 return Message.convert(key);
             }
-            String value = config.getString(key);
+            String value = config.node((Object[]) key.split("\\.")).getString();
             if (value == null) return Message.convert(key);
             String withPrefix = (prefix == null || prefix.isEmpty()) ? value : prefix + value;
             return Message.convert(withPrefix);
@@ -80,7 +80,7 @@ public enum Lang {
             if (config == null) {
                 return Message.convert(key);
             }
-            String resp = config.getString(key);
+            String resp = config.node((Object[]) key.split("\\.")).getString(key);
             for (int i = 0; i < replaceList.length - 1; i += 2) {
                 resp = resp.replace(replaceList[i], replaceList[i + 1]);
             }
@@ -90,7 +90,7 @@ public enum Lang {
 
         public static String getCleanText(String key) {
             if (config == null) return key;
-            String value = config.getString(key);
+            String value = config.node((Object[]) key.split("\\.")).getString();
             return value == null ? key : value;
         }
     }

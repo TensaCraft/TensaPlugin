@@ -32,7 +32,7 @@ public class EventsConfig extends ConfigBase {
     @CfgKey(value = "events.on_join_commands.commands", comment = COMMANDS_COMMENT)
     public List<String> onJoinCommands = new ArrayList<>();
 
-    @CfgKey(value = "events.on_first_join_commands.enabled", comment = "Runs only once for each player, the first time they join the proxy while the events module is active. " + FIRST_JOIN_PLACEHOLDERS)
+    @CfgKey(value = "events.on_first_join_commands.enabled", comment = "Runs only once for each player, the first time they join the proxy according to core user storage. " + FIRST_JOIN_PLACEHOLDERS)
     public boolean onFirstJoinEnabled = false;
     @CfgKey(value = "events.on_first_join_commands.commands", comment = COMMANDS_COMMENT)
     public List<String> onFirstJoinCommands = new ArrayList<>();

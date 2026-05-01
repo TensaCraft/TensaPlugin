@@ -9,7 +9,7 @@ method: "GET"
 # You can use placeholders that will be automatically replaced with the appropriate values when the query is executed.
 # Available placeholders: %player_name%, %player_uuid%, %player_ip%, %server%, %arg1%, %arg2%, %arg[n]%
 parameters:
-  secret: "lmksfdjlfjsffsdfjkljklgjkljsieiweiefdls"
+  secret: "REPLACE_ME"
   player: "%player_name%"
   server: "%server%"
   user_code: "%arg1%"

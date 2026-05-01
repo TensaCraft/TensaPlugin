@@ -4,6 +4,8 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlBackedFile;
 import ua.co.tensa.config.model.YamlFileIO;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
 import java.io.File;
 
@@ -27,28 +29,31 @@ public class LangYAML extends YamlBackedFile {
      * present in the provided template configuration. Missing keys are appended
      * with values from the template to keep files up to date after updates.
      */
-    public static void syncAllLanguageFiles(org.simpleyaml.configuration.file.YamlConfiguration template) {
+    public static void syncAllLanguageFiles(CommentedConfigurationNode template) {
         java.io.File langDir = new java.io.File(Tensa.pluginPath + java.io.File.separator + "lang");
         if (!langDir.exists() || !langDir.isDirectory()) return;
         java.io.File[] files = langDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".yml"));
         if (files == null) return;
 
-        java.util.Set<String> keys = template.getKeys(true);
+        java.util.Set<String> keys = collectKeys(template);
         for (java.io.File file : files) {
             try {
-                org.simpleyaml.configuration.file.YamlFile yf = new org.simpleyaml.configuration.file.YamlFile(file);
-                YamlFileIO.loadWithComments(yf);
+                java.nio.file.Path path = file.toPath();
+                YamlConfigurationLoader loader = YamlFileIO.loader(path);
+                CommentedConfigurationNode yf = YamlFileIO.load(loader);
                 boolean changed = false;
                 for (String key : keys) {
                     // Only copy simple values (strings, numbers, booleans); skip sections
-                    if (template.isConfigurationSection(key)) continue;
-                    if (!yf.contains(key)) {
-                        yf.set(key, template.get(key));
+                    CommentedConfigurationNode templateNode = node(template, key);
+                    if (!templateNode.childrenMap().isEmpty()) continue;
+                    CommentedConfigurationNode targetNode = node(yf, key);
+                    if (targetNode.virtual() || targetNode.raw() == null) {
+                        targetNode.set(templateNode.raw());
                         changed = true;
                     }
                 }
                 if (changed) {
-                    YamlFileIO.saveValidated(yf);
+                    YamlFileIO.saveValidated(loader, yf, path);
                 }
             } catch (Exception e) {
                 Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getMessage());
@@ -58,7 +63,7 @@ public class LangYAML extends YamlBackedFile {
 
     @Override
     protected void populateConfigFile() {
-        yamlFile.setHeader(getLangFile().toUpperCase() + " localization file (MiniMessage)");
+        setHeader(getLangFile().toUpperCase() + " localization file (MiniMessage)");
 
         // Common
         setConfigValue("prefix", "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>");
@@ -73,14 +78,14 @@ public class LangYAML extends YamlBackedFile {
         setConfigValue("module_status", "<aqua>{module}</aqua> <gold>is</gold> <gray>{status}</gray>");
 
         // Rcon Manager
-        yamlFile.setComment("rcon_manager_reload", "Rcon Manager");
+        setComment("rcon_manager_reload", "Rcon Manager");
         setConfigValue("rcon_manager_reload", "<green>Rcon Manager configurations reloaded</green>");
         setConfigValue("rcon_auth_error", "<gold>{server}</gold>: <red>Authentication error. Please check your server configuration and ensure the server is available</red>");
         setConfigValue("rcon_io_error", "<gold>{server}</gold>: <red>IO error. Please check your server configuration and ensure the server is available</red>");
         setConfigValue("rcon_unknown_error", "<gold>{server}</gold>: <red>Unknown host error. Please check the server IP address configuration</red>");
 
         // Rcon Server
-        yamlFile.setComment("rcon_server_reload", "Rcon Server");
+        setComment("rcon_server_reload", "Rcon Server");
         setConfigValue("rcon_server_reload", "<green>Rcon Server configurations reloaded</green>");
         setConfigValue("rcon_connect_notify", "<green>Rcon connection from:</green> <gray>[</gray><dark_aqua><bold>{address}</bold></dark_aqua><gray>]</gray> <green>Command:</green> <dark_aqua><bold>{command}</bold></dark_aqua>");
         setConfigValue("rcon_usage", "<gold>Usage:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>");
@@ -92,7 +97,7 @@ public class LangYAML extends YamlBackedFile {
         // Bash/Php modules removed
 
         // PlayerTime Module
-        yamlFile.setComment("player_time_usage", "PlayerTime Module");
+        setComment("player_time_usage", "PlayerTime Module");
         setConfigValue("player_time_usage", "<gold>Usage:</gold> <yellow>tptime</yellow> <gray>[Player]</gray>");
         setConfigValue("player_time", "<green>Your game time:</green> <white>{time}</white>");
         setConfigValue("player_time_other", "<green>Game time {player}:</green> <white>{time}</white>");
@@ -105,17 +110,17 @@ public class LangYAML extends YamlBackedFile {
         setConfigValue("player_time_top_entry", "<green>{position}.</green> <gold>{player}</gold> <gray>-</gray> <white>{time}</white>");
 
         // Send Module
-        yamlFile.setComment("send_usage", "Send Module");
+        setComment("send_usage", "Send Module");
         setConfigValue("send_usage", "<gold>Usage:</gold> <yellow>/psend</yellow> <gray>{player} {server}</gray>");
         setConfigValue("send_success", "<green>Player <white>{player}</white> sent to server <white>{server}</white></green>");
         setConfigValue("server_not_found", "<red>Server {server} not found</red>");
 
         // Chat Module
-        yamlFile.setComment("chat_usage", "Chat Module");
+        setComment("chat_usage", "Chat Module");
         setConfigValue("chat_usage", "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>(player) (message)</gray>");
 
         // User Meta Module
-        yamlFile.setComment("meta_usage", "User Meta Module");
+        setComment("meta_usage", "User Meta Module");
         setLocalizedConfigValue("meta_usage",
                 "<gold>Usage:</gold> <yellow>/tmeta</yellow> <gray>[set|get|del|list] [player] [key] [value...] [--session]</gray>",
                 "<gold>Використання:</gold> <yellow>/tmeta</yellow> <gray>[set|get|del|list] [гравець] [ключ] [значення...] [--session]</gray>");
@@ -139,7 +144,7 @@ public class LangYAML extends YamlBackedFile {
                 "<yellow>Список метаданих:</yellow>");
 
         // Help
-        yamlFile.setComment("help", "Help");
+        setComment("help", "Help");
         setLocalizedConfigValue("help",
                 "<gold>Available commands:</gold>",
                 "<gold>Доступні команди:</gold>");
@@ -176,7 +181,7 @@ public class LangYAML extends YamlBackedFile {
         setLocalizedConfigValue("help_desc_chat_private", "Send a private message through {command}.", "Надіслати приватне повідомлення через {command}.");
 
         // Command Queue
-        yamlFile.setComment("queue_usage", "Command Queue");
+        setComment("queue_usage", "Command Queue");
         setLocalizedConfigValue("queue_usage",
                 "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:seconds]</gray><newline><gray>Admin:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>",
                 "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>");
@@ -223,27 +228,48 @@ public class LangYAML extends YamlBackedFile {
 
     private void setLocalizedConfigValue(String path, String englishDefault, String ukrainianDefault) {
         String localizedValue = isUkrainianLang() ? ukrainianDefault : englishDefault;
-        if (!yamlFile.contains(path)) {
-            yamlFile.set(path, localizedValue);
+        if (!contains(path)) {
+            setNodeValue(node(path), localizedValue);
             markDirty();
             return;
         }
 
-        String current = yamlFile.getString(path);
+        String current = getString(path, null);
         if (current == null) {
             return;
         }
 
         if (isUkrainianLang() && englishDefault.equals(current)) {
-            yamlFile.set(path, ukrainianDefault);
+            setNodeValue(node(path), ukrainianDefault);
             markDirty();
             return;
         }
 
         if (!isUkrainianLang() && ukrainianDefault.equals(current)) {
-            yamlFile.set(path, englishDefault);
+            setNodeValue(node(path), englishDefault);
             markDirty();
         }
+    }
+
+    private static java.util.Set<String> collectKeys(CommentedConfigurationNode root) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        collectKeys(root, "", keys);
+        return keys;
+    }
+
+    private static void collectKeys(CommentedConfigurationNode node, String prefix, java.util.Set<String> keys) {
+        for (java.util.Map.Entry<Object, ? extends CommentedConfigurationNode> entry : node.childrenMap().entrySet()) {
+            String key = prefix.isBlank() ? String.valueOf(entry.getKey()) : prefix + "." + entry.getKey();
+            keys.add(key);
+            collectKeys(entry.getValue(), key, keys);
+        }
+    }
+
+    private static CommentedConfigurationNode node(CommentedConfigurationNode root, String path) {
+        if (path == null || path.isBlank()) {
+            return root;
+        }
+        return root.node((Object[]) path.split("\\."));
     }
 
     private boolean isUkrainianLang() {

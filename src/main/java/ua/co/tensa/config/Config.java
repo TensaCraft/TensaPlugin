@@ -36,6 +36,8 @@ public class Config {
     public int getDatabasePort() { return app.databasePort; }
     public boolean getSsl() { return app.useSsl; }
     public String getDatabaseTablePrefix() { return app.tablePrefix; }
+    public String getStorageType() { return app.storageType; }
+    public String getStorageLocalFile() { return app.storageLocalFile; }
     public boolean useUUID() { return app.useUuid; }
     public boolean velocityLogCleanupEnable() { return app.velocityLogCleanupEnable; }
     public boolean velocityLogCleanupLatestLog() { return app.velocityLogCleanupLatestLog; }

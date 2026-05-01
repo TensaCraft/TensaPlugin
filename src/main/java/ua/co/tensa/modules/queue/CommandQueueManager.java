@@ -1,8 +1,8 @@
 package ua.co.tensa.modules.queue;
 
 import com.velocitypowered.api.proxy.Player;
-import org.simpleyaml.configuration.ConfigurationSection;
-import org.simpleyaml.configuration.file.YamlFile;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
@@ -32,7 +32,8 @@ public final class CommandQueueManager implements AutoCloseable {
 
     private final CommandQueueConfig config;
     private final Path filePath;
-    private final YamlFile dataFile;
+    private final YamlConfigurationLoader dataLoader;
+    private CommentedConfigurationNode dataFile;
     private final ConcurrentMap<Long, QueuedCommandEntry> entries = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1L);
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -46,7 +47,7 @@ public final class CommandQueueManager implements AutoCloseable {
     public CommandQueueManager(CommandQueueConfig config, Path dataDirectory) {
         this.config = config;
         this.filePath = dataDirectory.resolve("queue").resolve("entries.yml");
-        this.dataFile = new YamlFile(filePath.toString());
+        this.dataLoader = YamlFileIO.loader(filePath);
         reload();
     }
 
@@ -55,28 +56,27 @@ public final class CommandQueueManager implements AutoCloseable {
         synchronized (fileLock) {
             try {
                 Files.createDirectories(filePath.getParent());
-                if (!dataFile.exists()) {
-                    dataFile.createNewFile(true);
+                if (!Files.exists(filePath)) {
+                    Files.createFile(filePath);
                 }
-                YamlFileIO.loadWithComments(dataFile);
+                dataFile = YamlFileIO.load(dataLoader);
                 applyHeader();
-                ConfigurationSection section = dataFile.getConfigurationSection(ROOT);
+                CommentedConfigurationNode section = node(ROOT);
                 long maxId = 0L;
-                if (section != null) {
-                    for (String rawId : section.getKeys(false)) {
-                        try {
-                            long id = Long.parseLong(rawId);
-                            QueuedCommandEntry entry = readEntry(rawId);
-                            if (entry != null) {
-                                entries.put(id, entry);
-                                maxId = Math.max(maxId, id);
-                            }
-                        } catch (NumberFormatException ignored) {
-                            Message.warn("Queue: ignoring invalid entry id '" + rawId + "'");
+                for (Object key : section.childrenMap().keySet()) {
+                    String rawId = String.valueOf(key);
+                    try {
+                        long id = Long.parseLong(rawId);
+                        QueuedCommandEntry entry = readEntry(rawId);
+                        if (entry != null) {
+                            entries.put(id, entry);
+                            maxId = Math.max(maxId, id);
                         }
+                    } catch (NumberFormatException ignored) {
+                        Message.warn("Queue: ignoring invalid entry id '" + rawId + "'");
                     }
                 }
-                nextId.set(Math.max(maxId + 1L, dataFile.getLong("next_id", maxId + 1L)));
+                nextId.set(Math.max(maxId + 1L, node("next_id").getLong(maxId + 1L)));
                 saveSnapshot();
             } catch (Exception e) {
                 Message.error("Queue: failed to load queue data: " + e.getMessage());
@@ -350,19 +350,19 @@ public final class CommandQueueManager implements AutoCloseable {
 
     private QueuedCommandEntry readEntry(String rawId) {
         String base = ROOT + "." + rawId;
-        String command = dataFile.getString(base + ".command", "");
+        String command = node(base + ".command").getString("");
         if (command.isBlank()) {
             return null;
         }
         return new QueuedCommandEntry(
                 Long.parseLong(rawId),
-                dataFile.getString(base + ".target_input", ""),
-                dataFile.getString(base + ".target_name", ""),
-                dataFile.getString(base + ".target_uuid", ""),
+                node(base + ".target_input").getString(""),
+                node(base + ".target_name").getString(""),
+                node(base + ".target_uuid").getString(""),
                 command,
-                dataFile.getLong(base + ".created_at", System.currentTimeMillis()),
-                dataFile.getLong(base + ".not_before", System.currentTimeMillis()),
-                dataFile.getString(base + ".created_by", "")
+                node(base + ".created_at").getLong(System.currentTimeMillis()),
+                node(base + ".not_before").getLong(System.currentTimeMillis()),
+                node(base + ".created_by").getString("")
         );
     }
 
@@ -373,21 +373,21 @@ public final class CommandQueueManager implements AutoCloseable {
     private void saveSnapshot() {
         synchronized (fileLock) {
             try {
-                YamlFileIO.loadWithComments(dataFile);
+                dataFile = YamlFileIO.load(dataLoader);
                 applyHeader();
-                dataFile.set("next_id", nextId.get());
-                dataFile.set(ROOT, null);
+                node("next_id").set(nextId.get());
+                node(ROOT).set(null);
                 for (QueuedCommandEntry entry : snapshot()) {
                     String base = ROOT + "." + entry.id();
-                    dataFile.set(base + ".target_input", entry.targetInput());
-                    dataFile.set(base + ".target_name", entry.targetName());
-                    dataFile.set(base + ".target_uuid", entry.targetUuid());
-                    dataFile.set(base + ".command", entry.command());
-                    dataFile.set(base + ".created_at", entry.createdAtMillis());
-                    dataFile.set(base + ".not_before", entry.notBeforeMillis());
-                    dataFile.set(base + ".created_by", entry.createdBy());
+                    node(base + ".target_input").set(entry.targetInput());
+                    node(base + ".target_name").set(entry.targetName());
+                    node(base + ".target_uuid").set(entry.targetUuid());
+                    node(base + ".command").set(entry.command());
+                    node(base + ".created_at").set(entry.createdAtMillis());
+                    node(base + ".not_before").set(entry.notBeforeMillis());
+                    node(base + ".created_by").set(entry.createdBy());
                 }
-                YamlFileIO.saveValidated(dataFile);
+                YamlFileIO.saveValidated(dataLoader, dataFile, filePath);
             } catch (Exception e) {
                 Message.error("Queue: failed to save queue data: " + e.getMessage());
             }
@@ -395,8 +395,15 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     private void applyHeader() {
-        dataFile.setHeader("Queued commands for /tqueue.\nCommands stay here until the target player is online and the delay has passed.");
-        dataFile.setComment("next_id", "Internal counter for the next queued command id");
+        dataFile.comment("Queued commands for /tqueue.\nCommands stay here until the target player is online and the delay has passed.");
+        node("next_id").comment("Internal counter for the next queued command id");
+    }
+
+    private CommentedConfigurationNode node(String path) {
+        if (path == null || path.isBlank()) {
+            return dataFile;
+        }
+        return dataFile.node((Object[]) path.split("\\."));
     }
 
     private List<QueuedCommandEntry> sorted(Collection<QueuedCommandEntry> source) {

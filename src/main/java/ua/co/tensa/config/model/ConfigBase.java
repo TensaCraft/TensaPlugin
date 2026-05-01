@@ -1,6 +1,6 @@
 package ua.co.tensa.config.model;
 
-import org.simpleyaml.configuration.file.YamlFile;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 import ua.co.tensa.Message;
 
 /**
@@ -57,7 +57,7 @@ public abstract class ConfigBase extends YamlBackedFile {
     }
 
     /** Hook for subclasses to skip writing specific defaults. */
-    protected boolean shouldWriteDefault(String basePath, Object defaultValue, YamlFile yaml) {
+    protected boolean shouldWriteDefault(String basePath, Object defaultValue, CommentedConfigurationNode yaml) {
         return true;
     }
 }

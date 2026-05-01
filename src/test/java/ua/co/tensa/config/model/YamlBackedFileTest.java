@@ -34,18 +34,18 @@ class YamlBackedFileTest {
     }
 
     @Test
-    void failedAutoUpdateSaveKeepsExistingFileInPlace() throws IOException {
+    void corruptYamlIsBackedUpAndRegenerated() throws IOException {
         Tensa.pluginPath = tempDir;
         Path file = tempDir.resolve("config.yml");
-        Files.writeString(file, "existing: value\n", StandardCharsets.UTF_8);
+        Files.writeString(file, "root:\n  broken: 'value\n next: bad\n", StandardCharsets.UTF_8);
 
-        new FailingSaveYamlFile("config.yml");
+        new TestYamlFile("config.yml");
 
         assertThat(file).exists();
-        assertThat(Files.readString(file, StandardCharsets.UTF_8)).contains("existing: value");
+        assertThat(Files.readString(file, StandardCharsets.UTF_8)).contains("new_key:");
         assertThat(Files.list(tempDir)
                 .filter(path -> path.getFileName().toString().startsWith("config.yml.corrupt."))
-                .toList()).isEmpty();
+                .toList()).hasSize(1);
     }
 
     private static final class TestYamlFile extends YamlBackedFile {
@@ -60,26 +60,4 @@ class YamlBackedFileTest {
         }
     }
 
-    private static final class FailingSaveYamlFile extends YamlBackedFile {
-        private FailingSaveYamlFile(String relativePath) {
-            super(relativePath);
-        }
-
-        @Override
-        protected void populateConfigFile() {
-            setConfigValue("new_key", "value");
-            this.yamlFile = new ThrowingYamlFile(FILE_PATH);
-        }
-    }
-
-    private static final class ThrowingYamlFile extends org.simpleyaml.configuration.file.YamlFile {
-        private ThrowingYamlFile(String filePath) {
-            super(filePath);
-        }
-
-        @Override
-        public String saveToString() throws IOException {
-            throw new IOException("simulated save failure");
-        }
-    }
 }

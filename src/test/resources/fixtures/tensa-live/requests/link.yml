@@ -1,0 +1,18 @@
+triggers:
+  - link
+permission: tensa.request.link
+require_player: true
+debug: false
+translate_legacy_colors: true
+url: https://example.invalid/api/serverlink/link
+method: GET
+parameters:
+  api_key: REDACTED_API_KEY
+  username: "%player_name%"
+  uuid: "%player_uuid%"
+  code: "%arg1%"
+response:
+  success:
+    - "tell %player_name% <green>%response%</green>"
+  failure:
+    - "tell %player_name% <red>%response%</red>"

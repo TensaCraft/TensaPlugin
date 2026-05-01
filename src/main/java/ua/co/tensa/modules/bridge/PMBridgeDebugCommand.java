@@ -3,7 +3,6 @@ package ua.co.tensa.modules.bridge;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
-import org.simpleyaml.configuration.file.YamlConfiguration;
 import ua.co.tensa.Message;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.bridge.data.BridgeConfig;
@@ -29,11 +28,9 @@ public class PMBridgeDebugCommand implements SimpleCommand {
         }
         // Show current active config (no implicit reload)
         BridgeConfig c = BridgeConfig.get();
-        YamlConfiguration cfg = c.getConfig();
         String channel = c.channel;
         // raw token from config.yml and resolved token (after use_velocity_secret logic)
-        Object rawTokenObj = cfg.get("token");
-        String rawToken = rawTokenObj == null ? null : String.valueOf(rawTokenObj);
+        String rawToken = c.getString("token", null);
         String token = PMBridgeModule.resolveToken(c);
         String safeToken = ua.co.tensa.Message.escapeMiniMessage(token);
         boolean use = c.useVelocitySecret;

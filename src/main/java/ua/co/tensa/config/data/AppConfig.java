@@ -55,6 +55,12 @@ public class AppConfig extends ConfigBase {
     @CfgKey(value = "database.table_prefix", comment = "Prefix added to plugin-managed database tables")
     public String tablePrefix = "tensa_";
 
+    @CfgKey(value = "storage.type", comment = "User data storage: auto uses configured database when available, otherwise local H2. Valid values: auto, database, local")
+    public String storageType = "auto";
+
+    @CfgKey(value = "storage.local_file", comment = "Local H2 file used for core user data when storage.type is local or auto fallback")
+    public String storageLocalFile = "storage/tensa-users";
+
     @CfgKey(value = "velocity.log_cleanup.enable", comment = "Clean Velocity log files when the plugin starts")
     public boolean velocityLogCleanupEnable = false;
 

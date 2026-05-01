@@ -1,7 +1,9 @@
 package ua.co.tensa.config.model;
 
-import org.simpleyaml.configuration.file.YamlFile;
-import org.simpleyaml.exceptions.InvalidConfigurationException;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.ConfigurateException;
+import org.spongepowered.configurate.yaml.NodeStyle;
+import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -9,63 +11,82 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 
 public final class YamlFileIO {
-
     private YamlFileIO() {
     }
 
-    public static void loadWithComments(YamlFile yamlFile) throws IOException, InvalidConfigurationException {
-        yamlFile.loadWithComments();
+    public static YamlConfigurationLoader loader(Path path) {
+        return YamlConfigurationLoader.builder()
+                .path(path)
+                .indent(2)
+                .nodeStyle(NodeStyle.BLOCK)
+                .build();
     }
 
-    public static void saveValidated(YamlFile yamlFile) throws IOException {
-        saveValidated(yamlFile, yamlFile.getConfigurationFile().toPath());
+    public static CommentedConfigurationNode load(YamlConfigurationLoader loader) throws ConfigurateException {
+        return loader.load();
     }
 
-    public static void saveValidated(YamlFile yamlFile, Path target) throws IOException {
-        Path absoluteTarget = target.toAbsolutePath();
-        Path directory = absoluteTarget.getParent();
-        if (directory != null) {
-            Files.createDirectories(directory);
+    public static void saveValidated(YamlConfigurationLoader loader, CommentedConfigurationNode node, Path target) throws IOException {
+        Path parent = target.toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
         }
 
-        String rendered = yamlFile.saveToString();
-        validate(rendered);
-
-        Path tempFile = Files.createTempFile(
-                directory == null ? Path.of(".") : directory,
-                absoluteTarget.getFileName().toString() + ".",
-                ".tmp"
-        );
-
-        boolean moved = false;
+        Path temp = Files.createTempFile(parent, target.getFileName().toString(), ".tmp");
         try {
-            Files.writeString(
-                    tempFile,
-                    rendered,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.TRUNCATE_EXISTING
-            );
-            moveIntoPlace(tempFile, absoluteTarget);
-            moved = true;
-        } finally {
-            if (!moved) {
-                Files.deleteIfExists(tempFile);
+            YamlConfigurationLoader tempLoader = loader(temp);
+            tempLoader.save(node);
+            preserveDetachedComments(target, temp);
+            tempLoader.load();
+
+            if (Files.exists(target) && sameContent(target, temp)) {
+                Files.deleteIfExists(temp);
+                return;
+            }
+
+            if (Files.exists(target)) {
+                Path backup = target.resolveSibling(target.getFileName() + ".bak." + System.currentTimeMillis());
+                Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            moveIntoPlace(temp, target);
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(temp);
+            throw e;
+        }
+    }
+
+    private static boolean sameContent(Path left, Path right) throws IOException {
+        return Files.readString(left, StandardCharsets.UTF_8).equals(Files.readString(right, StandardCharsets.UTF_8));
+    }
+
+    private static void preserveDetachedComments(Path original, Path generated) throws IOException {
+        if (!Files.exists(original)) {
+            return;
+        }
+
+        String generatedText = Files.readString(generated, StandardCharsets.UTF_8);
+        StringBuilder missingComments = new StringBuilder();
+        for (String line : Files.readAllLines(original, StandardCharsets.UTF_8)) {
+            if (line.trim().startsWith("#") && !generatedText.contains(line)) {
+                missingComments.append(line).append(System.lineSeparator());
             }
         }
+
+        if (missingComments.isEmpty()) {
+            return;
+        }
+
+        Files.writeString(generated, missingComments.append(generatedText).toString(), StandardCharsets.UTF_8);
     }
 
-    private static void validate(String yaml) throws IOException {
-        YamlFile.loadConfigurationFromString(yaml, true);
-    }
-
-    private static void moveIntoPlace(Path source, Path target) throws IOException {
+    private static void moveIntoPlace(Path temp, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 }

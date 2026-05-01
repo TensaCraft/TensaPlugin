@@ -1,39 +1,17 @@
 package ua.co.tensa.modules.event;
 
-import ua.co.tensa.modules.AbstractModule;
-import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.event.data.EventsConfig;
 
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+public final class EventsModule {
+    private EventsModule() {
+    }
 
-public class EventsModule {
-
-    private static final ModuleEntry IMPL = new AbstractModule(
-            "events-manager", "Events Manager") {
-        @Override protected void onEnable() {
-            EventsConfig.get().reloadCfg();
-            EventManager.initialise(ua.co.tensa.Tensa.pluginPath);
-            // Register event listener only when module is enabled
-            ((AbstractModule) IMPL).registerListener(new EventsListener());
-            // Fire server-running sequence at enable-time in case we missed initial ProxyInitializeEvent
-            try { EventManager.onServerRunning(); } catch (Throwable ignored) { }
-        }
-        @Override protected void onReload() {
-            EventsConfig.get().reloadCfg();
-            EventManager.reload();
-        }
-        @Override protected void onDisable() { EventManager.shutdown(); }
-    };
-    public static final ModuleEntry ENTRY = IMPL;
-
-    public static void enable() { IMPL.enable(); }
-    public static void disable() { IMPL.disable(); }
-
-	public enum Events {
-		on_pre_login_commands("on_pre_login_commands", c -> c.onPreLoginEnabled, c -> c.onPreLoginCommands),
+    public enum Events {
+        on_pre_login_commands("on_pre_login_commands", c -> c.onPreLoginEnabled, c -> c.onPreLoginCommands),
         on_login_commands("on_login_commands", c -> c.onLoginEnabled, c -> c.onLoginCommands),
         on_join_commands("on_join_commands", c -> c.onJoinEnabled, c -> c.onJoinCommands),
         on_first_join_commands("on_first_join_commands", c -> c.onFirstJoinEnabled, c -> c.onFirstJoinCommands),
@@ -50,15 +28,15 @@ public class EventsModule {
         on_server_pre_stop("on_server_pre_stop", c -> c.onServerPreStopEnabled, c -> c.onServerPreStopCommands),
         on_server_stop("on_server_stop", c -> c.onServerStopEnabled, c -> c.onServerStopCommands);
 
-		private final String key;
+        private final String key;
         private final Predicate<EventsConfig> enabledResolver;
         private final Function<EventsConfig, List<String>> commandsResolver;
 
-		Events(String key, Predicate<EventsConfig> enabledResolver, Function<EventsConfig, List<String>> commandsResolver) {
-			this.key = key;
+        Events(String key, Predicate<EventsConfig> enabledResolver, Function<EventsConfig, List<String>> commandsResolver) {
+            this.key = key;
             this.enabledResolver = enabledResolver;
             this.commandsResolver = commandsResolver;
-		}
+        }
 
         public boolean enabled() {
             return enabledResolver.test(EventsConfig.get());
@@ -68,5 +46,9 @@ public class EventsModule {
             List<String> commands = commandsResolver.apply(EventsConfig.get());
             return commands == null ? List.of() : List.copyOf(commands);
         }
-	}
+
+        public String key() {
+            return key;
+        }
+    }
 }

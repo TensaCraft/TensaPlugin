@@ -19,7 +19,7 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 
 /**
  * Event relay that connects Velocity events to EventManager logic.
- * Registered only when Events module is enabled.
+ * Registered once by the plugin core.
  */
 public final class EventsListener {
 

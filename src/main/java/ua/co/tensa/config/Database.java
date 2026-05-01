@@ -50,6 +50,14 @@ public class Database {
         enabled = false;
     }
 
+    public HikariDataSource getDataSource() {
+        return dataSource;
+    }
+
+    public String getTablePrefix() {
+        return tablePrefix == null ? "" : tablePrefix;
+    }
+
     public static void shutdownExecutor() {
         DB_EXECUTOR.shutdown();
         try {

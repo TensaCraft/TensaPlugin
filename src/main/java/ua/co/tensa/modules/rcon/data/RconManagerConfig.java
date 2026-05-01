@@ -1,6 +1,6 @@
 package ua.co.tensa.modules.rcon.data;
 
-import org.simpleyaml.configuration.file.YamlFile;
+import org.spongepowered.configurate.CommentedConfigurationNode;
 import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
@@ -44,9 +44,9 @@ public class RconManagerConfig extends ConfigBase {
     }
 
     @Override
-    protected boolean shouldWriteDefault(String basePath, Object defaultValue, YamlFile yaml) {
+    protected boolean shouldWriteDefault(String basePath, Object defaultValue, CommentedConfigurationNode yaml) {
         // Do not seed example servers if user already has servers defined
-        if ("servers".equals(basePath) && yaml.contains("servers")) {
+        if ("servers".equals(basePath) && !yaml.node("servers").virtual() && yaml.node("servers").raw() != null) {
             return false;
         }
         return true;

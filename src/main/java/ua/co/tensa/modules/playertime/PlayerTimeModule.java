@@ -1,12 +1,8 @@
 package ua.co.tensa.modules.playertime;
 
 import ua.co.tensa.Tensa;
-import ua.co.tensa.config.Database;
-import ua.co.tensa.config.DatabaseInitializer;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
-
-import java.util.concurrent.TimeUnit;
 
 public class PlayerTimeModule {
 
@@ -30,27 +26,12 @@ public class PlayerTimeModule {
     public static void disable() { IMPL.disable(); }
 
     public static void initialize() {
-        if (Tensa.config == null || !Tensa.config.databaseEnable()){
-            throw new IllegalStateException("PlayerTime module requires database.enable=true");
+        if (Tensa.userData == null) {
+            throw new IllegalStateException("PlayerTime module requires core user data service");
         }
-        Database database = Tensa.database;
-        if (database == null || !database.enabled) {
-            throw new IllegalStateException("PlayerTime module requires an active database connection");
-        }
-
-        if (!database.tableExists("player_times")){
-            DatabaseInitializer databaseInitializer = new DatabaseInitializer(database);
-            if (!databaseInitializer.createPlayerTimeTable()) {
-                throw new IllegalStateException("PlayerTime module could not create the player_times table");
-            }
-        }
-        PlayerTimeTracker timeTracker = new PlayerTimeTracker(database);
-        PlayerEventListener eventListener = new PlayerEventListener(timeTracker);
-        ((AbstractModule) IMPL).registerListener(eventListener);
+        PlayerTimeTracker timeTracker = new PlayerTimeTracker(Tensa.userData);
         AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
         AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
-
-        ((AbstractModule) IMPL).scheduleRepeating(timeTracker::updateAllOnlineTimes, 1, 1, TimeUnit.MINUTES);
     }
 
     public static String formatTime(long timeMillis) {

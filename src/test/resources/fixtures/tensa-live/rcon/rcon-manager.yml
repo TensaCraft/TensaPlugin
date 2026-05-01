@@ -1,0 +1,7 @@
+servers:
+  lobby:
+    ip: 127.0.0.1
+    port: 25575
+    pass: REDACTED_RCON_PASSWORD
+tab-complete-list:
+  - lobby

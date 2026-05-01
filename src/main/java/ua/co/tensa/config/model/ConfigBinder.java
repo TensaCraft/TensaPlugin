@@ -1,8 +1,7 @@
 package ua.co.tensa.config.model;
 
-import org.simpleyaml.configuration.ConfigurationSection;
-import org.simpleyaml.configuration.file.YamlConfiguration;
-import org.simpleyaml.configuration.file.YamlFile;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.serialize.SerializationException;
 import ua.co.tensa.Message;
 import ua.co.tensa.config.model.ann.CfgKey;
 
@@ -13,8 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reflection-based binder that maps fields annotated with @CfgKey
- * to values in YAML, writing defaults when missing.
+ * Reflection-based binder that maps fields annotated with @CfgKey to Configurate nodes.
  */
 final class ConfigBinder {
     private final Object target;
@@ -33,7 +31,7 @@ final class ConfigBinder {
         }
     }
 
-    boolean writeMissingDefaults(YamlFile yaml) {
+    boolean writeMissingDefaults(CommentedConfigurationNode root) {
         boolean changed = false;
 
         for (Field field : fields) {
@@ -45,32 +43,28 @@ final class ConfigBinder {
 
                 boolean allow = true;
                 if (target instanceof ConfigBase cm) {
-                    allow = cm.shouldWriteDefault(base, def, yaml);
+                    allow = cm.shouldWriteDefault(base, def, root);
                 }
                 if (!allow) {
                     continue;
                 }
 
                 if (def instanceof Map<?, ?> map) {
-                    boolean mapChanged = writeMapDefaults(yaml, base, map);
+                    boolean mapChanged = writeMapDefaults(root, base, map);
                     if (mapChanged) {
                         changed = true;
-                        if (!key.comment().isBlank()) {
-                            yaml.setComment(base, key.comment());
-                        }
+                        setComment(root, base, key.comment());
                     }
                     continue;
                 }
 
-                if (!yaml.contains(base)) {
-                    yaml.set(base, copyValue(def));
+                CommentedConfigurationNode node = node(root, base);
+                if (node.virtual() || node.raw() == null) {
+                    node.set(copyValue(def));
                     changed = true;
-
-                    if (!key.comment().isBlank()) {
-                        yaml.setComment(base, key.comment());
-                    }
+                    setComment(root, base, key.comment());
                 }
-            } catch (IllegalAccessException e) {
+            } catch (IllegalAccessException | SerializationException e) {
                 Message.warn("Config model default write failed for " + base + ": " + e.getMessage());
             }
         }
@@ -78,7 +72,7 @@ final class ConfigBinder {
         return changed;
     }
 
-    private boolean writeMapDefaults(YamlFile yaml, String base, Map<?, ?> map) {
+    private boolean writeMapDefaults(CommentedConfigurationNode root, String base, Map<?, ?> map) {
         boolean changed = false;
 
         for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -87,68 +81,68 @@ final class ConfigBinder {
             Object value = entry.getValue();
 
             if (value instanceof Map<?, ?> nested) {
-                if (writeMapDefaults(yaml, full, nested)) {
+                if (writeMapDefaults(root, full, nested)) {
                     changed = true;
                 }
                 continue;
             }
 
-            if (!yaml.contains(full)) {
-                yaml.set(full, copyValue(value));
-                changed = true;
+            CommentedConfigurationNode node = node(root, full);
+            if (node.virtual() || node.raw() == null) {
+                try {
+                    node.set(copyValue(value));
+                    changed = true;
+                } catch (SerializationException e) {
+                    Message.warn("Config map default write failed for " + full + ": " + e.getMessage());
+                }
             }
         }
 
         return changed;
     }
 
-    void loadFromYaml(YamlConfiguration cfg) {
+    void loadFromYaml(CommentedConfigurationNode cfg) {
         for (Field field : fields) {
             CfgKey key = field.getAnnotation(CfgKey.class);
             String path = key.value();
             Class<?> type = field.getType();
+            CommentedConfigurationNode node = node(cfg, path);
 
             try {
                 if (type == String.class) {
                     String def = (String) field.get(target);
-                    field.set(target, cfg.getString(path, def));
+                    field.set(target, node.getString(def));
                     continue;
                 }
 
                 if (type == boolean.class || type == Boolean.class) {
-                    boolean def = field.get(target) instanceof Boolean b ? b : false;
-                    field.set(target, cfg.contains(path) ? cfg.getBoolean(path) : def);
+                    boolean def = field.get(target) instanceof Boolean b && b;
+                    field.set(target, node.virtual() ? def : node.getBoolean(def));
                     continue;
                 }
 
                 if (type == int.class || type == Integer.class) {
                     int def = field.get(target) instanceof Integer i ? i : 0;
-                    field.set(target, cfg.contains(path) ? cfg.getInt(path) : def);
+                    field.set(target, node.virtual() ? def : node.getInt(def));
                     continue;
                 }
 
                 if (type == long.class || type == Long.class) {
                     long def = field.get(target) instanceof Long l ? l : 0L;
-                    field.set(target, cfg.contains(path) ? cfg.getLong(path) : def);
+                    field.set(target, node.virtual() ? def : node.getLong(def));
                     continue;
                 }
 
                 if (type == double.class || type == Double.class) {
                     double def = field.get(target) instanceof Double d ? d : 0D;
-                    field.set(target, cfg.contains(path) ? cfg.getDouble(path) : def);
+                    field.set(target, node.virtual() ? def : node.getDouble(def));
                     continue;
                 }
 
                 if (List.class.isAssignableFrom(type)) {
                     @SuppressWarnings("unchecked")
                     List<String> def = (List<String>) field.get(target);
-
-                    if (cfg.contains(path)) {
-                        List<String> list = cfg.getStringList(path);
-                        field.set(target, list == null ? new ArrayList<>() : new ArrayList<>(list));
-                    } else {
-                        field.set(target, def == null ? new ArrayList<>() : new ArrayList<>(def));
-                    }
+                    field.set(target, new ArrayList<>(node.getList(String.class, def == null ? List.of() : def)));
                     continue;
                 }
 
@@ -156,11 +150,8 @@ final class ConfigBinder {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> def = (Map<String, Object>) field.get(target);
 
-                    ConfigurationSection section = cfg.getConfigurationSection(path);
-                    if (section != null) {
-                        LinkedHashMap<String, Object> map = new LinkedHashMap<>();
-                        readSection(section, map);
-                        field.set(target, map);
+                    if (!node.virtual() && !node.childrenMap().isEmpty()) {
+                        field.set(target, readSection(node));
                     } else if (def != null) {
                         @SuppressWarnings("unchecked")
                         Map<String, Object> copy = (Map<String, Object>) copyValue(def);
@@ -169,33 +160,57 @@ final class ConfigBinder {
                     continue;
                 }
 
-                if (cfg.contains(path)) {
-                    field.set(target, cfg.get(path));
+                if (!node.virtual() && node.raw() != null) {
+                    field.set(target, node.raw());
                 }
-            } catch (IllegalAccessException e) {
+            } catch (IllegalAccessException | SerializationException e) {
                 Message.warn("Config model load failed for " + path + ": " + e.getMessage());
             }
         }
     }
 
-    private void readSection(ConfigurationSection section, Map<String, Object> out) {
-        for (String child : section.getKeys(false)) {
-            if (section.isConfigurationSection(child)) {
-                ConfigurationSection childSection = section.getConfigurationSection(child);
-                LinkedHashMap<String, Object> nested = new LinkedHashMap<>();
-                if (childSection != null) {
-                    readSection(childSection, nested);
-                }
-                out.put(child, nested);
-            } else {
-                out.put(child, copyValue(section.get(child)));
-            }
+    private Map<String, Object> readSection(CommentedConfigurationNode section) {
+        LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<Object, ? extends CommentedConfigurationNode> entry : section.childrenMap().entrySet()) {
+            out.put(String.valueOf(entry.getKey()), toJavaValue(entry.getValue()));
         }
+        return out;
+    }
+
+    private Object toJavaValue(CommentedConfigurationNode node) {
+        if (!node.childrenMap().isEmpty()) {
+            return readSection(node);
+        }
+        if (!node.childrenList().isEmpty()) {
+            List<Object> out = new ArrayList<>();
+            for (CommentedConfigurationNode child : node.childrenList()) {
+                out.add(toJavaValue(child));
+            }
+            return out;
+        }
+        return copyValue(node.raw());
+    }
+
+    private void setComment(CommentedConfigurationNode root, String path, String comment) {
+        if (comment != null && !comment.isBlank()) {
+            node(root, path).comment(comment);
+        }
+    }
+
+    private CommentedConfigurationNode node(CommentedConfigurationNode root, String path) {
+        if (path == null || path.isBlank()) {
+            return root;
+        }
+        return root.node((Object[]) path.split("\\."));
     }
 
     private Object copyValue(Object value) {
         if (value instanceof List<?> list) {
-            return new ArrayList<>(list);
+            List<Object> copy = new ArrayList<>();
+            for (Object item : list) {
+                copy.add(copyValue(item));
+            }
+            return copy;
         }
 
         if (value instanceof Map<?, ?> map) {
