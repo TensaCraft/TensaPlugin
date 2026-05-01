@@ -1,7 +1,7 @@
 language: uk
 use_uuid: false
 modules:
-  pm-bridge: true
+  proxy-bridge: true
   chat: true
   rcon-manager: true
   rcon-server: false

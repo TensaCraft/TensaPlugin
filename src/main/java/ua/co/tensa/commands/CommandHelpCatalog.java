@@ -5,7 +5,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.core.meta.UserMetaCommand;
-import ua.co.tensa.modules.bridge.PMBridgeDebugCommand;
+import ua.co.tensa.modules.bridge.ProxyBridgeDebugCommand;
 import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.playertime.PlayerTimeCommand;
 import ua.co.tensa.modules.playertime.PlayerTimeTopCommand;
@@ -119,9 +119,9 @@ public final class CommandHelpCatalog {
             descriptionKey = "help_desc_tmeta";
             descriptionFallback = "Manage temporary and persistent user metadata.";
             sortOrder = 130;
-        } else if (handler instanceof PMBridgeDebugCommand) {
-            descriptionKey = "help_desc_tpmdebug";
-            descriptionFallback = "Show PM-Bridge debug information.";
+        } else if (handler instanceof ProxyBridgeDebugCommand) {
+            descriptionKey = "help_desc_tproxydebug";
+            descriptionFallback = "Show ProxyBridge debug information.";
             sortOrder = 140;
         } else if (handler instanceof CommandQueueCommand) {
             usageTemplate = "/{command} <player|uuid> <command...> [-t:seconds]";

@@ -13,10 +13,10 @@ import ua.co.tensa.modules.bridge.data.BridgeConfig;
 
 import java.nio.charset.StandardCharsets;
 
-public class PMBridgeModule {
+public class ProxyBridgeModule {
     private static volatile String resolvedToken = "";
 
-    private static final ModuleEntry IMPL = new AbstractModule("pm-bridge", "PluginMessage Bridge") {
+    private static final ModuleEntry IMPL = new AbstractModule("proxy-bridge", "ProxyBridge") {
         private ChannelIdentifier id;
 
         @Override protected void onEnable() {
@@ -24,8 +24,8 @@ public class PMBridgeModule {
             cfg.reloadCfg();
             id = registerChannel(cfg.channel, id);
             resolvedToken = resolveToken(cfg);
-            registerListener(new PMBridgeModule());
-            ua.co.tensa.modules.AbstractModule.registerCommand("tpmdebug", "tpmdbg", new PMBridgeDebugCommand());
+            registerListener(new ProxyBridgeModule());
+            ua.co.tensa.modules.AbstractModule.registerCommand("tproxydebug", "tpbdebug", new ProxyBridgeDebugCommand());
             // status logging handled centrally
         }
 
@@ -34,7 +34,7 @@ public class PMBridgeModule {
                 try { Tensa.server.getChannelRegistrar().unregister(id); } catch (Throwable ignored) {}
             }
             resolvedToken = "";
-            ua.co.tensa.modules.AbstractModule.unregisterCommands("tpmdebug", "tpmdbg");
+            ua.co.tensa.modules.AbstractModule.unregisterCommands("tproxydebug", "tpbdebug");
         }
 
         @Override protected void onReload() {
@@ -44,7 +44,7 @@ public class PMBridgeModule {
                 id = registerChannel(cfg.channel, id);
                 resolvedToken = resolveToken(cfg);
             } catch (Throwable t) {
-                ua.co.tensa.Message.warn("PM-Bridge reload failed: " + t.getMessage());
+                ua.co.tensa.Message.warn("ProxyBridge reload failed: " + t.getMessage());
             }
         }
     };
@@ -83,27 +83,27 @@ public class PMBridgeModule {
 
         String serverName = serverConn.getServerInfo().getName();
         if (!allowNorm.isEmpty() && !isAllowedServer(allowNorm, serverName)) {
-            if (log) ua.co.tensa.Message.warn("PM-Bridge: blocked message from disallowed server '" + serverName + "'");
+            if (log) ua.co.tensa.Message.warn("ProxyBridge: blocked message from disallowed server '" + serverName + "'");
             return;
         }
-        if (log) ua.co.tensa.Message.info("PM-Bridge: message on " + ch + " from server '" + serverName + "'");
+        if (log) ua.co.tensa.Message.info("ProxyBridge: message on " + ch + " from server '" + serverName + "'");
         // No allowlist filtering: accept from any backend server
 
         String payload = new String(event.getData(), StandardCharsets.UTF_8);
         int idx = payload.indexOf(':');
         if (idx <= 0) {
-            if (log) ua.co.tensa.Message.warn("PM-Bridge: invalid payload format");
+            if (log) ua.co.tensa.Message.warn("ProxyBridge: invalid payload format");
             return;
         }
         String provided = payload.substring(0, idx);
         String cmd = payload.substring(idx + 1).trim();
         if (!provided.equals(token)) {
-            if (log) ua.co.tensa.Message.warn("PM-Bridge: invalid token from " + serverName);
+            if (log) ua.co.tensa.Message.warn("ProxyBridge: invalid token from " + serverName);
             return;
         }
 
         if (cmd.isEmpty()) return;
-        if (log) ua.co.tensa.Message.info("PM-Bridge exec from " + serverName + ": /" + cmd);
+        if (log) ua.co.tensa.Message.info("ProxyBridge exec from " + serverName + ": /" + cmd);
         Util.executeCommand(cmd);
         event.setResult(PluginMessageEvent.ForwardResult.handled());
     }

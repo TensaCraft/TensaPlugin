@@ -7,7 +7,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.bridge.data.BridgeConfig;
 
-public class PMBridgeDebugCommand implements SimpleCommand {
+public class ProxyBridgeDebugCommand implements SimpleCommand {
     @Override
     public void execute(Invocation invocation) {
         CommandSource src = invocation.source();
@@ -15,10 +15,10 @@ public class PMBridgeDebugCommand implements SimpleCommand {
             Message.send(src, "<red>No permission.</red>");
             return;
         }
-        // Only allow when PM-Bridge module is enabled
-        var entry = ua.co.tensa.modules.Modules.getEntries().get("pm-bridge");
+        // Only allow when ProxyBridge module is enabled
+        var entry = ua.co.tensa.modules.Modules.getEntries().get("proxy-bridge");
         if (entry == null || !entry.isEnabled()) {
-            Message.send(src, "<red>PM-Bridge module is disabled.</red>");
+            Message.send(src, "<red>ProxyBridge module is disabled.</red>");
             return;
         }
         // Console only
@@ -31,15 +31,15 @@ public class PMBridgeDebugCommand implements SimpleCommand {
         String channel = c.channel;
         // raw token from config.yml and resolved token (after use_velocity_secret logic)
         String rawToken = c.getString("token", null);
-        String token = PMBridgeModule.resolveToken(c);
+        String token = ProxyBridgeModule.resolveToken(c);
         String safeToken = ua.co.tensa.Message.escapeMiniMessage(token);
         boolean use = c.useVelocitySecret;
         boolean log = c.log;
         java.util.List<String> allow = c.allowFrom;
         String allowStr = (allow == null || allow.isEmpty()) ? "<empty>" : String.join(", ", allow);
-        boolean enabled = Modules.getEntries().getOrDefault("pm-bridge", null) != null && Modules.getEntries().get("pm-bridge").isEnabled();
+        boolean enabled = Modules.getEntries().getOrDefault("proxy-bridge", null) != null && Modules.getEntries().get("proxy-bridge").isEnabled();
 
-        Message.send(src, "<gold>=== PM Bridge Debug ===</gold>");
+        Message.send(src, "<gold>=== ProxyBridge Debug ===</gold>");
         Message.send(src, "<gray>Module:</gray> <yellow>" + (enabled ? "enabled" : "disabled") + "</yellow>");
         Message.send(src, "<gray>Channel:</gray> <yellow>" + channel + "</yellow> (<gray>id:</gray> " + MinecraftChannelIdentifier.from(channel).getId() + ")");
         Message.send(src, "<gray>use_velocity_secret:</gray> <yellow>" + use + "</yellow>");
@@ -91,6 +91,6 @@ public class PMBridgeDebugCommand implements SimpleCommand {
 
     @Override
     public boolean hasPermission(Invocation invocation) {
-        return invocation.source().hasPermission("tensa.pm.debug");
+        return invocation.source().hasPermission("tensa.proxybridge.debug");
     }
 }

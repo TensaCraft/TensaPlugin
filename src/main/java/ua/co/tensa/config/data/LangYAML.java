@@ -231,7 +231,7 @@ public class LangYAML extends YamlBackedFile {
         setLocalizedConfigValue("help_desc_tptop", "Show the top players by playing time.", "Показати топ гравців за часом гри.");
         setLocalizedConfigValue("help_desc_rcon", "Execute an RCON command on one or more servers.", "Виконати RCON-команду на одному або кількох серверах.");
         setLocalizedConfigValue("help_desc_tmeta", "Manage temporary and persistent user metadata.", "Керувати тимчасовими та постійними метаданими користувачів.");
-        setLocalizedConfigValue("help_desc_tpmdebug", "Show PM-Bridge debug information.", "Показати діагностичну інформацію PM-Bridge.");
+        setLocalizedConfigValue("help_desc_tproxydebug", "Show ProxyBridge debug information.", "Показати діагностичну інформацію ProxyBridge.");
         setLocalizedConfigValue("help_desc_tqueue",
                 "Queue a console command until the target player is online. Admin subcommands let you inspect and manage the queue.",
                 "Поставити консольну команду в чергу, доки цільовий гравець не буде онлайн. Адмін-підкоманди дозволяють переглядати й керувати чергою.");

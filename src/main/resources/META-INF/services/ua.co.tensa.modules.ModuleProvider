@@ -1,4 +1,4 @@
-ua.co.tensa.modules.bridge.PMBridgeProvider
+ua.co.tensa.modules.bridge.ProxyBridgeProvider
 ua.co.tensa.modules.chat.ChatProvider
 ua.co.tensa.modules.rcon.manager.RconManagerProvider
 ua.co.tensa.modules.rcon.server.RconServerProvider
