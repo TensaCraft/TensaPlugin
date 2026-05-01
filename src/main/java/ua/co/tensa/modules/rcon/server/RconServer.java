@@ -2,6 +2,7 @@ package ua.co.tensa.modules.rcon.server;
 
 import com.velocitypowered.api.proxy.ProxyServer;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -14,6 +15,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.net.SocketAddress;
+import java.util.concurrent.TimeUnit;
 
 public class RconServer {
 
@@ -22,6 +24,7 @@ public class RconServer {
 	private final ServerBootstrap bootstrap = new ServerBootstrap();
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
+    private volatile Channel serverChannel;
 
 	public RconServer(ProxyServer server, final String password) {
         this.server = server;
@@ -57,17 +60,30 @@ public class RconServer {
     }
 
 	public ChannelFuture bind(final SocketAddress address) {
-		return bootstrap.bind(address);
+		ChannelFuture future = bootstrap.bind(address);
+        future.addListener(result -> {
+            if (result.isSuccess()) {
+                serverChannel = future.channel();
+            }
+        });
+		return future;
 	}
 
     public void shutdown() {
+        Channel channel = serverChannel;
+        if (channel != null) {
+            channel.close().awaitUninterruptibly(2, TimeUnit.SECONDS);
+            serverChannel = null;
+        }
         try {
-            workerGroup.shutdownGracefully().syncUninterruptibly();
+            workerGroup.shutdownGracefully(0, 2, TimeUnit.SECONDS)
+                    .awaitUninterruptibly(3, TimeUnit.SECONDS);
         } catch (Throwable e) {
             ua.co.tensa.Message.debug("Worker group shutdown interrupted: " + e.getMessage());
         }
         try {
-            bossGroup.shutdownGracefully().syncUninterruptibly();
+            bossGroup.shutdownGracefully(0, 2, TimeUnit.SECONDS)
+                    .awaitUninterruptibly(3, TimeUnit.SECONDS);
         } catch (Throwable e) {
             ua.co.tensa.Message.debug("Boss group shutdown interrupted: " + e.getMessage());
         }

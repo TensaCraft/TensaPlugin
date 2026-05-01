@@ -3,19 +3,12 @@ package ua.co.tensa.core.user;
 import com.velocitypowered.api.proxy.Player;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.spongepowered.configurate.CommentedConfigurationNode;
-import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
-import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Database;
-import ua.co.tensa.config.model.YamlFileIO;
 
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.ResultSet;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -153,12 +146,6 @@ public final class UserDataService implements AutoCloseable {
         return CompletableFuture.supplyAsync(() -> topByPlayTime(limit), executor);
     }
 
-    public void importLegacyData(Path pluginPath, Database database) {
-        importLegacyFirstJoin(pluginPath.resolve("events").resolve("first-join.yml"));
-        importLegacyUserMeta(pluginPath.resolve("user_meta").resolve("data.yml"));
-        importLegacyPlayerTimes(database);
-    }
-
     @Override
     public void close() {
         executor.shutdown();
@@ -191,114 +178,6 @@ public final class UserDataService implements AutoCloseable {
         config.setMinimumIdle(1);
         config.setPoolName("TensaUserDataLocal");
         return new HikariDataSource(config);
-    }
-
-    private void importLegacyFirstJoin(Path file) {
-        String migrationId = "legacy_first_join_yml_v1";
-        if (store.migrationApplied(migrationId) || !Files.exists(file)) {
-            return;
-        }
-
-        try {
-            YamlConfigurationLoader loader = YamlFileIO.loader(file);
-            CommentedConfigurationNode root = loader.load();
-            CommentedConfigurationNode players = root.node("players");
-            int imported = 0;
-            for (Map.Entry<Object, ? extends CommentedConfigurationNode> entry : players.childrenMap().entrySet()) {
-                try {
-                    UUID uuid = UUID.fromString(String.valueOf(entry.getKey()));
-                    CommentedConfigurationNode node = entry.getValue();
-                    String username = node.node("name").getString("");
-                    long firstSeenAt = parseTimestamp(node.node("first_seen_at").getString(""));
-                    if (store.findByUuid(uuid).isEmpty()) {
-                        store.recordLogin(UserLoginData.builder(uuid, username == null || username.isBlank() ? uuid.toString() : username)
-                                .timestamp(firstSeenAt > 0 ? firstSeenAt : System.currentTimeMillis())
-                                .build());
-                        store.recordDisconnect(uuid, firstSeenAt > 0 ? firstSeenAt : System.currentTimeMillis(), "");
-                    }
-                    imported++;
-                } catch (IllegalArgumentException ignored) {
-                    Message.warn("User data migration: ignored invalid first-join UUID '" + entry.getKey() + "'");
-                }
-            }
-            store.markMigrationApplied(migrationId);
-            Message.info("User data migration: imported " + imported + " first-join entries");
-        } catch (Exception e) {
-            Message.warn("User data migration: failed to import first-join YAML: " + e.getMessage());
-        }
-    }
-
-    private void importLegacyUserMeta(Path file) {
-        String migrationId = "legacy_user_meta_yml_v1";
-        if (store.migrationApplied(migrationId) || !Files.exists(file)) {
-            return;
-        }
-
-        try {
-            YamlConfigurationLoader loader = YamlFileIO.loader(file);
-            CommentedConfigurationNode root = loader.load();
-            int imported = 0;
-            for (Map.Entry<Object, ? extends CommentedConfigurationNode> userEntry : root.childrenMap().entrySet()) {
-                try {
-                    UUID uuid = UUID.fromString(String.valueOf(userEntry.getKey()));
-                    for (Map.Entry<Object, ? extends CommentedConfigurationNode> metaEntry : userEntry.getValue().childrenMap().entrySet()) {
-                        store.setMeta(uuid, String.valueOf(metaEntry.getKey()), metaEntry.getValue().getString(""), "string");
-                        imported++;
-                    }
-                } catch (IllegalArgumentException ignored) {
-                    Message.warn("User data migration: ignored invalid user-meta UUID '" + userEntry.getKey() + "'");
-                }
-            }
-            store.markMigrationApplied(migrationId);
-            Message.info("User data migration: imported " + imported + " user-meta entries");
-        } catch (Exception e) {
-            Message.warn("User data migration: failed to import user_meta YAML: " + e.getMessage());
-        }
-    }
-
-    private void importLegacyPlayerTimes(Database database) {
-        String migrationId = "legacy_player_times_table_v1";
-        if (store.migrationApplied(migrationId) || database == null || !database.enabled || !database.tableExists("player_times")) {
-            return;
-        }
-
-        try {
-            Integer imported = database.select("player_times", "uuid, name, play_time", "1 = 1",
-                    (ResultSet rs) -> {
-                        int count = 0;
-                        while (rs.next()) {
-                            UUID uuid = UUID.fromString(rs.getString("uuid"));
-                            String name = rs.getString("name");
-                            long playMillis = rs.getLong("play_time");
-                            if (store.findByUuid(uuid).isEmpty()) {
-                                store.recordLogin(UserLoginData.builder(uuid, name).build());
-                                store.recordDisconnect(uuid, System.currentTimeMillis(), "");
-                            }
-                            store.addPlayTime(uuid, Math.max(0L, playMillis / 1000L));
-                            count++;
-                        }
-                        return count;
-                    });
-            store.markMigrationApplied(migrationId);
-            Message.info("User data migration: imported " + (imported == null ? 0 : imported) + " player-time rows");
-        } catch (Exception e) {
-            Message.warn("User data migration: failed to import player_times table: " + e.getMessage());
-        }
-    }
-
-    private long parseTimestamp(String value) {
-        if (value == null || value.isBlank()) {
-            return 0L;
-        }
-        try {
-            return Instant.parse(value).toEpochMilli();
-        } catch (DateTimeParseException ignored) {
-            try {
-                return Long.parseLong(value);
-            } catch (NumberFormatException ignoredAgain) {
-                return 0L;
-            }
-        }
     }
 
     public static UserLoginData fromPlayer(Player player) {

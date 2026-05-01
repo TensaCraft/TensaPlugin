@@ -30,10 +30,6 @@ interface UserDataStore extends AutoCloseable {
 
     List<UserProfile> topByPlayTime(int limit);
 
-    boolean migrationApplied(String id);
-
-    void markMigrationApplied(String id);
-
     @Override
     void close();
 }

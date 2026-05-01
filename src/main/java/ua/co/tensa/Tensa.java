@@ -11,7 +11,6 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
-import ua.co.tensa.config.DatabaseInitializer;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.Modules;
@@ -85,9 +84,7 @@ public class Tensa {
         }
         if (config != null && config.databaseEnable()) {
             database = new Database();
-            if (database.connect()) {
-                new DatabaseInitializer(database).initializeTables();
-            }
+            database.connect();
         }
     }
 
@@ -97,7 +94,6 @@ public class Tensa {
             userData = null;
         }
         userData = UserDataService.createFromConfig(database);
-        userData.importLegacyData(pluginPath, database);
     }
 
     private static void initialiseCoreEvents() {

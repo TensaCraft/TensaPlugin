@@ -1,13 +1,11 @@
 package ua.co.tensa.config.model;
 
 import org.spongepowered.configurate.CommentedConfigurationNode;
-import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.serialize.SerializationException;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,14 +48,24 @@ public abstract class YamlBackedFile {
         try {
             dirty = false;
             created = ensureFileExists();
-            yamlFile = YamlFileIO.load(loader);
-            populateConfigFile();
-
-            if (created || dirty) {
-                saveAutoUpdate(created);
+            try {
+                yamlFile = YamlFileIO.load(loader);
+            } catch (Exception e) {
+                recover(e);
+                return;
             }
-        } catch (Exception e) {
-            recover(e);
+
+            try {
+                populateConfigFile();
+                if (created || dirty) {
+                    saveAutoUpdate(created);
+                }
+            } catch (Exception e) {
+                String impact = created ? "Generated file may be incomplete." : "Existing file was not replaced.";
+                Message.error("Failed to update config " + FILE_PATH + ": " + e.getMessage() + ". " + impact);
+            }
+        } catch (IOException e) {
+            Message.error("Failed to access config " + FILE_PATH + ": " + e.getMessage());
         } finally {
             firstLoad = false;
             dirty = false;
@@ -81,7 +89,7 @@ public abstract class YamlBackedFile {
         try {
             YamlFileIO.saveValidated(loader, yamlFile, filePath);
             dirty = false;
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             String impact = created ? "Generated file was not completed." : "Existing file was not replaced.";
             Message.error("Failed to save config " + FILE_PATH + ": " + e.getMessage() + ". " + impact);
         }
@@ -164,7 +172,8 @@ public abstract class YamlBackedFile {
     }
 
     public String getString(String path, String def) {
-        return node(path).getString(def);
+        String value = node(path).getString();
+        return value == null ? def : value;
     }
 
     public boolean getBoolean(String path, boolean def) {

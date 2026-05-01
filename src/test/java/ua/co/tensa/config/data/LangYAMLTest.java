@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.config.model.YamlFileIO;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class LangYAMLTest {
 
@@ -36,6 +38,22 @@ class LangYAMLTest {
         assertThat(lang.getString("queue_usage", ""))
                 .contains("[player|uuid] [command...]")
                 .doesNotContain("<player|uuid>", "<command...>");
+    }
+
+    @Test
+    void generatedLanguageCanReloadWithoutCorruptRecovery() throws Exception {
+        LangYAML lang = LangYAML.getInstance();
+        Path langFile = tempDir.resolve("lang").resolve("en.yml");
+
+        assertThatCode(() -> YamlFileIO.load(YamlFileIO.loader(langFile)))
+                .doesNotThrowAnyException();
+
+        lang.getReloadedFile();
+
+        try (var files = Files.list(tempDir.resolve("lang"))) {
+            assertThat(files.map(path -> path.getFileName().toString()))
+                    .noneMatch(name -> name.contains(".corrupt."));
+        }
     }
 
     @Test

@@ -58,13 +58,6 @@ final class JdbcUserDataStore implements UserDataStore {
                     PRIMARY KEY (uuid, meta_key)
                 )
                 """.formatted(prefix));
-
-        execute("""
-                CREATE TABLE IF NOT EXISTS %sschema_migrations (
-                    migration_id VARCHAR(128) PRIMARY KEY,
-                    applied_at BIGINT NOT NULL
-                )
-                """.formatted(prefix));
     }
 
     @Override
@@ -266,33 +259,6 @@ final class JdbcUserDataStore implements UserDataStore {
             Message.database("USER TOP FAILED", e.getMessage());
         }
         return profiles;
-    }
-
-    @Override
-    public boolean migrationApplied(String id) {
-        if (id == null || id.isBlank()) {
-            return true;
-        }
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT 1 FROM " + prefix + "schema_migrations WHERE migration_id = ?")) {
-            statement.setString(1, id);
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            Message.database("MIGRATION CHECK FAILED", e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public void markMigrationApplied(String id) {
-        if (id == null || id.isBlank() || migrationApplied(id)) {
-            return;
-        }
-        update("INSERT INTO " + prefix + "schema_migrations (migration_id, applied_at) VALUES (?, ?)",
-                id, System.currentTimeMillis());
     }
 
     @Override
