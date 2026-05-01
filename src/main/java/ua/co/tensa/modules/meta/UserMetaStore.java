@@ -3,6 +3,7 @@ package ua.co.tensa.modules.meta;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Database;
+import ua.co.tensa.config.model.YamlFileIO;
 import ua.co.tensa.modules.meta.data.UserMetaConfig;
 
 import java.util.Map;
@@ -46,8 +47,8 @@ public class UserMetaStore {
                 java.nio.file.Path parent = java.nio.file.Paths.get(filePath).getParent();
                 if (parent != null) java.nio.file.Files.createDirectories(parent);
                 if (!file.exists()) file.createNewFile(true);
-                file.load();
-                file.save();
+                YamlFileIO.loadWithComments(file);
+                YamlFileIO.saveValidated(file);
             } catch (Exception e) {
             ua.co.tensa.Message.error("UserMeta file storage error: " + e.getMessage());
             }
@@ -107,7 +108,7 @@ public class UserMetaStore {
                     }, uuid.toString());
             case FILE -> {
                 if (file != null) {
-                    try { file.load(); } catch (Exception ignored) {}
+                    try { YamlFileIO.loadWithComments(file); } catch (Exception ignored) {}
                 }
                 if (file != null && file.contains(uuid.toString())) {
                     var section = file.getConfigurationSection(uuid.toString());
@@ -197,9 +198,9 @@ public class UserMetaStore {
             case FILE -> {
                 if (file != null) {
                     CompletableFuture.runAsync(() -> {
-                        try { file.load(); } catch (Exception ignored) {}
+                        try { YamlFileIO.loadWithComments(file); } catch (Exception ignored) {}
                         file.set(uuid.toString() + "." + key, value);
-                        try { file.save(); } catch (Exception e) { ua.co.tensa.Message.error(e.getMessage()); }
+                        try { YamlFileIO.saveValidated(file); } catch (Exception e) { ua.co.tensa.Message.error(e.getMessage()); }
                     }, fileExecutor);
                 }
             }
@@ -221,9 +222,9 @@ public class UserMetaStore {
             case FILE -> {
                 if (file != null) {
                     CompletableFuture.runAsync(() -> {
-                        try { file.load(); } catch (Exception ignored) {}
+                        try { YamlFileIO.loadWithComments(file); } catch (Exception ignored) {}
                         file.set(uuid.toString() + "." + key, null);
-                        try { file.save(); } catch (Exception e) { ua.co.tensa.Message.error(e.getMessage()); }
+                        try { YamlFileIO.saveValidated(file); } catch (Exception e) { ua.co.tensa.Message.error(e.getMessage()); }
                     }, fileExecutor);
                 }
             }

@@ -38,7 +38,7 @@ public class HelpCommand implements SimpleCommand {
         for (CommandHelpCatalog.HelpEntry entry : entries) {
             String aliases = entry.aliases().isBlank()
                     ? ""
-                    : Message.renderTemplateString(aliasFormat, Map.of("aliases", entry.aliases()));
+                    : Message.renderTemplateString(aliasFormat, Map.of("aliases", Message.escapeMiniMessage(entry.aliases())));
             Message.privateMessage(source, Message.renderTemplateString(lineFormat, Map.of(
                     "usage", entry.usage(),
                     "aliases", aliases,

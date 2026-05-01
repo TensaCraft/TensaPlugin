@@ -44,23 +44,46 @@ public abstract class YamlBackedFile {
         try {
             dirty = false;
 
-            if (!yamlFile.exists()) {
-                yamlFile.createNewFile(true);
-                created = true;
+            try {
+                if (!yamlFile.exists()) {
+                    yamlFile.createNewFile(true);
+                    created = true;
+                }
+            } catch (IOException e) {
+                Message.error("Failed to prepare config " + FILE_PATH + ": " + e.getMessage());
+                return;
             }
 
-            yamlFile.load();
-            populateConfigFile();
+            try {
+                YamlFileIO.loadWithComments(yamlFile);
+            } catch (Exception e) {
+                recover(e);
+                return;
+            }
+
+            try {
+                populateConfigFile();
+            } catch (Exception e) {
+                Message.error("Failed to update config " + FILE_PATH + ": " + e.getMessage());
+                return;
+            }
 
             if (created || dirty) {
-                yamlFile.save();
-                dirty = false;
+                saveAutoUpdate(created);
             }
-        } catch (Exception e) {
-            recover(e);
         } finally {
             firstLoad = false;
             dirty = false;
+        }
+    }
+
+    private void saveAutoUpdate(boolean created) {
+        try {
+            YamlFileIO.saveValidated(yamlFile);
+            dirty = false;
+        } catch (IOException e) {
+            String impact = created ? "Generated file was not completed." : "Existing file was not replaced.";
+            Message.error("Failed to save config " + FILE_PATH + ": " + e.getMessage() + ". " + impact);
         }
     }
 
@@ -76,13 +99,13 @@ public abstract class YamlBackedFile {
 
             yamlFile = new YamlFile(FILE_PATH);
             yamlFile.createNewFile(true);
-            yamlFile.load();
+            YamlFileIO.loadWithComments(yamlFile);
 
             dirty = false;
             populateConfigFile();
 
             if (dirty || yamlFile.exists()) {
-                yamlFile.save();
+                YamlFileIO.saveValidated(yamlFile);
                 dirty = false;
             }
         } catch (Exception ex) {
@@ -118,7 +141,7 @@ public abstract class YamlBackedFile {
 
     public void save() {
         try {
-            yamlFile.save();
+            YamlFileIO.saveValidated(yamlFile);
             dirty = false;
         } catch (IOException e) {
             Message.error(e.getMessage());

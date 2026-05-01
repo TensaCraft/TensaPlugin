@@ -150,9 +150,21 @@ public final class CommandHelpCatalog {
             sortOrder = 320;
         }
 
-        String usage = Message.renderTemplateString(usageTemplate, placeholders);
-        String description = Message.renderTemplateString(text(descriptionKey, descriptionFallback), placeholders);
+        String usage = renderUsage(usageTemplate, placeholders);
+        String description = Message.renderTemplateString(text(descriptionKey, descriptionFallback), escapedValues(placeholders));
         return new HelpEntry(usage, description, aliases, sortOrder);
+    }
+
+    static String renderUsage(String usageTemplate, Map<String, String> placeholders) {
+        return Message.escapeMiniMessage(Message.renderTemplateString(usageTemplate, placeholders));
+    }
+
+    private static Map<String, String> escapedValues(Map<String, String> values) {
+        Map<String, String> escaped = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            escaped.put(entry.getKey(), Message.escapeMiniMessage(entry.getValue()));
+        }
+        return escaped;
     }
 
     private static String displayName(Util.RegisteredCommand command) {

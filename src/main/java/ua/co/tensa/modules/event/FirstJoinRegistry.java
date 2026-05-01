@@ -3,6 +3,7 @@ package ua.co.tensa.modules.event;
 import org.simpleyaml.configuration.ConfigurationSection;
 import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Message;
+import ua.co.tensa.config.model.YamlFileIO;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -48,12 +49,12 @@ final class FirstJoinRegistry implements AutoCloseable {
             if (!yamlFile.exists()) {
                 yamlFile.createNewFile(true);
             }
-            yamlFile.load();
+            YamlFileIO.loadWithComments(yamlFile);
             yamlFile.setHeader("Persistent state for events.on_first_join_commands.\n" +
                     "Remove a player entry to allow the first-join event to fire again.");
             ConfigurationSection players = yamlFile.getConfigurationSection(ROOT);
             if (players == null) {
-                yamlFile.save();
+                YamlFileIO.saveValidated(yamlFile);
                 return;
             }
             for (String rawUuid : players.getKeys(false)) {
@@ -93,13 +94,13 @@ final class FirstJoinRegistry implements AutoCloseable {
         ioExecutor.execute(() -> {
             synchronized (this) {
                 try {
-                    yamlFile.load();
+                    YamlFileIO.loadWithComments(yamlFile);
                     yamlFile.setHeader("Persistent state for events.on_first_join_commands.\n" +
                             "Remove a player entry to allow the first-join event to fire again.");
                     String base = ROOT + "." + uuid;
                     yamlFile.set(base + ".name", username == null ? "" : username);
                     yamlFile.set(base + ".first_seen_at", firstSeenAt);
-                    yamlFile.save();
+                    YamlFileIO.saveValidated(yamlFile);
                 } catch (Exception e) {
                     Message.error("Events: failed to persist first-join state for " + uuid + ": " + e.getMessage());
                 }
@@ -117,10 +118,10 @@ final class FirstJoinRegistry implements AutoCloseable {
                 Message.warn("Events: first-join registry was corrupt and was backed up to " + backup.getName());
             }
             yamlFile.createNewFile(true);
-            yamlFile.load();
+            YamlFileIO.loadWithComments(yamlFile);
             yamlFile.setHeader("Persistent state for events.on_first_join_commands.\n" +
                     "Remove a player entry to allow the first-join event to fire again.");
-            yamlFile.save();
+            YamlFileIO.saveValidated(yamlFile);
         } catch (Exception recoveryError) {
             Message.error("Events: failed to recover first-join registry: " + recoveryError.getMessage());
         }

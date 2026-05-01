@@ -6,6 +6,7 @@ import org.simpleyaml.configuration.file.YamlFile;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
+import ua.co.tensa.config.model.YamlFileIO;
 import ua.co.tensa.modules.queue.data.CommandQueueConfig;
 
 import java.nio.file.Files;
@@ -57,7 +58,7 @@ public final class CommandQueueManager implements AutoCloseable {
                 if (!dataFile.exists()) {
                     dataFile.createNewFile(true);
                 }
-                dataFile.load();
+                YamlFileIO.loadWithComments(dataFile);
                 applyHeader();
                 ConfigurationSection section = dataFile.getConfigurationSection(ROOT);
                 long maxId = 0L;
@@ -372,7 +373,7 @@ public final class CommandQueueManager implements AutoCloseable {
     private void saveSnapshot() {
         synchronized (fileLock) {
             try {
-                dataFile.load();
+                YamlFileIO.loadWithComments(dataFile);
                 applyHeader();
                 dataFile.set("next_id", nextId.get());
                 dataFile.set(ROOT, null);
@@ -386,7 +387,7 @@ public final class CommandQueueManager implements AutoCloseable {
                     dataFile.set(base + ".not_before", entry.notBeforeMillis());
                     dataFile.set(base + ".created_by", entry.createdBy());
                 }
-                dataFile.save();
+                YamlFileIO.saveValidated(dataFile);
             } catch (Exception e) {
                 Message.error("Queue: failed to save queue data: " + e.getMessage());
             }

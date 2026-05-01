@@ -3,6 +3,7 @@ package ua.co.tensa.config.data;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlBackedFile;
+import ua.co.tensa.config.model.YamlFileIO;
 
 import java.io.File;
 
@@ -36,7 +37,7 @@ public class LangYAML extends YamlBackedFile {
         for (java.io.File file : files) {
             try {
                 org.simpleyaml.configuration.file.YamlFile yf = new org.simpleyaml.configuration.file.YamlFile(file);
-                yf.load();
+                YamlFileIO.loadWithComments(yf);
                 boolean changed = false;
                 for (String key : keys) {
                     // Only copy simple values (strings, numbers, booleans); skip sections
@@ -47,7 +48,7 @@ public class LangYAML extends YamlBackedFile {
                     }
                 }
                 if (changed) {
-                    yf.save();
+                    YamlFileIO.saveValidated(yf);
                 }
             } catch (Exception e) {
                 Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getMessage());
@@ -113,6 +114,30 @@ public class LangYAML extends YamlBackedFile {
         yamlFile.setComment("chat_usage", "Chat Module");
         setConfigValue("chat_usage", "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>(player) (message)</gray>");
 
+        // User Meta Module
+        yamlFile.setComment("meta_usage", "User Meta Module");
+        setLocalizedConfigValue("meta_usage",
+                "<gold>Usage:</gold> <yellow>/tmeta</yellow> <gray>[set|get|del|list] [player] [key] [value...] [--session]</gray>",
+                "<gold>Використання:</gold> <yellow>/tmeta</yellow> <gray>[set|get|del|list] [гравець] [ключ] [значення...] [--session]</gray>");
+        setLocalizedConfigValue("meta_need_player",
+                "<red>Specify a player when running from console.</red>",
+                "<red>Вкажіть гравця, якщо запускаєте з консолі.</red>");
+        setLocalizedConfigValue("meta_set_ok",
+                "<green>Set meta </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>",
+                "<green>Встановлено мету </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>");
+        setLocalizedConfigValue("meta_get_ok",
+                "<green>Meta </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>",
+                "<green>Мета </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>");
+        setLocalizedConfigValue("meta_deleted_ok",
+                "<green>Deleted meta </green><yellow>{key}</yellow>",
+                "<green>Видалено мету </green><yellow>{key}</yellow>");
+        setLocalizedConfigValue("meta_no_meta",
+                "<gray>No metadata found.</gray>",
+                "<gray>Метаданих не знайдено.</gray>");
+        setLocalizedConfigValue("meta_list_header",
+                "<yellow>Metadata list:</yellow>",
+                "<yellow>Список метаданих:</yellow>");
+
         // Help
         yamlFile.setComment("help", "Help");
         setLocalizedConfigValue("help",
@@ -153,8 +178,8 @@ public class LangYAML extends YamlBackedFile {
         // Command Queue
         yamlFile.setComment("queue_usage", "Command Queue");
         setLocalizedConfigValue("queue_usage",
-                "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray><player|uuid> <command...> [-t:seconds]</gray><newline><gray>Admin:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>",
-                "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray><player|uuid> <command...> [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>");
+                "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:seconds]</gray><newline><gray>Admin:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>",
+                "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>");
         setLocalizedConfigValue("queue_target_required",
                 "<red>Target player or UUID is required.</red>",
                 "<red>Потрібно вказати цільового гравця або UUID.</red>");
@@ -200,6 +225,7 @@ public class LangYAML extends YamlBackedFile {
         String localizedValue = isUkrainianLang() ? ukrainianDefault : englishDefault;
         if (!yamlFile.contains(path)) {
             yamlFile.set(path, localizedValue);
+            markDirty();
             return;
         }
 
@@ -210,11 +236,13 @@ public class LangYAML extends YamlBackedFile {
 
         if (isUkrainianLang() && englishDefault.equals(current)) {
             yamlFile.set(path, ukrainianDefault);
+            markDirty();
             return;
         }
 
         if (!isUkrainianLang() && ukrainianDefault.equals(current)) {
             yamlFile.set(path, englishDefault);
+            markDirty();
         }
     }
 

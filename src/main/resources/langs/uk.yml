@@ -71,7 +71,7 @@ help_desc_chat_public: "Надіслати повідомлення в чат {c
 help_desc_chat_private: "Надіслати приватне повідомлення через {command}."
 
 # User Meta Module
-meta_usage: "<gold>Використання:</gold> <yellow>/vmeta</yellow> <gray><set|get|del|list> [гравець] <ключ> [значення…] [--session]</gray>"
+meta_usage: "<gold>Використання:</gold> <yellow>/tmeta</yellow> <gray>[set|get|del|list] [гравець] [ключ] [значення...] [--session]</gray>"
 meta_need_player: "<red>Вкажіть гравця, якщо запускаєте з консолі</red>"
 meta_set_ok: "<green>Встановлено мету </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>"
 meta_get_ok: "<green>Мета </green><yellow>{key}</yellow><green> = </green><gray>{value}</gray>"
@@ -80,7 +80,7 @@ meta_no_meta: "<gray>Метаданих не знайдено</gray>"
 meta_list_header: "<yellow>Список метаданих:</yellow>"
 
 # Command Queue
-queue_usage: "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray><player|uuid> <command...> [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>"
+queue_usage: "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>[player|uuid] [command...] [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>"
 queue_target_required: "<red>Потрібно вказати цільового гравця або UUID.</red>"
 queue_command_required: "<red>Команда для черги не може бути порожньою.</red>"
 queue_invalid_delay: "<red>Затримка має бути невід'ємною кількістю секунд, наприклад -t:60.</red>"

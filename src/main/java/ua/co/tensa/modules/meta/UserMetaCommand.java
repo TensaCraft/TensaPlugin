@@ -66,7 +66,9 @@ public class UserMetaCommand implements SimpleCommand {
                 boolean sessionOnly = hasFlag(value, "--session");
                 value = stripFlags(value);
                 store.set(target, key, value, sessionOnly ? true : !store.getDefaultPersist());
-                Message.sendLang(sender, Lang.meta_set_ok, "{key}", key, "{value}", value);
+                Message.sendLang(sender, Lang.meta_set_ok,
+                        "{key}", Message.escapeMiniMessage(key),
+                        "{value}", Message.escapeMiniMessage(value));
                 break;
             }
             case "get": {
@@ -77,7 +79,9 @@ public class UserMetaCommand implements SimpleCommand {
                 String key = args[index];
                 store.getAsync(target, key)
                         .thenAccept(value -> schedule(() ->
-                                Message.sendLang(sender, Lang.meta_get_ok, "{key}", key, "{value}", value)))
+                                Message.sendLang(sender, Lang.meta_get_ok,
+                                        "{key}", Message.escapeMiniMessage(key),
+                                        "{value}", Message.escapeMiniMessage(value))))
                         .exceptionally(ex -> {
                             schedule(() -> Message.sendLang(sender, Lang.unknown_error));
                             ua.co.tensa.Message.error("UserMeta get failed: " + ex.getMessage());
@@ -93,7 +97,7 @@ public class UserMetaCommand implements SimpleCommand {
                 String key = args[index];
                 boolean sessionOnly = (args.length > index + 1) && args[index + 1].equalsIgnoreCase("--session");
                 store.delete(target, key, sessionOnly);
-                Message.sendLang(sender, Lang.meta_deleted_ok, "{key}", key);
+                Message.sendLang(sender, Lang.meta_deleted_ok, "{key}", Message.escapeMiniMessage(key));
                 break;
             }
             case "list": {
@@ -104,7 +108,8 @@ public class UserMetaCommand implements SimpleCommand {
                                 return;
                             }
                             Message.sendLang(sender, Lang.meta_list_header);
-                            map.forEach((k, v) -> Message.send(sender, " - <green>" + k + ":</green> <gray>" + v + "</gray>"));
+                            map.forEach((k, v) -> Message.send(sender,
+                                    " - <green>" + Message.escapeMiniMessage(k) + ":</green> <gray>" + Message.escapeMiniMessage(v) + "</gray>"));
                         }))
                         .exceptionally(ex -> {
                             schedule(() -> Message.sendLang(sender, Lang.unknown_error));
