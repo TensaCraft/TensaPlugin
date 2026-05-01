@@ -4,6 +4,7 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.core.storage.CoreStorageService;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -84,24 +85,71 @@ public final class UserDataService implements AutoCloseable {
         return store.getMeta(uuid, key);
     }
 
+    public Optional<String> getMeta(UUID uuid, String namespace, String key) {
+        return getMeta(uuid, scopedMetaKey(namespace, key));
+    }
+
     public CompletableFuture<Optional<String>> getMetaAsync(UUID uuid, String key) {
         return CompletableFuture.supplyAsync(() -> getMeta(uuid, key), executor);
     }
 
+    public CompletableFuture<Optional<String>> getMetaAsync(UUID uuid, String namespace, String key) {
+        return CompletableFuture.supplyAsync(() -> getMeta(uuid, namespace, key), executor);
+    }
+
     public void setMeta(UUID uuid, String key, String value) {
-        store.setMeta(uuid, key, value, "string");
+        setMeta(uuid, key, value, "string");
+    }
+
+    public void setMeta(UUID uuid, String key, String value, String valueType) {
+        store.setMeta(uuid, key, value, normalizeValueType(valueType));
+    }
+
+    public void setMeta(UUID uuid, String namespace, String key, String value, String valueType) {
+        setMeta(uuid, scopedMetaKey(namespace, key), value, valueType);
     }
 
     public CompletableFuture<Void> setMetaAsync(UUID uuid, String key, String value) {
         return CompletableFuture.runAsync(() -> setMeta(uuid, key, value), executor);
     }
 
+    public CompletableFuture<Void> setMetaAsync(UUID uuid, String key, String value, String valueType) {
+        return CompletableFuture.runAsync(() -> setMeta(uuid, key, value, valueType), executor);
+    }
+
+    public CompletableFuture<Void> setMetaAsync(UUID uuid, String namespace, String key, String value, String valueType) {
+        return CompletableFuture.runAsync(() -> setMeta(uuid, namespace, key, value, valueType), executor);
+    }
+
     public void deleteMeta(UUID uuid, String key) {
         store.deleteMeta(uuid, key);
     }
 
+    public void deleteMeta(UUID uuid, String namespace, String key) {
+        deleteMeta(uuid, scopedMetaKey(namespace, key));
+    }
+
     public CompletableFuture<Void> deleteMetaAsync(UUID uuid, String key) {
         return CompletableFuture.runAsync(() -> deleteMeta(uuid, key), executor);
+    }
+
+    public CompletableFuture<Void> deleteMetaAsync(UUID uuid, String namespace, String key) {
+        return CompletableFuture.runAsync(() -> deleteMeta(uuid, namespace, key), executor);
+    }
+
+    public Map<String, String> getMetaNamespace(UUID uuid, String namespace) {
+        String prefix = normalizeNamespace(namespace) + ".";
+        Map<String, String> values = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : getAllMeta(uuid).entrySet()) {
+            if (entry.getKey().startsWith(prefix)) {
+                values.put(entry.getKey().substring(prefix.length()), entry.getValue());
+            }
+        }
+        return values;
+    }
+
+    public CompletableFuture<Map<String, String>> getMetaNamespaceAsync(UUID uuid, String namespace) {
+        return CompletableFuture.supplyAsync(() -> getMetaNamespace(uuid, namespace), executor);
     }
 
     public long getPlayTime(UUID uuid) {
@@ -154,5 +202,28 @@ public final class UserDataService implements AutoCloseable {
                 .protocolVersion(String.valueOf(player.getProtocolVersion()))
                 .server(server)
                 .build();
+    }
+
+    private String scopedMetaKey(String namespace, String key) {
+        String cleanKey = normalizeMetaKey(key);
+        return normalizeNamespace(namespace) + "." + cleanKey;
+    }
+
+    private String normalizeNamespace(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            throw new IllegalArgumentException("Meta namespace must not be blank");
+        }
+        return normalizeMetaKey(namespace);
+    }
+
+    private String normalizeMetaKey(String key) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException("Meta key must not be blank");
+        }
+        return key.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_");
+    }
+
+    private String normalizeValueType(String valueType) {
+        return valueType == null || valueType.isBlank() ? "string" : valueType.trim().toLowerCase(java.util.Locale.ROOT);
     }
 }

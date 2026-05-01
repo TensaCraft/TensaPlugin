@@ -35,9 +35,16 @@ public class Config {
     public String getDatabaseHost() { return app.databaseHost; }
     public int getDatabasePort() { return app.databasePort; }
     public boolean getSsl() { return app.useSsl; }
-    public String getDatabaseTablePrefix() { return app.tablePrefix; }
+    public String getDatabaseTablePrefix() {
+        String prefix = app.tablePrefix == null ? "" : app.tablePrefix.trim();
+        if (prefix.isBlank()) {
+            return "tpl_";
+        }
+        return prefix.endsWith("_") ? prefix : prefix + "_";
+    }
     public String getStorageType() { return app.storageType; }
     public String getStorageLocalFile() { return app.storageLocalFile; }
+    public boolean userMetaDefaultPersist() { return app.userMetaDefaultPersist; }
     public boolean useUUID() { return app.useUuid; }
     public boolean velocityLogCleanupEnable() { return app.velocityLogCleanupEnable; }
     public boolean velocityLogCleanupLatestLog() { return app.velocityLogCleanupLatestLog; }

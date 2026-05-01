@@ -1,46 +1,38 @@
-package ua.co.tensa.modules.meta;
+package ua.co.tensa.core.meta;
 
-import ua.co.tensa.Tensa;
 import ua.co.tensa.core.user.UserDataService;
-import ua.co.tensa.modules.meta.data.UserMetaConfig;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class UserMetaStore {
+public final class UserMetaService implements AutoCloseable {
     private final UserDataService userData;
     private final boolean defaultPersist;
     private final Map<UUID, Map<String, String>> sessionCache = new ConcurrentHashMap<>();
-    private final Map<UUID, Map<String, String>> cache = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, String>> persistentCache = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<Map<String, String>>> pendingLoads = new ConcurrentHashMap<>();
 
-    public UserMetaStore() {
-        if (Tensa.userData == null) {
-            throw new IllegalStateException("UserMeta requires core user data service");
+    public UserMetaService(UserDataService userData, boolean defaultPersist) {
+        if (userData == null) {
+            throw new IllegalArgumentException("userData must not be null");
         }
-        this.userData = Tensa.userData;
-        UserMetaConfig config = UserMetaConfig.get();
-        config.reloadCfg();
-        this.defaultPersist = config.defaultPersist;
+        this.userData = userData;
+        this.defaultPersist = defaultPersist;
     }
 
-    public void ensureTable() {
-        // Tables are initialized by the core user data service.
-    }
-
-    public boolean getDefaultPersist() {
+    public boolean defaultPersist() {
         return defaultPersist;
     }
 
     public Map<String, String> getAll(UUID uuid) {
-        Map<String, String> persistent = cache.computeIfAbsent(uuid, userData::getAllMeta);
+        Map<String, String> persistent = persistentCache.computeIfAbsent(uuid, userData::getAllMeta);
         return merge(uuid, persistent);
     }
 
     public Map<String, String> getCached(UUID uuid) {
-        return merge(uuid, cache.getOrDefault(uuid, Map.of()));
+        return merge(uuid, persistentCache.getOrDefault(uuid, Map.of()));
     }
 
     public String get(UUID uuid, String key) {
@@ -61,7 +53,7 @@ public class UserMetaStore {
             return;
         }
 
-        cache.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>()).put(key, value);
+        persistentCache.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>()).put(key, value);
         userData.setMetaAsync(uuid, key, value).exceptionally(ex -> {
             ua.co.tensa.Message.error("UserMeta save failed: " + ex.getMessage());
             return null;
@@ -77,7 +69,7 @@ public class UserMetaStore {
             return;
         }
 
-        Map<String, String> persistent = cache.get(uuid);
+        Map<String, String> persistent = persistentCache.get(uuid);
         if (persistent != null) {
             persistent.remove(key);
         }
@@ -92,7 +84,7 @@ public class UserMetaStore {
     }
 
     public void preload(UUID uuid) {
-        cache.put(uuid, userData.getAllMeta(uuid));
+        persistentCache.put(uuid, userData.getAllMeta(uuid));
         sessionCache.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>());
     }
 
@@ -101,14 +93,15 @@ public class UserMetaStore {
                 .thenAccept(ignored -> sessionCache.computeIfAbsent(uuid, u -> new ConcurrentHashMap<>()));
     }
 
+    @Override
     public void close() {
         sessionCache.clear();
-        cache.clear();
+        persistentCache.clear();
         pendingLoads.clear();
     }
 
     private CompletableFuture<Map<String, String>> ensurePersistentLoadedAsync(UUID uuid) {
-        Map<String, String> existing = cache.get(uuid);
+        Map<String, String> existing = persistentCache.get(uuid);
         if (existing != null) {
             return CompletableFuture.completedFuture(existing);
         }
@@ -116,7 +109,7 @@ public class UserMetaStore {
         return pendingLoads.computeIfAbsent(uuid, id ->
                 userData.getAllMetaAsync(id).thenApply(loaded -> {
                     Map<String, String> persistent = new ConcurrentHashMap<>(loaded);
-                    cache.put(id, persistent);
+                    persistentCache.put(id, persistent);
                     return persistent;
                 }).whenComplete((ignored, throwable) -> pendingLoads.remove(id))
         );

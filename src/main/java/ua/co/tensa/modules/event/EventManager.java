@@ -17,7 +17,6 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.core.user.UserDataService;
-import ua.co.tensa.modules.meta.UserMetaModule;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -211,7 +210,9 @@ public class EventManager {
         Tensa.userData.recordLoginAsync(UserDataService.fromPlayer(event.getPlayer()))
                 .thenAccept(result -> Tensa.server.getScheduler()
                         .buildTask(Tensa.pluginContainer, () -> {
-                            UserMetaModule.preload(event.getPlayer().getUniqueId());
+                            if (Tensa.userMeta != null) {
+                                Tensa.userMeta.preloadAsync(event.getPlayer().getUniqueId());
+                            }
                             if (!result.firstJoin()) {
                                 return;
                             }

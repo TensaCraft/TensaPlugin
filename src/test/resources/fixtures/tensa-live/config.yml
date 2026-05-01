@@ -9,7 +9,6 @@ modules:
   player-time: true
   command-queue: true
   text-reader: true
-  user-meta: true
 database:
   enable: true
   type: mysql
@@ -19,7 +18,9 @@ database:
   host: example.invalid
   port: 3306
   use_ssl: false
-  table_prefix: vcmi_
+  table_prefix: tpl_
+user_meta:
+  default_persist: true
 storage:
   type: auto
   local_file: storage/tensa-users

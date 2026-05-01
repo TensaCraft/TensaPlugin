@@ -37,7 +37,7 @@ public final class CoreStorageService implements AutoCloseable {
 
     public static CoreStorageService createFromConfig(Database database) {
         String mode = Tensa.config == null ? "auto" : Tensa.config.getStorageType();
-        String prefix = Tensa.config == null ? "tensa_" : Tensa.config.getDatabaseTablePrefix();
+        String prefix = Tensa.config == null ? "tpl_" : Tensa.config.getDatabaseTablePrefix();
 
         if ("database".equalsIgnoreCase(mode)) {
             if (database == null || !database.enabled || database.getDataSource() == null) {

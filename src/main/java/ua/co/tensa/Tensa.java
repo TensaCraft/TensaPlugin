@@ -12,6 +12,8 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.core.meta.UserMetaCommand;
+import ua.co.tensa.core.meta.UserMetaService;
 import ua.co.tensa.core.storage.CoreStorageService;
 import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.Modules;
@@ -43,6 +45,7 @@ public class Tensa {
     public static Database database;
     public static CoreStorageService storage;
     public static UserDataService userData;
+    public static UserMetaService userMeta;
     public static Config config;
     private static EventsListener coreEventsListener;
 
@@ -58,6 +61,7 @@ public class Tensa {
         initialiseUserData();
         Lang.initialise();
         PlaceholderManager.initialise();
+        initialiseUserMeta();
         VelocityLogCleaner.cleanOnStartup(config);
         initialiseCoreEvents();
         Modules.load();
@@ -76,6 +80,7 @@ public class Tensa {
         initialiseUserData();
         Lang.initialise();
         PlaceholderManager.reload();
+        initialiseUserMeta();
         EventManager.reload();
         Modules.refresh();
     }
@@ -104,6 +109,31 @@ public class Tensa {
         userData = UserDataService.createFromStorage(storage);
     }
 
+    private static void initialiseUserMeta() {
+        closeUserMeta();
+        if (userData == null) {
+            return;
+        }
+        userMeta = new UserMetaService(userData, config == null || config.userMetaDefaultPersist());
+        Util.registerCommand("tmeta", "usermeta", new UserMetaCommand(userMeta));
+        PlaceholderManager.registerRawPrefixResolver("meta_", (player, key) -> {
+            if (player == null || userMeta == null) return "";
+            return userMeta.getCached(player.getUniqueId()).getOrDefault(key, "");
+        });
+        PlaceholderManager.registerRawPrefixResolver("tensa_meta_", (player, key) -> {
+            if (player == null || userMeta == null) return "";
+            return userMeta.getCached(player.getUniqueId()).getOrDefault(key, "");
+        });
+        PlaceholderManager.registerAnglePrefixResolver("meta_", (player, key) -> {
+            if (player == null || userMeta == null) return "";
+            return userMeta.getCached(player.getUniqueId()).getOrDefault(key, "");
+        });
+        PlaceholderManager.registerAnglePrefixResolver("tensa_meta_", (player, key) -> {
+            if (player == null || userMeta == null) return "";
+            return userMeta.getCached(player.getUniqueId()).getOrDefault(key, "");
+        });
+    }
+
     private static void initialiseCoreEvents() {
         EventsConfig.get().reloadCfg();
         EventManager.initialise(pluginPath);
@@ -114,6 +144,7 @@ public class Tensa {
     }
 
     private static void closeCoreServices() {
+        closeUserMeta();
         if (userData != null) {
             userData.close();
             userData = null;
@@ -125,6 +156,19 @@ public class Tensa {
         if (database != null) {
             database.close();
             database = null;
+        }
+    }
+
+    private static void closeUserMeta() {
+        Util.unregisterCommand("tmeta");
+        Util.unregisterCommand("usermeta");
+        PlaceholderManager.unregisterRawPrefixResolver("meta_");
+        PlaceholderManager.unregisterRawPrefixResolver("tensa_meta_");
+        PlaceholderManager.unregisterAnglePrefixResolver("meta_");
+        PlaceholderManager.unregisterAnglePrefixResolver("tensa_meta_");
+        if (userMeta != null) {
+            userMeta.close();
+            userMeta = null;
         }
     }
 

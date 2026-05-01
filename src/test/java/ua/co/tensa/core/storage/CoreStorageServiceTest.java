@@ -16,7 +16,7 @@ class CoreStorageServiceTest {
     void moduleTablesUseTheConfiguredCoreStorage() throws Exception {
         Path databaseFile = tempDir.resolve("storage").resolve("core");
 
-        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_")) {
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tpl_")) {
             storage.createTable("sample_module", """
                     id BIGINT PRIMARY KEY,
                     value_text TEXT NOT NULL
@@ -28,7 +28,7 @@ class CoreStorageServiceTest {
             assertThat(storage.columnExists("sample_module", "extra_value")).isTrue();
         }
 
-        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_")) {
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tpl_")) {
             String value = storage.query(
                     "SELECT value_text FROM " + storage.table("sample_module") + " WHERE id = ?",
                     rs -> rs.next() ? rs.getString(1) : "",

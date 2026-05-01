@@ -53,13 +53,16 @@ public class AppConfig extends ConfigBase {
     public boolean useSsl = false;
 
     @CfgKey(value = "database.table_prefix", comment = "Prefix added to plugin-managed database tables")
-    public String tablePrefix = "tensa_";
+    public String tablePrefix = "tpl_";
 
     @CfgKey(value = "storage.type", comment = "User data storage: auto uses configured database when available, otherwise local H2. Valid values: auto, database, local")
     public String storageType = "auto";
 
     @CfgKey(value = "storage.local_file", comment = "Local H2 file used for core user data when storage.type is local or auto fallback")
     public String storageLocalFile = "storage/tensa-users";
+
+    @CfgKey(value = "user_meta.default_persist", comment = "Persist /tmeta values by default. Use --session for temporary values")
+    public boolean userMetaDefaultPersist = true;
 
     @CfgKey(value = "velocity.log_cleanup.enable", comment = "Clean Velocity log files when the plugin starts")
     public boolean velocityLogCleanupEnable = false;
@@ -100,5 +103,20 @@ public class AppConfig extends ConfigBase {
         if (v instanceof Boolean b) return b;
         if (v instanceof String s) return Boolean.parseBoolean(s);
         return false;
+    }
+
+    @Override
+    public synchronized void reloadCfg() {
+        super.reloadCfg();
+        removeCoreFeatureModuleKeys();
+    }
+
+    private void removeCoreFeatureModuleKeys() {
+        if (modules == null || !modules.containsKey("user-meta")) {
+            return;
+        }
+        modules.remove("user-meta");
+        setNodeValue(node("modules.user-meta"), null);
+        save();
     }
 }

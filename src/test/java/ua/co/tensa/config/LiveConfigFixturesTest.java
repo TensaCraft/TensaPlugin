@@ -21,7 +21,10 @@ class LiveConfigFixturesTest {
         CommentedConfigurationNode lang = load("lang/uk.yml");
 
         assertThat(config.node("storage", "type").getString()).isEqualTo("auto");
+        assertThat(config.node("database", "table_prefix").getString()).isEqualTo("tpl_");
+        assertThat(config.node("user_meta", "default_persist").getBoolean()).isTrue();
         assertThat(config.node("modules", "request-module").getBoolean()).isTrue();
+        assertThat(config.node("modules", "user-meta").virtual()).isTrue();
         assertThat(events.node("events", "on_first_join_commands", "commands").getList(String.class, List.of()))
                 .anySatisfy(command -> assertThat(command).contains("<gradient:#ff0000:#ffaa00>"));
         assertThat(request.node("parameters", "api_key").getString()).isEqualTo("REDACTED_API_KEY");

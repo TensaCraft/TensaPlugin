@@ -45,7 +45,7 @@ class CommandQueueManagerTest {
         CommandQueueConfig config = newConfig();
         Path databaseFile = tempDir.resolve("storage").resolve("queue");
 
-        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_");
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tpl_");
              CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             QueuedCommandEntry entry = manager.enqueue("Steve", "broadcast queued welcome", 30L, "console");
 
@@ -53,7 +53,7 @@ class CommandQueueManagerTest {
             assertThat(manager.snapshot()).hasSize(1);
         }
 
-        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_");
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tpl_");
              CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             assertThat(manager.snapshot()).hasSize(1);
             QueuedCommandEntry restored = manager.snapshot().getFirst();
@@ -80,7 +80,7 @@ class CommandQueueManagerTest {
         CommandQueueConfig config = newConfig();
         config.requireServerConnection = false;
 
-        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tensa_");
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tpl_");
              CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             manager.enqueue(playerId.toString(), "say queued {player}", 0L, "console");
 
@@ -102,7 +102,7 @@ class CommandQueueManagerTest {
         CommandQueueConfig config = newConfig();
         config.requireServerConnection = false;
 
-        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tensa_");
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tpl_");
              CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             manager.enqueue(playerId.toString(), "say delayed {player}", 1L, "console");
 
