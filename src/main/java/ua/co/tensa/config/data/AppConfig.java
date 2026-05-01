@@ -7,8 +7,10 @@ import ua.co.tensa.modules.TensaModule;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Typed model for config.yml.
@@ -80,16 +82,7 @@ public class AppConfig extends ConfigBase {
         super("config.yml");
         // After base reload, field initializers are applied; seed module defaults if missing
         if (this.modules == null || this.modules.isEmpty()) {
-            try {
-                java.util.ServiceLoader<ModuleProvider> loader = java.util.ServiceLoader.load(ModuleProvider.class, AppConfig.class.getClassLoader());
-                for (ModuleProvider p : loader) {
-                    String id = p.id();
-                    boolean enabled = true;
-                    TensaModule ann = p.getClass().getAnnotation(TensaModule.class);
-                    if (ann != null) enabled = ann.defaultEnabled();
-                    this.modules.put(id, enabled);
-                }
-            } catch (Throwable ignored) {}
+            this.modules.putAll(discoverModuleDefaults());
         }
     }
 
@@ -108,15 +101,42 @@ public class AppConfig extends ConfigBase {
     @Override
     public synchronized void reloadCfg() {
         super.reloadCfg();
-        removeCoreFeatureModuleKeys();
+        removeUnsupportedModuleKeys();
     }
 
-    private void removeCoreFeatureModuleKeys() {
-        if (modules == null || !modules.containsKey("user-meta")) {
+    private void removeUnsupportedModuleKeys() {
+        if (modules == null || modules.isEmpty()) {
             return;
         }
-        modules.remove("user-meta");
-        setNodeValue(node("modules.user-meta"), null);
-        save();
+        Set<String> supported = discoverModuleDefaults().keySet();
+        Set<String> removed = new LinkedHashSet<>();
+        for (String key : new ArrayList<>(modules.keySet())) {
+            if (supported.contains(key)) {
+                continue;
+            }
+            modules.remove(key);
+            setNodeValue(node("modules." + key), null);
+            removed.add(key);
+        }
+        if (!removed.isEmpty()) {
+            ua.co.tensa.Message.warn("Removed unsupported module config keys: " + String.join(", ", removed));
+            save();
+        }
+    }
+
+    private Map<String, Object> discoverModuleDefaults() {
+        LinkedHashMap<String, Object> defaults = new LinkedHashMap<>();
+        try {
+            java.util.ServiceLoader<ModuleProvider> loader = java.util.ServiceLoader.load(ModuleProvider.class, AppConfig.class.getClassLoader());
+            for (ModuleProvider p : loader) {
+                String id = p.id();
+                boolean enabled = true;
+                TensaModule ann = p.getClass().getAnnotation(TensaModule.class);
+                if (ann != null) enabled = ann.defaultEnabled();
+                defaults.put(id, enabled);
+            }
+        } catch (Throwable ignored) {
+        }
+        return defaults;
     }
 }

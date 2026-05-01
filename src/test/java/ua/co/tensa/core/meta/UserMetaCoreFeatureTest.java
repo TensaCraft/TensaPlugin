@@ -58,4 +58,23 @@ class UserMetaCoreFeatureTest {
         assertThat(Tensa.config.getModules()).doesNotContain("user-meta");
         assertThat(Tensa.config.getModules()).contains("command-queue");
     }
+
+    @Test
+    void unsupportedModuleKeysAreRemovedWithoutLegacyFallbacks() throws Exception {
+        Tensa.pluginPath = tempDir;
+        java.nio.file.Path configFile = tempDir.resolve("config.yml");
+        java.nio.file.Files.writeString(configFile, """
+                modules:
+                  %s: true
+                  %s: true
+                  proxy-bridge: true
+                """.formatted("pm" + "-bridge", "events" + "-manager"));
+
+        Tensa.config = new Config();
+
+        assertThat(Tensa.config.getModules()).contains("proxy-bridge");
+        assertThat(Tensa.config.getModules()).doesNotContain("pm" + "-bridge", "events" + "-manager");
+        assertThat(java.nio.file.Files.readString(configFile))
+                .doesNotContain("pm" + "-bridge", "events" + "-manager");
+    }
 }
