@@ -19,7 +19,13 @@ public enum Lang {
     server_not_found("server_not_found"), chat_usage("chat_usage"),
     // User meta
     meta_usage("meta_usage"), meta_need_player("meta_need_player"), meta_set_ok("meta_set_ok"), meta_get_ok("meta_get_ok"), meta_deleted_ok("meta_deleted_ok"),
-    meta_no_meta("meta_no_meta"), meta_list_header("meta_list_header");
+    meta_no_meta("meta_no_meta"), meta_list_header("meta_list_header"),
+    // Command queue
+    queue_usage("queue_usage"), queue_target_required("queue_target_required"), queue_command_required("queue_command_required"),
+    queue_invalid_delay("queue_invalid_delay"), queue_limit_reached("queue_limit_reached"), queue_added("queue_added"),
+    queue_list_empty("queue_list_empty"), queue_list_header("queue_list_header"), queue_not_found("queue_not_found"),
+    queue_removed("queue_removed"), queue_cleared("queue_cleared"), queue_run_offline("queue_run_offline"),
+    queue_run_ok("queue_run_ok"), queue_stats("queue_stats");
 
     private final String key;
 

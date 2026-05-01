@@ -142,10 +142,58 @@ public class LangYAML extends YamlBackedFile {
         setLocalizedConfigValue("help_desc_rcon", "Execute an RCON command on one or more servers.", "Виконати RCON-команду на одному або кількох серверах.");
         setLocalizedConfigValue("help_desc_tmeta", "Manage temporary and persistent user metadata.", "Керувати тимчасовими та постійними метаданими користувачів.");
         setLocalizedConfigValue("help_desc_tpmdebug", "Show PM-Bridge debug information.", "Показати діагностичну інформацію PM-Bridge.");
+        setLocalizedConfigValue("help_desc_tqueue",
+                "Queue a console command until the target player is online. Admin subcommands let you inspect and manage the queue.",
+                "Поставити консольну команду в чергу, доки цільовий гравець не буде онлайн. Адмін-підкоманди дозволяють переглядати й керувати чергою.");
         setLocalizedConfigValue("help_desc_text_reader", "Read the text file {command}.", "Прочитати текстовий файл {command}.");
         setLocalizedConfigValue("help_desc_request_trigger", "Execute the request trigger from {file}.", "Виконати request-тригер із конфігурації {file}.");
         setLocalizedConfigValue("help_desc_chat_public", "Send a message to chat {command}.", "Надіслати повідомлення в чат {command}.");
         setLocalizedConfigValue("help_desc_chat_private", "Send a private message through {command}.", "Надіслати приватне повідомлення через {command}.");
+
+        // Command Queue
+        yamlFile.setComment("queue_usage", "Command Queue");
+        setLocalizedConfigValue("queue_usage",
+                "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray><player|uuid> <command...> [-t:seconds]</gray><newline><gray>Admin:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>",
+                "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray><player|uuid> <command...> [-t:секунди]</gray><newline><gray>Адмін:</gray> <white>/{command} add|list|read|remove|clear|run|stats</white>");
+        setLocalizedConfigValue("queue_target_required",
+                "<red>Target player or UUID is required.</red>",
+                "<red>Потрібно вказати цільового гравця або UUID.</red>");
+        setLocalizedConfigValue("queue_command_required",
+                "<red>Queued command cannot be empty.</red>",
+                "<red>Команда для черги не може бути порожньою.</red>");
+        setLocalizedConfigValue("queue_invalid_delay",
+                "<red>Delay must be a non-negative number of seconds, for example -t:60.</red>",
+                "<red>Затримка має бути невід'ємною кількістю секунд, наприклад -t:60.</red>");
+        setLocalizedConfigValue("queue_limit_reached",
+                "<red>The queue is full. Increase queue.max_entries or clear old entries.</red>",
+                "<red>Черга заповнена. Збільште queue.max_entries або очистіть старі записи.</red>");
+        setLocalizedConfigValue("queue_added",
+                "<green>Queued command #</green><yellow>{id}</yellow><green> for </green><white>{target}</white><green> with delay </green><aqua>{delay}s</aqua>",
+                "<green>Команду #</green><yellow>{id}</yellow><green> додано в чергу для </green><white>{target}</white><green> із затримкою </green><aqua>{delay}с</aqua>");
+        setLocalizedConfigValue("queue_list_empty",
+                "<yellow>The queue is empty.</yellow>",
+                "<yellow>Черга порожня.</yellow>");
+        setLocalizedConfigValue("queue_list_header",
+                "<gold>Queued commands:</gold> <white>{count}</white> <gray>(filter: {filter})</gray>",
+                "<gold>Команди в черзі:</gold> <white>{count}</white> <gray>(фільтр: {filter})</gray>");
+        setLocalizedConfigValue("queue_not_found",
+                "<red>Queued command #{id} was not found.</red>",
+                "<red>Команду в черзі #{id} не знайдено.</red>");
+        setLocalizedConfigValue("queue_removed",
+                "<green>Removed queued command #</green><yellow>{id}</yellow>",
+                "<green>Видалено команду з черги #</green><yellow>{id}</yellow>");
+        setLocalizedConfigValue("queue_cleared",
+                "<green>Removed </green><white>{count}</white><green> queued commands for </green><white>{target}</white>",
+                "<green>Видалено </green><white>{count}</white><green> команд із черги для </green><white>{target}</white>");
+        setLocalizedConfigValue("queue_run_offline",
+                "<red>Queued command #{id} cannot run yet because the target player is offline.</red>",
+                "<red>Команду з черги #{id} ще не можна виконати, бо цільовий гравець офлайн.</red>");
+        setLocalizedConfigValue("queue_run_ok",
+                "<green>Executed queued command #</green><yellow>{id}</yellow><green> for </green><white>{player}</white>",
+                "<green>Виконано команду з черги #</green><yellow>{id}</yellow><green> для </green><white>{player}</white>");
+        setLocalizedConfigValue("queue_stats",
+                "<gold>Queue stats:</gold> <gray>total=</gray><white>{total}</white> <gray>due=</gray><white>{due}</white> <gray>online=</gray><white>{online}</white>",
+                "<gold>Статистика черги:</gold> <gray>усього=</gray><white>{total}</white> <gray>готово=</gray><white>{due}</white> <gray>онлайн=</gray><white>{online}</white>");
     }
 
     private void setLocalizedConfigValue(String path, String englishDefault, String ukrainianDefault) {

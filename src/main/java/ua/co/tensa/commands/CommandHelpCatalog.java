@@ -9,6 +9,7 @@ import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.meta.UserMetaCommand;
 import ua.co.tensa.modules.playertime.PlayerTimeCommand;
 import ua.co.tensa.modules.playertime.PlayerTimeTopCommand;
+import ua.co.tensa.modules.queue.CommandQueueCommand;
 import ua.co.tensa.modules.rcon.manager.RconManagerCommand;
 import ua.co.tensa.modules.requests.RequestCommand;
 import ua.co.tensa.modules.requests.RequestsModule;
@@ -122,6 +123,11 @@ public final class CommandHelpCatalog {
             descriptionKey = "help_desc_tpmdebug";
             descriptionFallback = "Show PM-Bridge debug information.";
             sortOrder = 140;
+        } else if (handler instanceof CommandQueueCommand) {
+            usageTemplate = "/{command} <player|uuid> <command...> [-t:seconds]";
+            descriptionKey = "help_desc_tqueue";
+            descriptionFallback = "Queue a console command until the target player is online.";
+            sortOrder = 150;
         } else if (handler instanceof TextReaderCommand) {
             descriptionKey = "help_desc_text_reader";
             descriptionFallback = "Read the text file {command}.";
