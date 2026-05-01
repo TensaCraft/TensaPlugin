@@ -67,57 +67,117 @@ public class LangYAML extends YamlBackedFile {
 
         // Common
         setConfigValue("prefix", "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>");
-        setConfigValue("no_perms", "<red>You do not have permission to use this command</red>");
-        setConfigValue("unknown_error", "<red>Unknown error</red>");
-        setConfigValue("unknown_request", "<red>Unknown request</red>");
-        setConfigValue("error_executing", "<red>Error executing:</red>");
-        setConfigValue("no_command", "<red>No such command</red>");
-        setConfigValue("reload", "<green>All configurations reloaded</green>");
-        setConfigValue("enabled", "<green>enabled</green>");
-        setConfigValue("disabled", "<red>disabled</red>");
-        setConfigValue("module_status", "<aqua>{module}</aqua> <gold>is</gold> <gray>{status}</gray>");
+        setLocalizedConfigValue("no_perms",
+                "<red>You do not have permission to use this command</red>",
+                "<red>У вас немає дозволу на використання цієї команди</red>");
+        setLocalizedConfigValue("unknown_error",
+                "<red>Unknown error</red>",
+                "<red>Невідома помилка</red>");
+        setLocalizedConfigValue("unknown_request",
+                "<red>Unknown request</red>",
+                "<red>Невідомий запит</red>");
+        setLocalizedConfigValue("error_executing",
+                "<red>Error executing:</red>",
+                "<red>Помилка виконання:</red>");
+        setLocalizedConfigValue("no_command",
+                "<red>No such command</red>",
+                "<red>Такої команди не існує</red>");
+        setLocalizedConfigValue("reload",
+                "<green>All configurations reloaded</green>",
+                "<green>Усі конфігурації перезавантажено</green>");
+        setLocalizedConfigValue("enabled",
+                "<green>enabled</green>",
+                "<green>увімкнено</green>");
+        setLocalizedConfigValue("disabled",
+                "<red>disabled</red>",
+                "<red>вимкнено</red>");
+        setLocalizedConfigValue("module_status",
+                "<aqua>{module}</aqua> <gold>is</gold> <gray>{status}</gray>",
+                "<aqua>{module}</aqua> <gold>має статус</gold> <gray>{status}</gray>");
 
         // Rcon Manager
         setComment("rcon_manager_reload", "Rcon Manager");
-        setConfigValue("rcon_manager_reload", "<green>Rcon Manager configurations reloaded</green>");
-        setConfigValue("rcon_auth_error", "<gold>{server}</gold>: <red>Authentication error. Please check your server configuration and ensure the server is available</red>");
-        setConfigValue("rcon_io_error", "<gold>{server}</gold>: <red>IO error. Please check your server configuration and ensure the server is available</red>");
-        setConfigValue("rcon_unknown_error", "<gold>{server}</gold>: <red>Unknown host error. Please check the server IP address configuration</red>");
+        setLocalizedConfigValue("rcon_manager_reload",
+                "<green>Rcon Manager configurations reloaded</green>",
+                "<green>Конфігурації Rcon Manager перезавантажено</green>");
+        setLocalizedConfigValue("rcon_auth_error",
+                "<gold>{server}</gold>: <red>Authentication error. Please check your server configuration and ensure the server is available</red>",
+                "<gold>{server}</gold>: <red>Помилка авторизації. Перевірте конфігурацію сервера та його доступність</red>");
+        setLocalizedConfigValue("rcon_io_error",
+                "<gold>{server}</gold>: <red>IO error. Please check your server configuration and ensure the server is available</red>",
+                "<gold>{server}</gold>: <red>Помилка IO. Перевірте конфігурацію сервера та його доступність</red>");
+        setLocalizedConfigValue("rcon_unknown_error",
+                "<gold>{server}</gold>: <red>Unknown host error. Please check the server IP address configuration</red>",
+                "<gold>{server}</gold>: <red>Невідомий хост. Перевірте IP-адресу сервера в конфігурації</red>");
 
         // Rcon Server
         setComment("rcon_server_reload", "Rcon Server");
-        setConfigValue("rcon_server_reload", "<green>Rcon Server configurations reloaded</green>");
-        setConfigValue("rcon_connect_notify", "<green>Rcon connection from:</green> <gray>[</gray><dark_aqua><bold>{address}</bold></dark_aqua><gray>]</gray> <green>Command:</green> <dark_aqua><bold>{command}</bold></dark_aqua>");
-        setConfigValue("rcon_usage", "<gold>Usage:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>");
-        setConfigValue("rcon_empty_command", "<gold>Command is empty!</gold>");
-        setConfigValue("rcon_invalid_command_or_server", "<gold>Invalid command or server name</gold>");
-        setConfigValue("rcon_response", "<gold>{server}</gold>: <green>{response}</green>");
-        setConfigValue("rcon_response_empty", "<gray>There is no response from the server</gray>");
+        setLocalizedConfigValue("rcon_server_reload",
+                "<green>Rcon Server configurations reloaded</green>",
+                "<green>Конфігурації Rcon Server перезавантажено</green>");
+        setLocalizedConfigValue("rcon_connect_notify",
+                "<green>Rcon connection from:</green> <gray>[</gray><dark_aqua><bold>{address}</bold></dark_aqua><gray>]</gray> <green>Command:</green> <dark_aqua><bold>{command}</bold></dark_aqua>",
+                "<green>RCON-підключення від:</green> <gray>[</gray><dark_aqua><bold>{address}</bold></dark_aqua><gray>]</gray> <green>Команда:</green> <dark_aqua><bold>{command}</bold></dark_aqua>");
+        setLocalizedConfigValue("rcon_usage",
+                "<gold>Usage:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>",
+                "<gold>Використання:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>");
+        setLocalizedConfigValue("rcon_empty_command",
+                "<gold>Command is empty!</gold>",
+                "<gold>Команда порожня!</gold>");
+        setLocalizedConfigValue("rcon_invalid_command_or_server",
+                "<gold>Invalid command or server name</gold>",
+                "<gold>Некоректна команда або назва сервера</gold>");
+        setLocalizedConfigValue("rcon_response",
+                "<gold>{server}</gold>: <green>{response}</green>",
+                "<gold>{server}</gold>: <green>{response}</green>");
+        setLocalizedConfigValue("rcon_response_empty",
+                "<gray>There is no response from the server</gray>",
+                "<gray>Від сервера немає відповіді</gray>");
 
         // Bash/Php modules removed
 
         // PlayerTime Module
         setComment("player_time_usage", "PlayerTime Module");
-        setConfigValue("player_time_usage", "<gold>Usage:</gold> <yellow>tptime</yellow> <gray>[Player]</gray>");
-        setConfigValue("player_time", "<green>Your game time:</green> <white>{time}</white>");
-        setConfigValue("player_time_other", "<green>Game time {player}:</green> <white>{time}</white>");
-        setConfigValue("player_not_found", "<red>{player} not found</red>");
-        setConfigValue("player_time_days", " days ");
-        setConfigValue("player_time_hours", " hours ");
-        setConfigValue("player_time_minutes", " minutes ");
-        setConfigValue("player_time_seconds", " seconds ");
-        setConfigValue("player_time_top", "<green>Top players by time:</green>");
-        setConfigValue("player_time_top_entry", "<green>{position}.</green> <gold>{player}</gold> <gray>-</gray> <white>{time}</white>");
+        setLocalizedConfigValue("player_time_usage",
+                "<gold>Usage:</gold> <yellow>tptime</yellow> <gray>[Player]</gray>",
+                "<gold>Використання:</gold> <yellow>tptime</yellow> <gray>[Гравець]</gray>");
+        setLocalizedConfigValue("player_time",
+                "<green>Your game time:</green> <white>{time}</white>",
+                "<green>Ваш час гри:</green> <white>{time}</white>");
+        setLocalizedConfigValue("player_time_other",
+                "<green>Game time {player}:</green> <white>{time}</white>",
+                "<green>Час гри {player}:</green> <white>{time}</white>");
+        setLocalizedConfigValue("player_not_found",
+                "<red>{player} not found</red>",
+                "<red>{player} не знайдено</red>");
+        setLocalizedConfigValue("player_time_days", " days ", " дн. ");
+        setLocalizedConfigValue("player_time_hours", " hours ", " год. ");
+        setLocalizedConfigValue("player_time_minutes", " minutes ", " хв. ");
+        setLocalizedConfigValue("player_time_seconds", " seconds ", " сек. ");
+        setLocalizedConfigValue("player_time_top",
+                "<green>Top players by time:</green>",
+                "<green>Топ гравців за часом:</green>");
+        setLocalizedConfigValue("player_time_top_entry",
+                "<green>{position}.</green> <gold>{player}</gold> <gray>-</gray> <white>{time}</white>",
+                "<green>{position}.</green> <gold>{player}</gold> <gray>-</gray> <white>{time}</white>");
 
         // Send Module
         setComment("send_usage", "Send Module");
-        setConfigValue("send_usage", "<gold>Usage:</gold> <yellow>/psend</yellow> <gray>{player} {server}</gray>");
-        setConfigValue("send_success", "<green>Player <white>{player}</white> sent to server <white>{server}</white></green>");
-        setConfigValue("server_not_found", "<red>Server {server} not found</red>");
+        setLocalizedConfigValue("send_usage",
+                "<gold>Usage:</gold> <yellow>/psend</yellow> <gray>{player} {server}</gray>",
+                "<gold>Використання:</gold> <yellow>/psend</yellow> <gray>{player} {server}</gray>");
+        setLocalizedConfigValue("send_success",
+                "<green>Player <white>{player}</white> sent to server <white>{server}</white></green>",
+                "<green>Гравця <white>{player}</white> відправлено на сервер <white>{server}</white></green>");
+        setLocalizedConfigValue("server_not_found",
+                "<red>Server {server} not found</red>",
+                "<red>Сервер {server} не знайдено</red>");
 
         // Chat Module
         setComment("chat_usage", "Chat Module");
-        setConfigValue("chat_usage", "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>(player) (message)</gray>");
+        setLocalizedConfigValue("chat_usage",
+                "<gold>Usage:</gold> <yellow>/{command}</yellow> <gray>(player) (message)</gray>",
+                "<gold>Використання:</gold> <yellow>/{command}</yellow> <gray>(гравець) (повідомлення)</gray>");
 
         // User Meta Module
         setComment("meta_usage", "User Meta Module");

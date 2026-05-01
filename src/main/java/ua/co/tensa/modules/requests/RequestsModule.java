@@ -34,7 +34,9 @@ public class RequestsModule {
         if (!directory.exists() && !directory.mkdirs()) {
             throw new IllegalStateException("Failed to create requests directory: " + directory);
         }
-        Util.copyFile(directory.getPath(), "linkaccount.yml");
+        if (isDirectoryEmpty(directory)) {
+            Util.copyFile(directory.getPath(), "linkaccount.yml");
+        }
 
         configs = new ArrayList<>();
         for (String fileName : getConfigurationFiles(directory.getPath())) {
@@ -50,6 +52,11 @@ public class RequestsModule {
         for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
             AbstractModule.registerCommand(triggerMap.get("trigger"), "", new RequestCommand());
         }
+    }
+
+    private static boolean isDirectoryEmpty(File directory) {
+        String[] entries = directory.list();
+        return entries != null && entries.length == 0;
     }
 
     private static void disableImpl() {

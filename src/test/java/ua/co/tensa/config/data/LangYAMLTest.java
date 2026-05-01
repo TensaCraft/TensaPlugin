@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.config.Config;
 import ua.co.tensa.config.model.YamlFileIO;
 
 import java.lang.reflect.Field;
@@ -41,6 +42,31 @@ class LangYAMLTest {
     }
 
     @Test
+    void ukrainianLanguageReplacesOldEnglishDefaults() throws Exception {
+        Files.writeString(tempDir.resolve("config.yml"), "language: uk\n", StandardCharsets.UTF_8);
+        Tensa.config = new Config();
+        resetLangSingleton();
+
+        Path langFile = tempDir.resolve("lang").resolve("uk.yml");
+        Files.createDirectories(langFile.getParent());
+        Files.writeString(langFile, """
+                no_perms: <red>You do not have permission to use this command</red>
+                reload: <green>All configurations reloaded</green>
+                rcon_usage: <gold>Usage:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>
+                player_time: <green>Your game time:</green> <white>{time}</white>
+                send_success: <green>Player <white>{player}</white> sent to server <white>{server}</white></green>
+                """, StandardCharsets.UTF_8);
+
+        LangYAML lang = LangYAML.getInstance();
+
+        assertThat(lang.getString("no_perms", "")).contains("дозволу").doesNotContain("permission");
+        assertThat(lang.getString("reload", "")).contains("перезавантажено").doesNotContain("reloaded");
+        assertThat(lang.getString("rcon_usage", "")).contains("Використання").doesNotContain("Usage");
+        assertThat(lang.getString("player_time", "")).contains("Ваш час гри").doesNotContain("Your game time");
+        assertThat(lang.getString("send_success", "")).contains("відправлено").doesNotContain("sent to server");
+    }
+
+    @Test
     void generatedLanguageCanReloadWithoutCorruptRecovery() throws Exception {
         LangYAML lang = LangYAML.getInstance();
         Path langFile = tempDir.resolve("lang").resolve("en.yml");
@@ -70,5 +96,11 @@ class LangYAMLTest {
         String saved = Files.readString(customLang, StandardCharsets.UTF_8);
         assertThat(saved).contains("# Existing translator note.");
         assertThat(saved).contains("queue_usage:");
+    }
+
+    private void resetLangSingleton() throws Exception {
+        Field instance = LangYAML.class.getDeclaredField("instance");
+        instance.setAccessible(true);
+        instance.set(null, null);
     }
 }
