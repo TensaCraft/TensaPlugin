@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import static ua.co.tensa.Tensa.server;
@@ -20,12 +21,12 @@ public class Util {
 
     private static final java.util.LinkedHashMap<String, RegisteredCommand> REGISTERED = new java.util.LinkedHashMap<>();
 
-    public static void executeCommand(final String command) {
-        server.getCommandManager().executeAsync(server.getConsoleCommandSource(), command);
+    public static CompletableFuture<Boolean> executeCommand(final String command) {
+        return server.getCommandManager().executeAsync(server.getConsoleCommandSource(), command);
     }
 
-    public static void executeCommand(Player player, final String command) {
-        server.getCommandManager().executeAsync(player, command);
+    public static CompletableFuture<Boolean> executeCommand(Player player, final String command) {
+        return server.getCommandManager().executeAsync(player, command);
     }
 
     public static void registerCommand(String command, String alias, SimpleCommand CommandClass) {

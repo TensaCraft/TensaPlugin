@@ -24,7 +24,7 @@ public final class CommandQueueModule {
     private static void enableImpl() {
         CommandQueueConfig config = CommandQueueConfig.get();
         config.reloadCfg();
-        manager = new CommandQueueManager(config, Tensa.pluginPath);
+        manager = new CommandQueueManager(config, Tensa.storage);
         ((AbstractModule) IMPL).registerListener(new CommandQueueListener(manager));
         ((AbstractModule) IMPL).scheduleRepeating(manager::dispatchDue, 1L, Math.max(1, config.pollIntervalSeconds), TimeUnit.SECONDS);
         AbstractModule.registerCommand("tqueue", "queue", new CommandQueueCommand(manager));

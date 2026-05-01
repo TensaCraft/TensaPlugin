@@ -9,12 +9,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.core.storage.CoreStorageService;
 import ua.co.tensa.modules.queue.data.CommandQueueConfig;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,25 +39,34 @@ class CommandQueueManagerTest {
     }
 
     @Test
-    void enqueuePersistsAcrossReloads() throws Exception {
+    void enqueuePersistsAcrossReloadsInCoreStorageWithoutYamlBackups() throws Exception {
         Tensa.pluginPath = tempDir;
         Tensa.server = fakeServer(List.of(), new ArrayList<>());
         CommandQueueConfig config = newConfig();
+        Path databaseFile = tempDir.resolve("storage").resolve("queue");
 
-        try (CommandQueueManager manager = new CommandQueueManager(config, tempDir)) {
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             QueuedCommandEntry entry = manager.enqueue("Steve", "broadcast queued welcome", 30L, "console");
 
             assertThat(entry.id()).isEqualTo(1L);
             assertThat(manager.snapshot()).hasSize(1);
         }
 
-        try (CommandQueueManager manager = new CommandQueueManager(config, tempDir)) {
+        try (CoreStorageService storage = CoreStorageService.local(databaseFile, "tensa_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             assertThat(manager.snapshot()).hasSize(1);
             QueuedCommandEntry restored = manager.snapshot().getFirst();
             assertThat(restored.displayTarget()).isEqualTo("Steve");
             assertThat(restored.command()).isEqualTo("broadcast queued welcome");
             assertThat(restored.delaySeconds()).isEqualTo(30L);
             assertThat(restored.createdBy()).isEqualTo("console");
+        }
+
+        assertThat(tempDir.resolve("queue").resolve("entries.yml")).doesNotExist();
+        try (var files = Files.walk(tempDir)) {
+            assertThat(files.map(path -> path.getFileName().toString()))
+                    .noneMatch(name -> name.startsWith("entries.yml.bak."));
         }
     }
 
@@ -69,13 +80,39 @@ class CommandQueueManagerTest {
         CommandQueueConfig config = newConfig();
         config.requireServerConnection = false;
 
-        try (CommandQueueManager manager = new CommandQueueManager(config, tempDir)) {
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tensa_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
             manager.enqueue(playerId.toString(), "say queued {player}", 0L, "console");
 
             int dispatched = manager.dispatchDue();
 
             assertThat(dispatched).isEqualTo(1);
             assertThat(executed).containsExactly("say queued Steve");
+            assertThat(manager.snapshot()).isEmpty();
+        }
+    }
+
+    @Test
+    void dispatchDueRespectsDelayBeforeExecutingCommand() throws Exception {
+        Tensa.pluginPath = tempDir;
+        List<String> executed = new ArrayList<>();
+        UUID playerId = UUID.randomUUID();
+        Player player = fakePlayer("Steve", playerId);
+        Tensa.server = fakeServer(List.of(player), executed);
+        CommandQueueConfig config = newConfig();
+        config.requireServerConnection = false;
+
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tensa_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
+            manager.enqueue(playerId.toString(), "say delayed {player}", 1L, "console");
+
+            assertThat(manager.dispatchDue()).isZero();
+            assertThat(executed).isEmpty();
+
+            Thread.sleep(1_100L);
+
+            assertThat(manager.dispatchDue()).isEqualTo(1);
+            assertThat(executed).containsExactly("say delayed Steve");
             assertThat(manager.snapshot()).isEmpty();
         }
     }

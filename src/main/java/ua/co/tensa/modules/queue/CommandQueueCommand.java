@@ -110,11 +110,14 @@ public final class CommandQueueCommand implements SimpleCommand {
         }
 
         QueuedCommandEntry entry = manager.enqueue(parsed.target(), parsed.command(), parsed.delaySeconds(), createdBy);
-        manager.dispatchDue();
+        int dispatched = manager.dispatchDue();
         Message.sendLang(source, Lang.queue_added,
                 "{id}", Long.toString(entry.id()),
                 "{target}", entry.displayTarget(),
                 "{delay}", Long.toString(entry.delaySeconds()));
+        if (dispatched > 0) {
+            Message.sendLang(source, Lang.queue_dispatched_ready, "{count}", Integer.toString(dispatched));
+        }
     }
 
     private void listEntries(CommandSource source, String selector) {

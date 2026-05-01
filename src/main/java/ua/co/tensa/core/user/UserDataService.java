@@ -1,13 +1,8 @@
 package ua.co.tensa.core.user;
 
 import com.velocitypowered.api.proxy.Player;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
-import ua.co.tensa.Tensa;
-import ua.co.tensa.config.Database;
+import ua.co.tensa.core.storage.CoreStorageService;
 
-import javax.sql.DataSource;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -20,10 +15,12 @@ import java.util.concurrent.TimeUnit;
 
 public final class UserDataService implements AutoCloseable {
     private final UserDataStore store;
+    private final CoreStorageService ownedStorage;
     private final ExecutorService executor;
 
-    private UserDataService(UserDataStore store) {
+    private UserDataService(UserDataStore store, CoreStorageService ownedStorage) {
         this.store = store;
+        this.ownedStorage = ownedStorage;
         this.store.initialize();
         this.executor = Executors.newFixedThreadPool(
                 Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors())),
@@ -36,31 +33,12 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public static UserDataService local(Path databaseFile, String tablePrefix) {
-        HikariDataSource dataSource = localDataSource(databaseFile);
-        return new UserDataService(new JdbcUserDataStore(dataSource, tablePrefix, dataSource));
+        CoreStorageService storage = CoreStorageService.local(databaseFile, tablePrefix);
+        return new UserDataService(new JdbcUserDataStore(storage.dataSource(), storage.tablePrefix(), null), storage);
     }
 
-    public static UserDataService external(DataSource dataSource, String tablePrefix) {
-        return new UserDataService(new JdbcUserDataStore(dataSource, tablePrefix, null));
-    }
-
-    public static UserDataService createFromConfig(Database database) {
-        String mode = Tensa.config == null ? "auto" : Tensa.config.getStorageType();
-        String prefix = Tensa.config == null ? "tensa_" : Tensa.config.getDatabaseTablePrefix();
-
-        if ("database".equalsIgnoreCase(mode)) {
-            if (database == null || !database.enabled || database.getDataSource() == null) {
-                throw new IllegalStateException("storage.type=database requires an active configured database connection");
-            }
-            return external(database.getDataSource(), prefix);
-        }
-
-        if ("auto".equalsIgnoreCase(mode) && database != null && database.enabled && database.getDataSource() != null) {
-            return external(database.getDataSource(), prefix);
-        }
-
-        Path localFile = Tensa.pluginPath.resolve(Tensa.config == null ? "storage/tensa-users" : Tensa.config.getStorageLocalFile());
-        return local(localFile, prefix);
+    public static UserDataService createFromStorage(CoreStorageService storage) {
+        return new UserDataService(new JdbcUserDataStore(storage.dataSource(), storage.tablePrefix(), null), null);
     }
 
     public UserRecordResult recordLogin(UserLoginData data) {
@@ -158,26 +136,9 @@ public final class UserDataService implements AutoCloseable {
             Thread.currentThread().interrupt();
         }
         store.close();
-    }
-
-    private static HikariDataSource localDataSource(Path databaseFile) {
-        try {
-            Path parent = databaseFile.toAbsolutePath().normalize().getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to prepare local user database directory: " + e.getMessage(), e);
+        if (ownedStorage != null) {
+            ownedStorage.close();
         }
-
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:file:" + databaseFile.toAbsolutePath().normalize() + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
-        config.setUsername("sa");
-        config.setPassword("");
-        config.setMaximumPoolSize(5);
-        config.setMinimumIdle(1);
-        config.setPoolName("TensaUserDataLocal");
-        return new HikariDataSource(config);
     }
 
     public static UserLoginData fromPlayer(Player player) {

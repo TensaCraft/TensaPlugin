@@ -12,6 +12,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import ua.co.tensa.config.Config;
 import ua.co.tensa.config.Database;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.core.storage.CoreStorageService;
 import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.Modules;
 import ua.co.tensa.modules.event.EventManager;
@@ -40,6 +41,7 @@ public class Tensa {
     public static Path pluginPath;
     public static PluginContainer pluginContainer;
     public static Database database;
+    public static CoreStorageService storage;
     public static UserDataService userData;
     public static Config config;
     private static EventsListener coreEventsListener;
@@ -66,6 +68,7 @@ public class Tensa {
     }
 
     public static void reloadPlugin() {
+        Modules.disableAll();
         closeCoreServices();
         config = config == null ? new Config() : config;
         config.reload();
@@ -93,7 +96,12 @@ public class Tensa {
             userData.close();
             userData = null;
         }
-        userData = UserDataService.createFromConfig(database);
+        if (storage != null) {
+            storage.close();
+            storage = null;
+        }
+        storage = CoreStorageService.createFromConfig(database);
+        userData = UserDataService.createFromStorage(storage);
     }
 
     private static void initialiseCoreEvents() {
@@ -109,6 +117,10 @@ public class Tensa {
         if (userData != null) {
             userData.close();
             userData = null;
+        }
+        if (storage != null) {
+            storage.close();
+            storage = null;
         }
         if (database != null) {
             database.close();

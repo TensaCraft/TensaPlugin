@@ -25,7 +25,7 @@ public enum Lang {
     queue_invalid_delay("queue_invalid_delay"), queue_limit_reached("queue_limit_reached"), queue_added("queue_added"),
     queue_list_empty("queue_list_empty"), queue_list_header("queue_list_header"), queue_not_found("queue_not_found"),
     queue_removed("queue_removed"), queue_cleared("queue_cleared"), queue_run_offline("queue_run_offline"),
-    queue_run_ok("queue_run_ok"), queue_stats("queue_stats");
+    queue_run_ok("queue_run_ok"), queue_dispatched_ready("queue_dispatched_ready"), queue_stats("queue_stats");
 
     private final String key;
 

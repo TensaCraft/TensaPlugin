@@ -18,7 +18,7 @@ public final class CommandQueueConfig extends ConfigBase {
     @CfgKey(value = "require_server_connection", comment = "Only dispatch when the target player is connected to a backend server")
     public boolean requireServerConnection = true;
 
-    @CfgKey(value = "log_dispatch", comment = "Write queue dispatch actions to the console log")
+    @CfgKey(value = "log_dispatch", comment = "Write queued command creation, dispatch start, and dispatch completion to the console log")
     public boolean logDispatch = true;
 
     private CommandQueueConfig() {

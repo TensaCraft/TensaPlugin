@@ -281,6 +281,9 @@ public class LangYAML extends YamlBackedFile {
         setLocalizedConfigValue("queue_run_ok",
                 "<green>Executed queued command #</green><yellow>{id}</yellow><green> for </green><white>{player}</white>",
                 "<green>Виконано команду з черги #</green><yellow>{id}</yellow><green> для </green><white>{player}</white>");
+        setLocalizedConfigValue("queue_dispatched_ready",
+                "<green>Dispatched ready queued commands:</green> <white>{count}</white>",
+                "<green>Виконано готових команд черги:</green> <white>{count}</white>");
         setLocalizedConfigValue("queue_stats",
                 "<gold>Queue stats:</gold> <gray>total=</gray><white>{total}</white> <gray>due=</gray><white>{due}</white> <gray>online=</gray><white>{online}</white>",
                 "<gold>Статистика черги:</gold> <gray>усього=</gray><white>{total}</white> <gray>готово=</gray><white>{due}</white> <gray>онлайн=</gray><white>{online}</white>");
@@ -290,23 +293,6 @@ public class LangYAML extends YamlBackedFile {
         String localizedValue = isUkrainianLang() ? ukrainianDefault : englishDefault;
         if (!contains(path)) {
             setNodeValue(node(path), localizedValue);
-            markDirty();
-            return;
-        }
-
-        String current = getString(path, null);
-        if (current == null) {
-            return;
-        }
-
-        if (isUkrainianLang() && englishDefault.equals(current)) {
-            setNodeValue(node(path), ukrainianDefault);
-            markDirty();
-            return;
-        }
-
-        if (!isUkrainianLang() && ukrainianDefault.equals(current)) {
-            setNodeValue(node(path), englishDefault);
             markDirty();
         }
     }

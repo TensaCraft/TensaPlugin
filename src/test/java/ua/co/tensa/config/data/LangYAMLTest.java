@@ -42,7 +42,7 @@ class LangYAMLTest {
     }
 
     @Test
-    void ukrainianLanguageReplacesOldEnglishDefaults() throws Exception {
+    void ukrainianLanguagePreservesExistingValuesAndAddsMissingDefaults() throws Exception {
         Files.writeString(tempDir.resolve("config.yml"), "language: uk\n", StandardCharsets.UTF_8);
         Tensa.config = new Config();
         resetLangSingleton();
@@ -51,17 +51,14 @@ class LangYAMLTest {
         Files.createDirectories(langFile.getParent());
         Files.writeString(langFile, """
                 no_perms: <red>You do not have permission to use this command</red>
-                reload: <green>All configurations reloaded</green>
                 rcon_usage: <gold>Usage:</gold> <yellow>rcon</yellow> <gray>[server/all/reload] [command]</gray>
-                player_time: <green>Your game time:</green> <white>{time}</white>
-                send_success: <green>Player <white>{player}</white> sent to server <white>{server}</white></green>
                 """, StandardCharsets.UTF_8);
 
         LangYAML lang = LangYAML.getInstance();
 
-        assertThat(lang.getString("no_perms", "")).contains("дозволу").doesNotContain("permission");
+        assertThat(lang.getString("no_perms", "")).contains("permission");
+        assertThat(lang.getString("rcon_usage", "")).contains("Usage");
         assertThat(lang.getString("reload", "")).contains("перезавантажено").doesNotContain("reloaded");
-        assertThat(lang.getString("rcon_usage", "")).contains("Використання").doesNotContain("Usage");
         assertThat(lang.getString("player_time", "")).contains("Ваш час гри").doesNotContain("Your game time");
         assertThat(lang.getString("send_success", "")).contains("відправлено").doesNotContain("sent to server");
     }
