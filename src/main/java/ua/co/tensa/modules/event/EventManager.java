@@ -115,9 +115,13 @@ public class EventManager {
                 String raw = trimmed.substring(DELAY.length()).trim();
                 try {
                     long add = Long.parseLong(raw);
+                    if (add < 0L) {
+                        Message.warn("Events: negative [delay] value '" + raw + "'; skipping");
+                        continue;
+                    }
                     delayAccum.addAndGet(add);
                 } catch (NumberFormatException e) {
-                    Message.warn("Events: invalid [delay] value '" + raw + "' — skipping");
+                    Message.warn("Events: invalid [delay] value '" + raw + "'; skipping");
                 }
                 continue;
             }
@@ -128,7 +132,12 @@ public class EventManager {
                 continue;
             }
 
-            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> sendCommand(context, cmd, asConsole))
+            Tensa.server.getScheduler().buildTask(Tensa.pluginContainer, () -> {
+                        if (isModuleDisabled() || !event.enabled()) {
+                            return;
+                        }
+                        sendCommand(context, cmd, asConsole);
+                    })
                     .delay(delayAccum.get(), TimeUnit.SECONDS)
                     .schedule();
         }

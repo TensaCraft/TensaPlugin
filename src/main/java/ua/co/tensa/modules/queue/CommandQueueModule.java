@@ -12,7 +12,6 @@ public final class CommandQueueModule {
             "command-queue", "Command Queue") {
         @Override protected void onEnable() { CommandQueueModule.enableImpl(); }
         @Override protected void onDisable() { CommandQueueModule.disableImpl(); }
-        @Override protected void onReload() { CommandQueueModule.reloadImpl(); }
     };
     public static final ModuleEntry ENTRY = IMPL;
 
@@ -30,11 +29,6 @@ public final class CommandQueueModule {
         ((AbstractModule) IMPL).scheduleRepeating(manager::dispatchDue, 1L, Math.max(1, config.pollIntervalSeconds), TimeUnit.SECONDS);
         AbstractModule.registerCommand("tqueue", "queue", new CommandQueueCommand(manager));
         manager.dispatchDue();
-    }
-
-    private static void reloadImpl() {
-        disableImpl();
-        enableImpl();
     }
 
     private static void disableImpl() {

@@ -1,7 +1,6 @@
 target/
 .idea/
 dependency-reduced-pom.xml
-/src/test/
 /scripts/
 /.dev/
 /CLAUDE.md

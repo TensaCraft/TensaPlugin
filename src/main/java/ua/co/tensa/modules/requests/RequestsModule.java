@@ -28,12 +28,13 @@ public class RequestsModule {
 
 	private static Path requestsDir() { return Tensa.pluginPath.resolve("requests"); }
 
-    public static void load() {
+	public static void load() {
 		File directory = requestsDir().toFile();
+        FILE_NAMES.clear();
 		if (!directory.exists()) {
 			directory.mkdirs();
-			Util.copyFile(directory.getPath(), "linkaccount.yml");
 		}
+        Util.copyFile(directory.getPath(), "linkaccount.yml");
 
 		List<String> fileNames = getConfigurationFiles(directory.getPath());
 
@@ -91,9 +92,15 @@ public class RequestsModule {
 
     public static List<Map<String, String>> getTriggerToFileMapping() {
 		List<Map<String, String>> result = new ArrayList<>();
+        if (configs == null || configs.isEmpty()) {
+            return result;
+        }
 		for (YamlConfiguration config : configs) {
 			List<String> triggers = config.getStringList("triggers");
 			for (String trigger : triggers) {
+                if (trigger == null || trigger.isBlank()) {
+                    continue;
+                }
 				Map<String, String> map = Map.of(
 					"trigger", trigger,
 					"file", FILE_NAMES.getOrDefault(config, "unknown")
@@ -117,9 +124,12 @@ public class RequestsModule {
     }
 
 	public static YamlConfiguration configByTrigger(String trigger) {
+        if (trigger == null || configs == null) {
+            return null;
+        }
 		for (YamlConfiguration config : configs) {
 			List<String> triggers = config.getStringList("triggers");
-			if (triggers.contains(trigger)) {
+			if (triggers.stream().anyMatch(item -> item != null && item.equalsIgnoreCase(trigger))) {
 				return config;
 			}
 		}

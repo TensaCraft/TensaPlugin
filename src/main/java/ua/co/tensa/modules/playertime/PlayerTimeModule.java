@@ -40,7 +40,9 @@ public class PlayerTimeModule {
 
         if (!database.tableExists("player_times")){
             DatabaseInitializer databaseInitializer = new DatabaseInitializer(database);
-            databaseInitializer.createPlayerTimeTable();
+            if (!databaseInitializer.createPlayerTimeTable()) {
+                throw new IllegalStateException("PlayerTime module could not create the player_times table");
+            }
         }
         PlayerTimeTracker timeTracker = new PlayerTimeTracker(database);
         PlayerEventListener eventListener = new PlayerEventListener(timeTracker);

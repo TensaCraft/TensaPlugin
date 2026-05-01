@@ -11,13 +11,13 @@ public class DatabaseInitializer {
     public void initializeTables() {
 //        createPlayerTimeTable();
     }
-    public void createPlayerTimeTable() {
+    public boolean createPlayerTimeTable() {
         String sql = """
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255),
             uuid VARCHAR(255),
             play_time BIGINT
             """;
-        database.createTableAsync("player_times", sql);
+        return database.createTable("player_times", sql);
     }
 }

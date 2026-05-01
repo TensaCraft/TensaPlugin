@@ -44,19 +44,19 @@ public class UserMetaModule {
         // register meta placeholders with PlaceholderManager
         PlaceholderManager.registerRawPrefixResolver("meta_", (player, key) -> {
             if (player == null || store == null) return "";
-            return store.get(player.getUniqueId(), key);
+            return store.getCached(player.getUniqueId()).getOrDefault(key, "");
         });
         PlaceholderManager.registerRawPrefixResolver("tensa_meta_", (player, key) -> {
             if (player == null || store == null) return "";
-            return store.get(player.getUniqueId(), key);
+            return store.getCached(player.getUniqueId()).getOrDefault(key, "");
         });
         PlaceholderManager.registerAnglePrefixResolver("meta_", (player, key) -> {
             if (player == null || store == null) return "";
-            return store.get(player.getUniqueId(), key);
+            return store.getCached(player.getUniqueId()).getOrDefault(key, "");
         });
         PlaceholderManager.registerAnglePrefixResolver("tensa_meta_", (player, key) -> {
             if (player == null || store == null) return "";
-            return store.get(player.getUniqueId(), key);
+            return store.getCached(player.getUniqueId()).getOrDefault(key, "");
         });
     }
 

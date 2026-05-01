@@ -6,6 +6,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 
 import java.math.BigInteger;
+import java.nio.file.Path;
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -46,6 +47,7 @@ public class Database {
             Message.database("POOL CLOSED", "Connection pool shutdown successfully");
             dataSource = null;
         }
+        enabled = false;
     }
 
     public static void shutdownExecutor() {
@@ -71,7 +73,8 @@ public class Database {
 
     private boolean connectH2() {
         try {
-            String url = "jdbc:h2:file:./plugins/tensa/storage/server;MODE=MySQL;DB_CLOSE_DELAY=-1";
+            Path databasePath = Tensa.pluginPath.resolve("storage").resolve("server").toAbsolutePath().normalize();
+            String url = "jdbc:h2:file:" + databasePath + ";MODE=MySQL;DB_CLOSE_DELAY=-1";
             HikariConfig cfg = new HikariConfig();
             cfg.setJdbcUrl(url);
             cfg.setUsername("sa");
@@ -326,18 +329,12 @@ public class Database {
         Object[] castedValues = new Object[values.length];
         for (int i = 0; i < values.length; i++) {
             Object value = values[i];
-            if (value instanceof BigInteger) {
-                castedValues[i] = ((BigInteger) value).longValue();
-            } else if (value instanceof String && isNumeric((String) value)) {
-                castedValues[i] = new BigInteger((String) value).longValue();
+            if (value instanceof BigInteger bigInteger) {
+                castedValues[i] = bigInteger.longValue();
             } else {
                 castedValues[i] = value;
             }
         }
         return castedValues;
-    }
-
-    private boolean isNumeric(String str) {
-        return str.matches("-?\\d+(\\.\\d+)?");
     }
 }

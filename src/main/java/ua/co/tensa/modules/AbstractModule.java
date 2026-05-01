@@ -40,6 +40,15 @@ public abstract class AbstractModule implements ModuleEntry {
             if (logStatus) ModuleStatusLogger.enabled(id, title);
         } catch (Throwable t) {
             ua.co.tensa.Message.error("Enable failed for module '" + id + "': " + t.getMessage());
+            try {
+                onDisable();
+            } catch (Throwable cleanupError) {
+                ua.co.tensa.Message.warn("Enable cleanup failed for module '" + id + "': " + cleanupError.getMessage());
+            } finally {
+                unregisterAllListeners();
+                cancelAllTasks();
+                unregisterAllPlaceholders();
+            }
             enabled = false;
         }
     }
@@ -95,7 +104,11 @@ public abstract class AbstractModule implements ModuleEntry {
         }
         try { doDisable(false); } catch (Throwable ignored) {}
         doEnable(false);
-        ModuleStatusLogger.reloaded(id, title);
+        if (isEnabled()) {
+            ModuleStatusLogger.reloaded(id, title);
+        } else {
+            ua.co.tensa.Message.warn("Module reload failed for '" + id + "': module did not enable cleanly");
+        }
     }
 
     // Helpers (static where instance state isn't required)
@@ -138,12 +151,23 @@ public abstract class AbstractModule implements ModuleEntry {
     /** Unregister a previously registered listener and stop tracking it. */
     public void unregisterListener(Object listener) {
         if (listener == null) return;
+        if (ua.co.tensa.Tensa.server == null || ua.co.tensa.Tensa.pluginContainer == null) {
+            listeners.remove(listener);
+            return;
+        }
         try { ua.co.tensa.Tensa.server.getEventManager().unregisterListener(ua.co.tensa.Tensa.pluginContainer, listener); } catch (Throwable ignored) {}
         listeners.remove(listener);
     }
 
     /** Unregister all listeners that were registered via this module's helper. */
     public void unregisterAllListeners() {
+        if (listeners.isEmpty()) {
+            return;
+        }
+        if (ua.co.tensa.Tensa.server == null || ua.co.tensa.Tensa.pluginContainer == null) {
+            listeners.clear();
+            return;
+        }
         EventManager em = ua.co.tensa.Tensa.server.getEventManager();
         for (Object l : listeners) {
             try { em.unregisterListener(ua.co.tensa.Tensa.pluginContainer, l); } catch (Throwable ignored) {}

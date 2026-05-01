@@ -171,6 +171,7 @@ public final class CommandQueueManager implements AutoCloseable {
         long now = System.currentTimeMillis();
         int dispatched = 0;
         int limit = Math.max(1, config.maxDispatchPerSweep);
+        boolean changed = false;
         for (QueuedCommandEntry entry : snapshot()) {
             if (dispatched >= limit) {
                 break;
@@ -188,9 +189,12 @@ public final class CommandQueueManager implements AutoCloseable {
             if (!entries.remove(entry.id(), entry)) {
                 continue;
             }
-            saveSnapshotAsync();
+            changed = true;
             dispatch(entry, target, "auto");
             dispatched++;
+        }
+        if (changed) {
+            saveSnapshotAsync();
         }
         return dispatched;
     }

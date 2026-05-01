@@ -9,8 +9,6 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.TranslatableComponent;
 import net.kyori.adventure.translation.GlobalTranslator;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.Locale;
 
@@ -43,17 +41,17 @@ public class RconCommandSource implements CommandSource {
 
 	@Override
 	@SuppressWarnings("deprecation")
-	public void sendMessage(@NotNull Identity source, @NotNull Component message) {
+	public void sendMessage(Identity source, Component message) {
 		addToBuffer(message);
 	}
 
 	@Override
-	public void sendMessage(@NonNull Component message) {
+	public void sendMessage(Component message) {
 		addToBuffer(message);
 	}
 
 	@Override
-	public @NonNull Tristate getPermissionValue(@NonNull String permission) {
+	public Tristate getPermissionValue(String permission) {
 		return this.permissionFunction.getPermissionValue(permission);
 	}
 
