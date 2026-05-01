@@ -46,4 +46,47 @@ class UserDataServiceTest {
             assertThat(service.getPlayTime(uuid)).isEqualTo(42L);
         }
     }
+
+    @Test
+    void livePlayTimeIncludesCurrentOnlineSessionWithoutPersistingEachRead() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        Path databaseFile = tempDir.resolve("storage").resolve("tensa-users-live");
+
+        try (UserDataService service = UserDataService.local(databaseFile, "tpl_")) {
+            service.recordLogin(UserLoginData.builder(uuid, "Alex")
+                    .timestamp(1_000L)
+                    .build());
+
+            assertThat(service.getPlayTime(uuid)).isZero();
+            assertThat(service.getLivePlayTime(uuid, 11_500L)).isEqualTo(10L);
+            assertThat(service.getPlayTime(uuid)).isZero();
+
+            service.recordDisconnect(uuid, 21_000L, "lobby");
+
+            assertThat(service.getPlayTime(uuid)).isEqualTo(20L);
+            assertThat(service.getLivePlayTime(uuid, 30_000L)).isEqualTo(20L);
+        }
+    }
+
+    @Test
+    void topPlayTimeIncludesCurrentOnlineSessions() throws Exception {
+        UUID active = UUID.randomUUID();
+        UUID disconnected = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        Path databaseFile = tempDir.resolve("storage").resolve("tensa-users-live-top");
+
+        try (UserDataService service = UserDataService.local(databaseFile, "tpl_")) {
+            service.recordLogin(UserLoginData.builder(active, "Active")
+                    .timestamp(now - 20_000L)
+                    .build());
+            service.recordLogin(UserLoginData.builder(disconnected, "Disconnected")
+                    .timestamp(now - 20_000L)
+                    .build());
+            service.recordDisconnect(disconnected, now - 5_000L, "lobby");
+
+            assertThat(service.topByPlayTime(10))
+                    .extracting(UserProfile::uuid)
+                    .containsExactly(active, disconnected);
+        }
+    }
 }

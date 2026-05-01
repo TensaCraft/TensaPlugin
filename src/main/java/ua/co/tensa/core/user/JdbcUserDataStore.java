@@ -246,10 +246,33 @@ final class JdbcUserDataStore implements UserDataStore {
     @Override
     public List<UserProfile> topByPlayTime(int limit) {
         List<UserProfile> profiles = new ArrayList<>();
+        if (limit <= 0) {
+            return profiles;
+        }
+        long now = System.currentTimeMillis();
+        String liveTotal = """
+                total_play_time_seconds + CASE
+                    WHEN online_since > 0 AND ? > online_since THEN (? - online_since) / 1000
+                    ELSE 0
+                END
+                """;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(
-                     "SELECT * FROM " + prefix + "users WHERE total_play_time_seconds > 0 ORDER BY total_play_time_seconds DESC LIMIT ?")) {
-            statement.setInt(1, limit);
+                     """
+                     SELECT * FROM (
+                         SELECT uuid, username, first_username, first_seen_at, last_seen_at, last_disconnect_at,
+                                last_ip, last_virtual_host, last_protocol_version, last_server, join_count,
+                                %s AS total_play_time_seconds,
+                                online_since, created_at, updated_at
+                         FROM %susers
+                     ) live_users
+                     WHERE total_play_time_seconds > 0
+                     ORDER BY total_play_time_seconds DESC
+                     LIMIT ?
+                     """.formatted(liveTotal, prefix))) {
+            statement.setLong(1, now);
+            statement.setLong(2, now);
+            statement.setInt(3, limit);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     profiles.add(profile(rs));

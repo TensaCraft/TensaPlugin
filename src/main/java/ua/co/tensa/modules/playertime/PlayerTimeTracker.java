@@ -1,15 +1,20 @@
 package ua.co.tensa.modules.playertime;
 
 import ua.co.tensa.core.user.UserDataService;
-import ua.co.tensa.core.user.UserProfile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.Supplier;
 
 public class PlayerTimeTracker {
     private final UserDataService userData;
+    private final ConcurrentMap<UUID, CompletableFuture<Long>> currentRequests = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<Long>> namedRequests = new ConcurrentHashMap<>();
 
     public record PlayerTimeEntry(String playerName, long playTime) {}
 
@@ -26,14 +31,20 @@ public class PlayerTimeTracker {
     }
 
     public CompletableFuture<Long> getPlayerTimeByName(String playerName) {
-        return CompletableFuture.supplyAsync(() -> userData.findUser(playerName)
-                .map(UserProfile::totalPlayTimeSeconds)
-                .map(seconds -> seconds * 1000L)
-                .orElse(0L));
+        String key = normalizeName(playerName);
+        if (key.isBlank()) {
+            return CompletableFuture.completedFuture(0L);
+        }
+        return singleFlight(namedRequests, key,
+                () -> userData.getLivePlayTimeByNameAsync(playerName).thenApply(seconds -> seconds * 1000L));
     }
 
     public CompletableFuture<Long> getCurrentPlayerTime(UUID playerId) {
-        return userData.getPlayTimeAsync(playerId).thenApply(seconds -> seconds * 1000L);
+        if (playerId == null) {
+            return CompletableFuture.completedFuture(0L);
+        }
+        return singleFlight(currentRequests, playerId,
+                () -> userData.getLivePlayTimeAsync(playerId).thenApply(seconds -> seconds * 1000L));
     }
 
     public CompletableFuture<List<PlayerTimeEntry>> getTopPlayers(int limit) {
@@ -53,5 +64,28 @@ public class PlayerTimeTracker {
 
     public void updateAllOnlineTimes() {
         // Playtime is committed by the core disconnect event.
+    }
+
+    private <T> CompletableFuture<Long> singleFlight(
+            ConcurrentMap<T, CompletableFuture<Long>> requests,
+            T key,
+            Supplier<CompletableFuture<Long>> loader
+    ) {
+        return requests.computeIfAbsent(key, ignored -> {
+            CompletableFuture<Long> tracked = new CompletableFuture<>();
+            loader.get().whenComplete((value, throwable) -> {
+                requests.remove(key, tracked);
+                if (throwable != null) {
+                    tracked.completeExceptionally(throwable);
+                } else {
+                    tracked.complete(value);
+                }
+            });
+            return tracked;
+        });
+    }
+
+    private String normalizeName(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 }

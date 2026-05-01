@@ -160,6 +160,26 @@ public final class UserDataService implements AutoCloseable {
         return CompletableFuture.supplyAsync(() -> getPlayTime(uuid), executor);
     }
 
+    public long getLivePlayTime(UUID uuid) {
+        return getLivePlayTime(uuid, System.currentTimeMillis());
+    }
+
+    public long getLivePlayTime(UUID uuid, long timestamp) {
+        return findByUuid(uuid)
+                .map(profile -> calculateLivePlayTime(profile, timestamp))
+                .orElse(0L);
+    }
+
+    public CompletableFuture<Long> getLivePlayTimeAsync(UUID uuid) {
+        return CompletableFuture.supplyAsync(() -> getLivePlayTime(uuid), executor);
+    }
+
+    public CompletableFuture<Long> getLivePlayTimeByNameAsync(String usernameOrUuid) {
+        return CompletableFuture.supplyAsync(() -> findUser(usernameOrUuid)
+                .map(profile -> calculateLivePlayTime(profile, System.currentTimeMillis()))
+                .orElse(0L), executor);
+    }
+
     public void addPlayTime(UUID uuid, long seconds) {
         store.addPlayTime(uuid, seconds);
     }
@@ -225,5 +245,14 @@ public final class UserDataService implements AutoCloseable {
 
     private String normalizeValueType(String valueType) {
         return valueType == null || valueType.isBlank() ? "string" : valueType.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private long calculateLivePlayTime(UserProfile profile, long timestamp) {
+        long persisted = Math.max(0L, profile.totalPlayTimeSeconds());
+        long onlineSince = profile.onlineSince();
+        if (onlineSince <= 0 || timestamp <= onlineSince) {
+            return persisted;
+        }
+        return persisted + ((timestamp - onlineSince) / 1000L);
     }
 }
