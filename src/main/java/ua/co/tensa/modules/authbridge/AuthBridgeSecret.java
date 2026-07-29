@@ -1,6 +1,6 @@
 package ua.co.tensa.modules.authbridge;
 
-import ua.co.tensa.authbridge.protocol.AuthBridgeProtocol;
+import ua.co.tensa.authbridge.protocol.ProtocolConstants;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,14 +30,11 @@ final class AuthBridgeSecret {
         }
 
         try {
-            String encoded = Files.readString(secretPath, StandardCharsets.UTF_8).trim();
-            byte[] secret = encoded.startsWith("base64:")
-                    ? decodeBase64(encoded.substring("base64:".length()).trim())
-                    : encoded.getBytes(StandardCharsets.UTF_8);
-            if (secret.length < AuthBridgeProtocol.MIN_SECRET_LENGTH) {
+            byte[] secret = decodeBase64(Files.readString(secretPath, StandardCharsets.UTF_8).trim());
+            if (secret.length < ProtocolConstants.HMAC_BYTES) {
                 throw new IllegalStateException(
                         "Auth bridge secret must contain at least "
-                                + AuthBridgeProtocol.MIN_SECRET_LENGTH
+                                + ProtocolConstants.HMAC_BYTES
                                 + " bytes"
                 );
             }
@@ -51,7 +48,7 @@ final class AuthBridgeSecret {
         try {
             return Base64.getDecoder().decode(value);
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("Auth bridge secret contains invalid Base64", e);
+            throw new IllegalStateException("Auth bridge secret file does not contain valid Base64", e);
         }
     }
 }

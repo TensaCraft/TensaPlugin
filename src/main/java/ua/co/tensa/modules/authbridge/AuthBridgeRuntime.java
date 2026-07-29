@@ -12,20 +12,26 @@ import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import ua.co.tensa.Message;
-import ua.co.tensa.authbridge.protocol.AuthBridgeMessage;
-import ua.co.tensa.authbridge.protocol.AuthBridgeMessageType;
-import ua.co.tensa.authbridge.protocol.AuthBridgeMessageVerifier;
-import ua.co.tensa.authbridge.protocol.AuthBridgeProtocol;
-import ua.co.tensa.authbridge.protocol.AuthBridgeProtocolException;
-import ua.co.tensa.authbridge.protocol.AuthBridgeReplayGuard;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import ua.co.tensa.authbridge.protocol.AuthFrame;
+import ua.co.tensa.authbridge.protocol.AuthMessageType;
+import ua.co.tensa.authbridge.protocol.AuthProtocolCodec;
+import ua.co.tensa.authbridge.protocol.AuthProtocolException;
+import ua.co.tensa.authbridge.protocol.AuthState;
+import ua.co.tensa.authbridge.protocol.ProtocolConstants;
+import ua.co.tensa.authbridge.protocol.security.AuthFrameVerifier;
+import ua.co.tensa.authbridge.protocol.security.AuthSecurityPolicy;
+import ua.co.tensa.authbridge.protocol.security.HmacSha256Authenticator;
+import ua.co.tensa.authbridge.protocol.security.ReplayWindow;
 
+import java.security.SecureRandom;
 import java.time.Clock;
-import java.time.Duration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,13 +41,16 @@ final class AuthBridgeRuntime implements AutoCloseable {
     private final ProxyServer server;
     private final AuthenticationStateSource source;
     private final BridgeScheduler scheduler;
-    private final AuthSessionRegistry sessions;
-    private final AuthBridgeReplayGuard replayGuard;
-    private final AuthBridgeMessageVerifier verifier;
+    private final AuthSessionRegistry sessions = new AuthSessionRegistry();
+    private final ReplayWindow replayWindow;
+    private final AuthProtocolCodec codec = new AuthProtocolCodec();
+    private final HmacSha256Authenticator authenticator;
+    private final Map<String, AuthFrameVerifier> verifiers;
     private final ChannelIdentifier channel;
     private final Set<String> allowedServers;
-    private final byte[] secret;
+    private final Map<String, String> sourceBindings;
     private final Clock clock;
+    private final SecureRandom secureRandom;
     private final long messageTtlMillis;
     private final long postLoginDelayMillis;
     private final boolean logTransitions;
@@ -53,10 +62,11 @@ final class AuthBridgeRuntime implements AutoCloseable {
             AuthenticationStateSource source,
             BridgeScheduler scheduler,
             List<String> allowedServers,
+            Map<String, String> sourceBindings,
             byte[] secret,
             Clock clock,
-            Duration messageTtl,
-            Duration clockSkew,
+            SecureRandom secureRandom,
+            AuthSecurityPolicy securityPolicy,
             long postLoginDelayMillis,
             boolean logTransitions
     ) {
@@ -64,22 +74,24 @@ final class AuthBridgeRuntime implements AutoCloseable {
         this.source = java.util.Objects.requireNonNull(source, "source");
         this.scheduler = java.util.Objects.requireNonNull(scheduler, "scheduler");
         this.allowedServers = normalizeAllowlist(allowedServers);
-        this.secret = secret.clone();
+        this.sourceBindings = normalizeSourceBindings(sourceBindings, this.allowedServers);
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
-        this.messageTtlMillis = requirePositive(messageTtl.toMillis(), "messageTtl");
+        this.secureRandom = java.util.Objects.requireNonNull(secureRandom, "secureRandom");
+        AuthSecurityPolicy policy = java.util.Objects.requireNonNull(securityPolicy, "securityPolicy");
+        this.messageTtlMillis = policy.maximumFrameTtl().toMillis();
         this.postLoginDelayMillis = requireNonNegative(postLoginDelayMillis, "postLoginDelayMillis");
         this.logTransitions = logTransitions;
-        this.sessions = new AuthSessionRegistry();
-        this.replayGuard = new AuthBridgeReplayGuard();
-        this.verifier = new AuthBridgeMessageVerifier(clock, messageTtl, clockSkew, replayGuard);
-        this.channel = MinecraftChannelIdentifier.from(AuthBridgeProtocol.CHANNEL);
+        this.replayWindow = new ReplayWindow(policy.replayCapacity());
+        this.authenticator = new HmacSha256Authenticator(secret, codec);
+        this.verifiers = createVerifiers(this.sourceBindings, policy, authenticator, replayWindow);
+        this.channel = MinecraftChannelIdentifier.from(ProtocolConstants.CHANNEL);
     }
 
     void start() {
         server.getChannelRegistrar().register(channel);
         List<Player> onlinePlayers = List.copyOf(server.getAllPlayers());
         for (Player player : onlinePlayers) {
-            sessions.begin(player);
+            forget(sessions.begin(player));
         }
         source.subscribeAuthenticated(this::onAuthenticated);
         for (Player player : onlinePlayers) {
@@ -109,7 +121,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
 
     void beginSession(Player player) {
         if (!closed.get()) {
-            sessions.begin(player);
+            forget(sessions.begin(player));
         }
     }
 
@@ -122,11 +134,11 @@ final class AuthBridgeRuntime implements AutoCloseable {
             return;
         }
         sessions.ensure(player);
-        publishToCurrentServer(player, "");
+        player.getCurrentServer().ifPresent(connection -> sendState(connection, player));
     }
 
     void cleanupSession(Player player) {
-        sessions.remove(player);
+        forget(sessions.remove(player));
     }
 
     @Subscribe
@@ -135,29 +147,47 @@ final class AuthBridgeRuntime implements AutoCloseable {
             return;
         }
 
-        // Authentication traffic must never be forwarded to clients or other backends.
         event.setResult(PluginMessageEvent.ForwardResult.handled());
         if (closed.get() || !(event.getSource() instanceof ServerConnection connection)) {
             return;
         }
 
-        String serverName = connection.getServerInfo().getName();
-        if (!allowedServers.contains(normalizeServerName(serverName))) {
-            warnThrottled("Auth bridge rejected a message from disallowed server '" + serverName + "'");
+        String sourceServer = normalizeServerName(connection.getServerInfo().getName());
+        String expectedBackendId = sourceBindings.get(sourceServer);
+        if (!allowedServers.contains(sourceServer) || expectedBackendId == null) {
+            warnThrottled("Auth bridge rejected a message from disallowed server '" + sourceServer + "'");
             return;
         }
 
         try {
-            AuthBridgeMessage query = AuthBridgeProtocol.decodeAndVerify(event.getData(), secret);
-            validateQuery(connection, query);
-            verifier.verifyFresh(normalizeServerName(serverName), query);
+            AuthFrame challenge = codec.decode(event.getData());
+            validateChallengeSource(connection, sourceServer, expectedBackendId, challenge);
+            var verification = verifiers.get(expectedBackendId).verify(challenge, clock.millis());
+            if (!verification.accepted()) {
+                throw new AuthProtocolException(
+                        "Challenge verification failed: " + verification.failure().name().toLowerCase(Locale.ROOT)
+                );
+            }
+
             Player player = connection.getPlayer();
+            AuthSessionRegistry.BindResult binding = sessions.bind(
+                    player,
+                    connection,
+                    sourceServer,
+                    expectedBackendId,
+                    challenge.sessionId(),
+                    challenge.challenge()
+            );
+            if (binding == null) {
+                throw new AuthProtocolException("Challenge belongs to a stale player connection");
+            }
+            forgetIfReplaced(binding.previousBinding(), binding.snapshot().binding());
             reconcile(player);
-            sendState(connection, player, query.backendChallenge());
-        } catch (AuthBridgeProtocolException | RuntimeException exception) {
-            warnThrottled("Auth bridge rejected a message from '" + serverName + "': " + safeMessage(exception));
+            sendState(connection, player);
+        } catch (RuntimeException exception) {
+            warnThrottled("Auth bridge rejected a message from '" + sourceServer + "': " + safeMessage(exception));
         } catch (Throwable throwable) {
-            warnThrottled("Auth bridge message processing failed for '" + serverName + "': " + safeMessage(throwable));
+            warnThrottled("Auth bridge message processing failed for '" + sourceServer + "': " + safeMessage(throwable));
         }
     }
 
@@ -169,7 +199,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
                         return;
                     }
                     reconcile(player);
-                    publishToCurrentServer(player, "");
+                    publishToCurrentServer(player);
                 } catch (Throwable throwable) {
                     warnThrottled("Auth bridge async publication failed: " + safeMessage(throwable));
                 }
@@ -189,15 +219,15 @@ final class AuthBridgeRuntime implements AutoCloseable {
                     return;
                 }
                 reconcile(player);
-                publishToCurrentServer(player, "");
+                publishToCurrentServer(player);
             }, delayMillis);
         } catch (Throwable throwable) {
             warnThrottled("Auth bridge state synchronization could not be scheduled: " + safeMessage(throwable));
         }
     }
 
-    private AuthBridgeState reconcile(Player player) {
-        AuthBridgeState state = AuthBridgeState.LOCKED;
+    private AuthState reconcile(Player player) {
+        AuthState state = AuthState.PENDING;
         try {
             state = source.currentState(player);
         } catch (Throwable throwable) {
@@ -207,39 +237,52 @@ final class AuthBridgeRuntime implements AutoCloseable {
         return state;
     }
 
-    private void publishToCurrentServer(Player player, String challenge) {
-        player.getCurrentServer().ifPresent(connection -> sendState(connection, player, challenge));
+    private void publishToCurrentServer(Player player) {
+        player.getCurrentServer().ifPresent(connection -> sendState(connection, player));
     }
 
-    private void sendState(ServerConnection connection, Player player, String challenge) {
-        String serverName = connection.getServerInfo().getName();
-        if (!allowedServers.contains(normalizeServerName(serverName))) {
-            warnThrottled("Auth bridge refused to publish state to disallowed server '" + serverName + "'");
+    private void sendState(ServerConnection connection, Player player) {
+        String sourceServer = normalizeServerName(connection.getServerInfo().getName());
+        if (!allowedServers.contains(sourceServer)) {
             return;
         }
-        AuthSessionRegistry.Snapshot snapshot = sessions.next(player);
-        if (snapshot == null) {
+
+        AuthSessionRegistry.Snapshot snapshot = sessions.next(player, connection);
+        if (snapshot == null || snapshot.binding() == null) {
             return;
         }
-        long issuedAt = clock.millis();
-        long expiresAt = saturatedAdd(issuedAt, messageTtlMillis);
-        AuthBridgeMessage response = new AuthBridgeMessage(
-                AuthBridgeProtocol.VERSION,
-                AuthBridgeMessageType.STATE,
-                player.getUniqueId(),
-                snapshot.sessionId(),
-                challenge,
-                snapshot.sequence(),
-                issuedAt,
-                expiresAt,
-                snapshot.state()
-        );
+        AuthSessionRegistry.Binding binding = snapshot.binding();
+        String expectedBackendId = sourceBindings.get(sourceServer);
+        if (!sourceServer.equals(binding.sourceServer())
+                || !java.util.Objects.equals(expectedBackendId, binding.backendId())
+                || binding.connection() != connection) {
+            return;
+        }
 
         try {
-            byte[] payload = AuthBridgeProtocol.encode(response, secret);
+            long issuedAt = clock.millis();
+            AuthFrame response = new AuthFrame(
+                    ProtocolConstants.CURRENT_MAJOR,
+                    ProtocolConstants.CURRENT_MINOR,
+                    AuthMessageType.AUTH_STATE,
+                    UUID.randomUUID(),
+                    player.getUniqueId(),
+                    binding.sessionId(),
+                    snapshot.sequence(),
+                    issuedAt,
+                    saturatedAdd(issuedAt, messageTtlMillis),
+                    randomBytes(ProtocolConstants.NONCE_BYTES),
+                    binding.challenge(),
+                    binding.backendId(),
+                    snapshot.state(),
+                    reason(snapshot.state()),
+                    new byte[0]
+            );
+
+            byte[] payload = codec.encode(authenticator.sign(response));
             boolean sent = connection.sendPluginMessage(channel, payload);
             if (!sent) {
-                warnThrottled("Auth bridge state could not be sent to '" + serverName + "'");
+                warnThrottled("Auth bridge state could not be sent to '" + sourceServer + "'");
                 return;
             }
             if (logTransitions) {
@@ -249,37 +292,45 @@ final class AuthBridgeRuntime implements AutoCloseable {
                                 + " -> "
                                 + snapshot.state()
                                 + " on "
-                                + serverName
+                                + sourceServer
                 );
             }
-        } catch (AuthBridgeProtocolException exception) {
-            warnThrottled("Auth bridge state encoding failed: " + safeMessage(exception));
+        } catch (Throwable throwable) {
+            warnThrottled(
+                    "Auth bridge state publication failed for '" + sourceServer + "': "
+                            + safeMessage(throwable)
+            );
         }
     }
 
-    private void validateQuery(ServerConnection connection, AuthBridgeMessage query)
-            throws AuthBridgeProtocolException {
-        if (query.type() != AuthBridgeMessageType.QUERY) {
-            throw new AuthBridgeProtocolException("Only QUERY messages are accepted from backends");
+    private void validateChallengeSource(
+            ServerConnection connection,
+            String sourceServer,
+            String expectedBackendId,
+            AuthFrame challenge
+    ) {
+        if (challenge.messageType() != AuthMessageType.CHALLENGE) {
+            throw new AuthProtocolException("Only CHALLENGE frames are accepted from backends");
         }
-        if (query.state() != AuthBridgeState.LOCKED) {
-            throw new AuthBridgeProtocolException("QUERY state must be LOCKED");
+        if (challenge.authState() != AuthState.PENDING) {
+            throw new AuthProtocolException("CHALLENGE state must be PENDING");
         }
-        if (query.backendChallenge().isBlank()) {
-            throw new AuthBridgeProtocolException("Backend challenge must not be empty");
+        if (challenge.sequence() != 0L) {
+            throw new AuthProtocolException("CHALLENGE sequence must be 0");
         }
-        if (query.backendChallenge().getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 16) {
-            throw new AuthBridgeProtocolException("Backend challenge must contain at least 16 bytes");
+        if (!challenge.reason().isEmpty()) {
+            throw new AuthProtocolException("CHALLENGE reason must be empty");
+        }
+        if (!expectedBackendId.equals(challenge.backendId())) {
+            throw new AuthProtocolException("Backend ID is not bound to source server '" + sourceServer + "'");
         }
 
         Player player = connection.getPlayer();
-        if (!query.playerId().equals(player.getUniqueId())) {
-            throw new AuthBridgeProtocolException("Player UUID does not match the server connection");
+        if (!challenge.playerId().equals(player.getUniqueId())) {
+            throw new AuthProtocolException("Player UUID does not match the server connection");
         }
-        AuthSessionRegistry.Snapshot current = sessions.ensure(player);
-        if (!AuthBridgeProtocol.ZERO_SESSION.equals(query.sessionId())
-                && !current.sessionId().equals(query.sessionId())) {
-            throw new AuthBridgeProtocolException("Session does not match the current proxy connection");
+        if (player.getCurrentServer().orElse(null) != connection) {
+            throw new AuthProtocolException("Challenge source is not the player's current backend connection");
         }
     }
 
@@ -298,9 +349,41 @@ final class AuthBridgeRuntime implements AutoCloseable {
         } catch (Throwable throwable) {
             warnThrottled("Auth bridge channel unregister failed: " + safeMessage(throwable));
         }
-        sessions.clear();
-        replayGuard.clear();
-        java.util.Arrays.fill(secret, (byte) 0);
+        for (AuthSessionRegistry.Binding binding : sessions.clear()) {
+            forget(binding);
+        }
+        replayWindow.clear();
+        authenticator.close();
+    }
+
+    private void forgetIfReplaced(
+            AuthSessionRegistry.Binding previous,
+            AuthSessionRegistry.Binding current
+    ) {
+        if (previous == null) {
+            return;
+        }
+        if (current == null
+                || !previous.sessionId().equals(current.sessionId())
+                || !previous.backendId().equals(current.backendId())) {
+            forget(previous);
+        }
+    }
+
+    private void forget(AuthSessionRegistry.Binding binding) {
+        if (binding == null) {
+            return;
+        }
+        AuthFrameVerifier verifier = verifiers.get(binding.backendId());
+        if (verifier != null) {
+            verifier.forgetSession(binding.playerId(), binding.sessionId());
+        }
+    }
+
+    private byte[] randomBytes(int length) {
+        byte[] value = new byte[length];
+        secureRandom.nextBytes(value);
+        return value;
     }
 
     private void warnThrottled(String message) {
@@ -310,6 +393,22 @@ final class AuthBridgeRuntime implements AutoCloseable {
             return;
         }
         Message.warn(message);
+    }
+
+    private static Map<String, AuthFrameVerifier> createVerifiers(
+            Map<String, String> sourceBindings,
+            AuthSecurityPolicy policy,
+            HmacSha256Authenticator authenticator,
+            ReplayWindow replayWindow
+    ) {
+        Map<String, AuthFrameVerifier> created = new HashMap<>();
+        for (String backendId : sourceBindings.values()) {
+            created.put(
+                    backendId,
+                    new AuthFrameVerifier(backendId, policy, authenticator, replayWindow)
+            );
+        }
+        return Map.copyOf(created);
     }
 
     private static Set<String> normalizeAllowlist(List<String> configured) {
@@ -327,15 +426,37 @@ final class AuthBridgeRuntime implements AutoCloseable {
         return Set.copyOf(normalized);
     }
 
-    private static String normalizeServerName(String value) {
-        return value.trim().toLowerCase(Locale.ROOT);
+    private static Map<String, String> normalizeSourceBindings(
+            Map<String, String> configured,
+            Set<String> allowedServers
+    ) {
+        Map<String, String> normalized = new HashMap<>();
+        Set<String> backendIds = new HashSet<>();
+        if (configured != null) {
+            configured.forEach((server, backendId) -> {
+                if (server == null || server.isBlank() || backendId == null || backendId.isBlank()) {
+                    throw new IllegalStateException("Auth bridge source_bindings contains a blank key or value");
+                }
+                String source = normalizeServerName(server);
+                String identity = backendId.trim();
+                if (normalized.putIfAbsent(source, identity) != null) {
+                    throw new IllegalStateException("Duplicate source binding for server '" + source + "'");
+                }
+                if (!backendIds.add(identity)) {
+                    throw new IllegalStateException("Backend ID '" + identity + "' is bound more than once");
+                }
+            });
+        }
+        if (!normalized.keySet().equals(allowedServers)) {
+            throw new IllegalStateException(
+                    "Auth bridge source_bindings keys must exactly match allow_from server names"
+            );
+        }
+        return Map.copyOf(normalized);
     }
 
-    private static long requirePositive(long value, String name) {
-        if (value <= 0L) {
-            throw new IllegalArgumentException(name + " must be positive");
-        }
-        return value;
+    private static String normalizeServerName(String value) {
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static long requireNonNegative(long value, String name) {
@@ -350,6 +471,15 @@ final class AuthBridgeRuntime implements AutoCloseable {
             return Long.MAX_VALUE;
         }
         return value + addend;
+    }
+
+    private static String reason(AuthState state) {
+        return switch (state) {
+            case PENDING -> "pending";
+            case AWAITING_SECOND_FACTOR -> "awaiting_second_factor";
+            case AUTHORIZED -> "authenticated";
+            case REVOKED -> "revoked";
+        };
     }
 
     private static String safeMessage(Throwable throwable) {

@@ -3,7 +3,7 @@ package ua.co.tensa.modules.authbridge;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.junit.jupiter.api.Test;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import ua.co.tensa.authbridge.protocol.AuthState;
 import xyz.kyngs.librelogin.api.LibreLoginPlugin;
 import xyz.kyngs.librelogin.api.authorization.AuthorizationProvider;
 import xyz.kyngs.librelogin.api.event.Event;
@@ -34,13 +34,13 @@ class LibreLoginAuthSourceTest {
         AtomicInteger callbacks = new AtomicInteger();
 
         source.subscribeAuthenticated(ignored -> callbacks.incrementAndGet());
-        assertThat(source.currentState(player)).isEqualTo(AuthBridgeState.LOCKED);
+        assertThat(source.currentState(player)).isEqualTo(AuthState.PENDING);
 
         authorized.set(true);
-        assertThat(source.currentState(player)).isEqualTo(AuthBridgeState.AUTHORIZED);
+        assertThat(source.currentState(player)).isEqualTo(AuthState.AUTHORIZED);
 
         awaitingTwoFactor.set(true);
-        assertThat(source.currentState(player)).isEqualTo(AuthBridgeState.LOCKED);
+        assertThat(source.currentState(player)).isEqualTo(AuthState.AWAITING_SECOND_FACTOR);
 
         events.fireAuthenticated(player);
         assertThat(callbacks).hasValue(1);

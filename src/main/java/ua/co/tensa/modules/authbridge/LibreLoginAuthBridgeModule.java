@@ -4,9 +4,13 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.authbridge.data.AuthBridgeConfig;
+import ua.co.tensa.authbridge.protocol.security.AuthSecurityPolicy;
 
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public final class LibreLoginAuthBridgeModule {
@@ -60,10 +64,15 @@ public final class LibreLoginAuthBridgeModule {
                     source,
                     scheduler,
                     config.allowFrom,
+                    sourceBindings(config.sourceBindings),
                     secret,
                     Clock.systemUTC(),
-                    Duration.ofSeconds(config.messageTtlSeconds),
-                    Duration.ofSeconds(config.clockSkewSeconds),
+                    new SecureRandom(),
+                    new AuthSecurityPolicy(
+                            Duration.ofSeconds(config.maximumClockSkewSeconds),
+                            Duration.ofSeconds(config.maximumFrameTtlSeconds),
+                            config.replayCapacity
+                    ),
                     config.postLoginSyncDelayMillis,
                     config.logTransitions
             );
@@ -92,14 +101,32 @@ public final class LibreLoginAuthBridgeModule {
     }
 
     private static void validateConfig(AuthBridgeConfig config) {
-        if (config.messageTtlSeconds <= 0 || config.messageTtlSeconds > 300) {
-            throw new IllegalStateException("message_ttl_seconds must be between 1 and 300");
+        if (config.maximumFrameTtlSeconds <= 0 || config.maximumFrameTtlSeconds > 120) {
+            throw new IllegalStateException("maximum_frame_ttl_seconds must be between 1 and 120");
         }
-        if (config.clockSkewSeconds < 0 || config.clockSkewSeconds > 60) {
-            throw new IllegalStateException("clock_skew_seconds must be between 0 and 60");
+        if (config.maximumClockSkewSeconds <= 0 || config.maximumClockSkewSeconds > 60) {
+            throw new IllegalStateException("maximum_clock_skew_seconds must be between 1 and 60");
+        }
+        if (config.replayCapacity < 128 || config.replayCapacity > 1_000_000) {
+            throw new IllegalStateException("replay_capacity must be between 128 and 1000000");
         }
         if (config.postLoginSyncDelayMillis < 0 || config.postLoginSyncDelayMillis > 5_000) {
             throw new IllegalStateException("post_login_sync_delay_millis must be between 0 and 5000");
         }
+    }
+
+    private static Map<String, String> sourceBindings(Map<String, Object> configured) {
+        Map<String, String> bindings = new LinkedHashMap<>();
+        if (configured != null) {
+            configured.forEach((server, backendId) -> {
+                if (!(backendId instanceof String value)) {
+                    throw new IllegalStateException(
+                            "source_bindings." + server + " must be a backend ID string"
+                    );
+                }
+                bindings.put(server, value);
+            });
+        }
+        return Map.copyOf(bindings);
     }
 }

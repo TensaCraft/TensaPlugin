@@ -1,8 +1,10 @@
 package ua.co.tensa.modules.authbridge;
 
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ServerConnection;
 import org.junit.jupiter.api.Test;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import ua.co.tensa.authbridge.protocol.AuthState;
+import ua.co.tensa.authbridge.protocol.ProtocolConstants;
 
 import java.util.UUID;
 
@@ -12,51 +14,80 @@ import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.proxy;
 
 class AuthSessionRegistryTest {
     @Test
-    void sessionsStartLockedAndUseIncreasingSequences() {
-        UUID playerId = UUID.randomUUID();
-        Player player = player("Steve", playerId);
+    void playerStartsPendingAndBackendChallengeOwnsSessionAndSequence() {
+        Player player = player("Steve", UUID.randomUUID());
+        ServerConnection connection = connection(player);
+        UUID sessionId = UUID.randomUUID();
+        byte[] challenge = bytes(ProtocolConstants.CHALLENGE_BYTES, 10);
         AuthSessionRegistry registry = new AuthSessionRegistry();
 
-        AuthSessionRegistry.Snapshot initial = registry.begin(player);
-        AuthSessionRegistry.Snapshot updated = registry.update(player, AuthBridgeState.AUTHORIZED);
-        AuthSessionRegistry.Snapshot firstMessage = registry.next(player);
-        AuthSessionRegistry.Snapshot secondMessage = registry.next(player);
+        assertThat(registry.begin(player)).isNull();
+        assertThat(registry.ensure(player).state()).isEqualTo(AuthState.PENDING);
+        assertThat(registry.update(player, AuthState.AWAITING_SECOND_FACTOR).state())
+                .isEqualTo(AuthState.AWAITING_SECOND_FACTOR);
 
-        assertThat(initial.state()).isEqualTo(AuthBridgeState.LOCKED);
-        assertThat(updated.sessionId()).isEqualTo(initial.sessionId());
-        assertThat(firstMessage.state()).isEqualTo(AuthBridgeState.AUTHORIZED);
-        assertThat(firstMessage.sequence()).isEqualTo(1L);
-        assertThat(secondMessage.sequence()).isEqualTo(2L);
+        AuthSessionRegistry.BindResult bound = registry.bind(
+                player,
+                connection,
+                "aero",
+                "aero-backend",
+                sessionId,
+                challenge
+        );
+        AuthSessionRegistry.Snapshot first = registry.next(player, connection);
+        AuthSessionRegistry.Snapshot second = registry.next(player, connection);
+
+        assertThat(bound.previousBinding()).isNull();
+        assertThat(bound.snapshot().binding().sessionId()).isEqualTo(sessionId);
+        assertThat(bound.snapshot().binding().challenge()).isEqualTo(challenge);
+        assertThat(first.sequence()).isEqualTo(1L);
+        assertThat(second.sequence()).isEqualTo(2L);
     }
 
     @Test
-    void staleDisconnectCannotRemoveAReplacementConnection() {
+    void replacementConnectionReturnsOldBindingAndRejectsStaleCallbacks() {
         UUID playerId = UUID.randomUUID();
-        Player oldConnection = player("Steve", playerId);
-        Player newConnection = player("Steve", playerId);
+        Player oldPlayer = player("Steve", playerId);
+        Player newPlayer = player("Steve", playerId);
+        ServerConnection oldConnection = connection(oldPlayer);
         AuthSessionRegistry registry = new AuthSessionRegistry();
 
-        registry.begin(oldConnection);
-        AuthSessionRegistry.Snapshot replacement = registry.begin(newConnection);
-        registry.remove(oldConnection);
+        registry.begin(oldPlayer);
+        registry.bind(
+                oldPlayer,
+                oldConnection,
+                "aero",
+                "aero-backend",
+                UUID.randomUUID(),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 20)
+        );
+        AuthSessionRegistry.Binding previous = registry.begin(newPlayer);
 
-        assertThat(registry.ensure(newConnection).sessionId()).isEqualTo(replacement.sessionId());
+        assertThat(previous).isNotNull();
+        assertThat(registry.update(oldPlayer, AuthState.AUTHORIZED)).isNull();
+        assertThat(registry.remove(oldPlayer)).isNull();
+        assertThat(registry.ensure(newPlayer).state()).isEqualTo(AuthState.PENDING);
+        assertThat(registry.ensure(newPlayer).binding()).isNull();
     }
 
     @Test
-    void staleCallbacksCannotReplaceTheCurrentConnectionSession() {
-        UUID playerId = UUID.randomUUID();
-        Player oldConnection = player("Steve", playerId);
-        Player newConnection = player("Steve", playerId);
+    void staleBackendConnectionCannotAdvanceCurrentSequence() {
+        Player player = player("Steve", UUID.randomUUID());
+        ServerConnection oldConnection = connection(player);
+        ServerConnection currentConnection = connection(player);
         AuthSessionRegistry registry = new AuthSessionRegistry();
+        registry.begin(player);
+        registry.bind(
+                player,
+                currentConnection,
+                "aero",
+                "aero-backend",
+                UUID.randomUUID(),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 30)
+        );
 
-        registry.begin(oldConnection);
-        AuthSessionRegistry.Snapshot replacement = registry.begin(newConnection);
-
-        assertThat(registry.update(oldConnection, AuthBridgeState.AUTHORIZED)).isNull();
-        assertThat(registry.next(oldConnection)).isNull();
-        assertThat(registry.ensure(newConnection).sessionId()).isEqualTo(replacement.sessionId());
-        assertThat(registry.ensure(newConnection).state()).isEqualTo(AuthBridgeState.LOCKED);
+        assertThat(registry.next(player, oldConnection)).isNull();
+        assertThat(registry.next(player, currentConnection).sequence()).isEqualTo(1L);
     }
 
     private Player player(String username, UUID uuid) {
@@ -65,5 +96,20 @@ class AuthSessionRegistryTest {
             case "getUniqueId" -> uuid;
             default -> defaultValue(method.getReturnType());
         });
+    }
+
+    private ServerConnection connection(Player player) {
+        return proxy(ServerConnection.class, (method, args) -> switch (method.getName()) {
+            case "getPlayer" -> player;
+            default -> defaultValue(method.getReturnType());
+        });
+    }
+
+    private byte[] bytes(int length, int seed) {
+        byte[] value = new byte[length];
+        for (int index = 0; index < length; index++) {
+            value[index] = (byte) (seed + index);
+        }
+        return value;
     }
 }

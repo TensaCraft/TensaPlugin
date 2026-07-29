@@ -5,7 +5,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import ua.co.tensa.Message;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import ua.co.tensa.authbridge.protocol.AuthState;
 import xyz.kyngs.librelogin.api.LibreLoginPlugin;
 import xyz.kyngs.librelogin.api.event.Event;
 import xyz.kyngs.librelogin.api.event.events.AuthenticatedEvent;
@@ -43,11 +43,14 @@ final class LibreLoginAuthSource implements AuthenticationStateSource {
     }
 
     @Override
-    public AuthBridgeState currentState(Player player) {
+    public AuthState currentState(Player player) {
         var authorization = libreLogin.getAuthorizationProvider();
-        return authorization.isAuthorized(player) && !authorization.isAwaiting2FA(player)
-                ? AuthBridgeState.AUTHORIZED
-                : AuthBridgeState.LOCKED;
+        if (authorization.isAwaiting2FA(player)) {
+            return AuthState.AWAITING_SECOND_FACTOR;
+        }
+        return authorization.isAuthorized(player)
+                ? AuthState.AUTHORIZED
+                : AuthState.PENDING;
     }
 
     @Override

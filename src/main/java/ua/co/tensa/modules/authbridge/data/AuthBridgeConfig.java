@@ -4,14 +4,16 @@ import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class AuthBridgeConfig extends ConfigBase {
     private static AuthBridgeConfig instance;
 
     @CfgKey(
             value = "secret_file",
-            comment = "Relative file containing a dedicated bridge secret (plain text or base64:<value>)"
+            comment = "Relative file containing the dedicated Base64 bridge secret"
     )
     public String secretFile = "auth-bridge/secret.key";
 
@@ -21,11 +23,20 @@ public final class AuthBridgeConfig extends ConfigBase {
     )
     public List<String> allowFrom = new ArrayList<>();
 
-    @CfgKey(value = "message_ttl_seconds", comment = "Lifetime of signed bridge messages")
-    public int messageTtlSeconds = 10;
+    @CfgKey(
+            value = "source_bindings",
+            comment = "Exact Velocity server name to signed backend ID mapping; keys must match allow_from"
+    )
+    public Map<String, Object> sourceBindings = new LinkedHashMap<>();
 
-    @CfgKey(value = "clock_skew_seconds", comment = "Accepted clock skew for signed bridge messages")
-    public int clockSkewSeconds = 2;
+    @CfgKey(value = "maximum_frame_ttl_seconds", comment = "Maximum lifetime of signed bridge frames")
+    public int maximumFrameTtlSeconds = 15;
+
+    @CfgKey(value = "maximum_clock_skew_seconds", comment = "Accepted clock skew for signed bridge frames")
+    public int maximumClockSkewSeconds = 5;
+
+    @CfgKey(value = "replay_capacity", comment = "Maximum live message, nonce and session replay entries")
+    public int replayCapacity = 16_384;
 
     @CfgKey(
             value = "post_login_sync_delay_millis",

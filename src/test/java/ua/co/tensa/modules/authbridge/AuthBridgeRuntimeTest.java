@@ -4,26 +4,29 @@ import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
-import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.junit.jupiter.api.Test;
-import ua.co.tensa.authbridge.protocol.AuthBridgeMessage;
-import ua.co.tensa.authbridge.protocol.AuthBridgeMessageType;
-import ua.co.tensa.authbridge.protocol.AuthBridgeProtocol;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import ua.co.tensa.authbridge.protocol.AuthFrame;
+import ua.co.tensa.authbridge.protocol.AuthMessageType;
+import ua.co.tensa.authbridge.protocol.AuthProtocolCodec;
+import ua.co.tensa.authbridge.protocol.AuthState;
+import ua.co.tensa.authbridge.protocol.ProtocolConstants;
+import ua.co.tensa.authbridge.protocol.security.AuthSecurityPolicy;
+import ua.co.tensa.authbridge.protocol.security.HmacSha256Authenticator;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
@@ -36,189 +39,231 @@ import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.defaultValue;
 import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.proxy;
 
 class AuthBridgeRuntimeTest {
-    private static final Instant NOW = Instant.parse("2026-07-29T12:00:00Z");
+    private static final Instant NOW = Instant.parse("2027-01-15T08:00:00Z");
+    private static final String SOURCE_SERVER = "aero";
+    private static final String BACKEND_ID = "aero-backend";
     private static final byte[] SECRET =
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8);
 
+    private final AuthProtocolCodec codec = new AuthProtocolCodec();
+
     @Test
-    void startsLockedPublishesAsyncAuthAndResendsOnBackendQuery() throws Exception {
-        UUID playerId = UUID.randomUUID();
-        List<byte[]> payloads = new ArrayList<>();
-        AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
-        Player player = player(playerId, connectionRef);
-        ServerConnection connection = connection("aero", player, payloads);
-        connectionRef.set(connection);
-        RecordingChannelRegistrar channels = new RecordingChannelRegistrar();
-        ProxyServer proxyServer = proxyServer(player, channels.proxy());
-        FakeAuthenticationSource source = new FakeAuthenticationSource();
-        RecordingScheduler scheduler = new RecordingScheduler();
-        AuthBridgeRuntime runtime = runtime(proxyServer, source, scheduler);
+    void acceptsBackendChallengeAndReturnsCanonicalBoundAuthState() {
+        Harness harness = harness(SOURCE_SERVER);
+        harness.source.state = AuthState.AUTHORIZED;
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        assertThat(harness.payloads).isEmpty();
 
-        runtime.start();
-        scheduler.runAll();
-
-        AuthBridgeMessage initial = decode(payloads.getLast());
-        assertThat(initial.state()).isEqualTo(AuthBridgeState.LOCKED);
-        assertThat(initial.backendChallenge()).isEmpty();
-
-        source.state = AuthBridgeState.AUTHORIZED;
-        source.fireAuthenticated(player);
-        assertThat(payloads).hasSize(1);
-        scheduler.runAll();
-
-        AuthBridgeMessage authorized = decode(payloads.getLast());
-        assertThat(authorized.state()).isEqualTo(AuthBridgeState.AUTHORIZED);
-        assertThat(authorized.sessionId()).isEqualTo(initial.sessionId());
-
-        AuthBridgeMessage query = new AuthBridgeMessage(
-                AuthBridgeProtocol.VERSION,
-                AuthBridgeMessageType.QUERY,
-                playerId,
-                authorized.sessionId(),
-                "backend-challenge-01",
-                1L,
-                NOW.toEpochMilli(),
-                NOW.plusSeconds(10).toEpochMilli(),
-                AuthBridgeState.LOCKED
+        AuthFrame challenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 10),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 40)
         );
-        byte[] queryPayload = AuthBridgeProtocol.encode(query, SECRET);
-        PluginMessageEvent event = new PluginMessageEvent(
-                connection,
-                player,
-                MinecraftChannelIdentifier.from(AuthBridgeProtocol.CHANNEL),
-                queryPayload
-        );
+        byte[] payload = signAndEncode(challenge);
+        PluginMessageEvent event = pluginMessage(harness.connection, harness.player, payload);
 
-        runtime.onPluginMessage(event);
+        harness.runtime.onPluginMessage(event);
 
         assertThat(event.getResult().isAllowed()).isFalse();
-        AuthBridgeMessage response = decode(payloads.getLast());
-        assertThat(response.type()).isEqualTo(AuthBridgeMessageType.STATE);
-        assertThat(response.backendChallenge()).isEqualTo("backend-challenge-01");
-        assertThat(response.state()).isEqualTo(AuthBridgeState.AUTHORIZED);
+        assertThat(harness.payloads).hasSize(1);
+        AuthFrame response = codec.decode(harness.payloads.getLast());
+        assertThat(response.messageType()).isEqualTo(AuthMessageType.AUTH_STATE);
+        assertThat(response.authState()).isEqualTo(AuthState.AUTHORIZED);
+        assertThat(response.playerId()).isEqualTo(challenge.playerId());
+        assertThat(response.sessionId()).isEqualTo(challenge.sessionId());
+        assertThat(response.challenge()).isEqualTo(challenge.challenge());
+        assertThat(response.backendId()).isEqualTo(challenge.backendId());
+        assertThat(response.sequence()).isEqualTo(1L);
+        assertThat(response.nonce()).hasSize(ProtocolConstants.NONCE_BYTES);
+        try (var authenticator = new HmacSha256Authenticator(SECRET, codec)) {
+            assertThat(authenticator.verify(response)).isTrue();
+        }
 
-        int afterFirstQuery = payloads.size();
-        runtime.onPluginMessage(new PluginMessageEvent(
-                connection,
-                player,
-                MinecraftChannelIdentifier.from(AuthBridgeProtocol.CHANNEL),
-                queryPayload
+        harness.runtime.onPluginMessage(pluginMessage(harness.connection, harness.player, payload));
+        assertThat(harness.payloads).hasSize(1);
+        harness.runtime.close();
+    }
+
+    @Test
+    void authenticatedEventPublishesAsyncAndServerPostConnectResendsBoundState() {
+        Harness harness = harness(SOURCE_SERVER);
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        AuthFrame challenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 20),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 50)
+        );
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge)
         ));
-        assertThat(payloads).hasSize(afterFirstQuery);
+        assertThat(codec.decode(harness.payloads.getLast()).authState()).isEqualTo(AuthState.PENDING);
 
-        runtime.close();
-        assertThat(source.closed).isTrue();
-        assertThat(channels.unregisterCount).hasValue(1);
+        harness.source.state = AuthState.AUTHORIZED;
+        harness.source.fireAuthenticated(harness.player);
+        assertThat(harness.payloads).hasSize(1);
+        harness.scheduler.runAll();
+        AuthFrame authenticated = codec.decode(harness.payloads.getLast());
+        assertThat(authenticated.authState()).isEqualTo(AuthState.AUTHORIZED);
+        assertThat(authenticated.sequence()).isEqualTo(2L);
+
+        harness.runtime.resendToCurrentServer(harness.player);
+        AuthFrame resent = codec.decode(harness.payloads.getLast());
+        assertThat(resent.sequence()).isEqualTo(3L);
+        assertThat(resent.sessionId()).isEqualTo(challenge.sessionId());
+        assertThat(resent.challenge()).isEqualTo(challenge.challenge());
+        harness.runtime.close();
     }
 
     @Test
-    void postLoginSyncIsDelayedAndDisconnectDoesNotReuseOldSession() throws Exception {
-        UUID playerId = UUID.randomUUID();
-        List<byte[]> payloads = new ArrayList<>();
-        AtomicReference<ServerConnection> oldConnectionRef = new AtomicReference<>();
-        Player oldPlayer = player(playerId, oldConnectionRef);
-        ServerConnection oldConnection = connection("aero", oldPlayer, payloads);
-        oldConnectionRef.set(oldConnection);
-        RecordingScheduler scheduler = new RecordingScheduler();
-        FakeAuthenticationSource source = new FakeAuthenticationSource();
-        AuthBridgeRuntime runtime = runtime(
-                proxyServer(oldPlayer, new RecordingChannelRegistrar().proxy()),
-                source,
-                scheduler
+    void rejectsSpoofedBackendIdentityAndStaleTransportSourceButAlwaysHandlesChannel() {
+        Harness harness = harness(SOURCE_SERVER);
+        harness.runtime.start();
+        harness.scheduler.runAll();
+
+        AuthFrame spoofed = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "other-backend",
+                bytes(ProtocolConstants.NONCE_BYTES, 30),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 60)
         );
-        runtime.start();
-        scheduler.runAll();
-        UUID oldSession = decode(payloads.getLast()).sessionId();
+        PluginMessageEvent spoofedEvent = pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(spoofed)
+        );
+        harness.runtime.onPluginMessage(spoofedEvent);
 
-        runtime.synchronizeAfterLogin(oldPlayer);
-        assertThat(scheduler.queued()).isEqualTo(1);
-        scheduler.runAll();
+        AtomicReference<ServerConnection> staleCurrent = new AtomicReference<>();
+        Player stalePlayer = player(harness.playerId, staleCurrent);
+        ServerConnection staleConnection = connection(SOURCE_SERVER, stalePlayer, harness.payloads);
+        staleCurrent.set(connection("other", stalePlayer, harness.payloads));
+        AuthFrame stale = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 40),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 70)
+        );
+        PluginMessageEvent staleEvent = pluginMessage(staleConnection, stalePlayer, signAndEncode(stale));
+        harness.runtime.onPluginMessage(staleEvent);
 
-        AtomicReference<ServerConnection> newConnectionRef = new AtomicReference<>();
-        Player newPlayer = player(playerId, newConnectionRef);
-        ServerConnection newConnection = connection("aero", newPlayer, payloads);
-        newConnectionRef.set(newConnection);
-        runtime.beginSession(newPlayer);
-        runtime.cleanupSession(oldPlayer);
-        runtime.resendToCurrentServer(newPlayer);
-
-        assertThat(decode(payloads.getLast()).sessionId()).isNotEqualTo(oldSession);
-        runtime.close();
+        assertThat(spoofedEvent.getResult().isAllowed()).isFalse();
+        assertThat(staleEvent.getResult().isAllowed()).isFalse();
+        assertThat(harness.payloads).isEmpty();
+        harness.runtime.close();
     }
 
     @Test
-    void serverPostConnectResendsLockedStateWithoutEarlyLibreLoginReconcile() throws Exception {
-        UUID playerId = UUID.randomUUID();
-        List<byte[]> payloads = new ArrayList<>();
-        AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
-        Player player = player(playerId, connectionRef);
-        connectionRef.set(connection("aero", player, payloads));
-        FakeAuthenticationSource source = new FakeAuthenticationSource();
-        source.state = AuthBridgeState.AUTHORIZED;
-        RecordingScheduler scheduler = new RecordingScheduler();
-        AuthBridgeRuntime runtime = runtime(
-                proxyServer(player, new RecordingChannelRegistrar().proxy()),
-                source,
-                scheduler
-        );
-
-        runtime.beginSession(player);
-        runtime.resendToCurrentServer(player);
-
-        assertThat(decode(payloads.getLast()).state()).isEqualTo(AuthBridgeState.LOCKED);
-        runtime.close();
-    }
-
-    @Test
-    void handlesChannelImmediatelyAndDoesNotPublishToDisallowedBackend() {
-        UUID playerId = UUID.randomUUID();
-        List<byte[]> payloads = new ArrayList<>();
-        AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
-        Player player = player(playerId, connectionRef);
-        ServerConnection connection = connection("other", player, payloads);
-        connectionRef.set(connection);
-        AuthBridgeRuntime runtime = runtime(
-                proxyServer(player, new RecordingChannelRegistrar().proxy()),
-                new FakeAuthenticationSource(),
-                new RecordingScheduler()
-        );
-
-        runtime.beginSession(player);
-        runtime.resendToCurrentServer(player);
-        PluginMessageEvent event = new PluginMessageEvent(
-                connection,
-                player,
-                MinecraftChannelIdentifier.from(AuthBridgeProtocol.CHANNEL),
+    void disallowedBackendCannotQueryOrReceiveStateAndCloseCleansUp() {
+        Harness harness = harness("other");
+        harness.runtime.beginSession(harness.player);
+        harness.runtime.resendToCurrentServer(harness.player);
+        PluginMessageEvent event = pluginMessage(
+                harness.connection,
+                harness.player,
                 new byte[]{1, 2, 3}
         );
-        runtime.onPluginMessage(event);
+        harness.runtime.onPluginMessage(event);
+        harness.runtime.close();
 
         assertThat(event.getResult().isAllowed()).isFalse();
-        assertThat(payloads).isEmpty();
-        runtime.close();
+        assertThat(harness.payloads).isEmpty();
+        assertThat(harness.source.closed).isTrue();
+        assertThat(harness.channels.unregisterCount).hasValue(1);
     }
 
-    private AuthBridgeRuntime runtime(
-            ProxyServer server,
-            FakeAuthenticationSource source,
-            RecordingScheduler scheduler
-    ) {
-        return new AuthBridgeRuntime(
-                server,
+    private Harness harness(String connectionServer) {
+        UUID playerId = UUID.randomUUID();
+        List<byte[]> payloads = new ArrayList<>();
+        AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
+        Player player = player(playerId, connectionRef);
+        ServerConnection connection = connection(connectionServer, player, payloads);
+        connectionRef.set(connection);
+        RecordingChannelRegistrar channels = new RecordingChannelRegistrar();
+        FakeAuthenticationSource source = new FakeAuthenticationSource();
+        RecordingScheduler scheduler = new RecordingScheduler();
+        AuthBridgeRuntime runtime = new AuthBridgeRuntime(
+                proxyServer(player, channels.proxy()),
                 source,
                 scheduler,
-                List.of("aero"),
+                List.of(SOURCE_SERVER),
+                Map.of(SOURCE_SERVER, BACKEND_ID),
                 SECRET,
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                Duration.ofSeconds(10),
-                Duration.ofSeconds(2),
+                new SecureRandom(),
+                new AuthSecurityPolicy(Duration.ofSeconds(5), Duration.ofSeconds(15), 128),
                 50L,
                 false
         );
+        return new Harness(
+                playerId,
+                player,
+                connection,
+                payloads,
+                channels,
+                source,
+                scheduler,
+                runtime
+        );
     }
 
-    private AuthBridgeMessage decode(byte[] payload) throws Exception {
-        return AuthBridgeProtocol.decodeAndVerify(payload, SECRET);
+    private AuthFrame challenge(
+            UUID playerId,
+            UUID messageId,
+            UUID sessionId,
+            String backendId,
+            byte[] nonce,
+            byte[] challenge
+    ) {
+        return new AuthFrame(
+                ProtocolConstants.CURRENT_MAJOR,
+                ProtocolConstants.CURRENT_MINOR,
+                AuthMessageType.CHALLENGE,
+                messageId,
+                playerId,
+                sessionId,
+                0L,
+                NOW.toEpochMilli(),
+                NOW.plusSeconds(15).toEpochMilli(),
+                nonce,
+                challenge,
+                backendId,
+                AuthState.PENDING,
+                "",
+                new byte[0]
+        );
+    }
+
+    private byte[] signAndEncode(AuthFrame frame) {
+        try (var authenticator = new HmacSha256Authenticator(SECRET, codec)) {
+            return codec.encode(authenticator.sign(frame));
+        }
+    }
+
+    private PluginMessageEvent pluginMessage(
+            ServerConnection connection,
+            Player player,
+            byte[] payload
+    ) {
+        return new PluginMessageEvent(
+                connection,
+                player,
+                MinecraftChannelIdentifier.from(ProtocolConstants.CHANNEL),
+                payload
+        );
     }
 
     private ProxyServer proxyServer(Player player, ChannelRegistrar registrar) {
@@ -253,13 +298,33 @@ class AuthBridgeRuntimeTest {
         });
     }
 
+    private byte[] bytes(int length, int seed) {
+        byte[] value = new byte[length];
+        for (int index = 0; index < length; index++) {
+            value[index] = (byte) (seed + index);
+        }
+        return value;
+    }
+
+    private record Harness(
+            UUID playerId,
+            Player player,
+            ServerConnection connection,
+            List<byte[]> payloads,
+            RecordingChannelRegistrar channels,
+            FakeAuthenticationSource source,
+            RecordingScheduler scheduler,
+            AuthBridgeRuntime runtime
+    ) {
+    }
+
     private static final class FakeAuthenticationSource implements AuthenticationStateSource {
-        private AuthBridgeState state = AuthBridgeState.LOCKED;
+        private AuthState state = AuthState.PENDING;
         private Consumer<Player> listener;
         private boolean closed;
 
         @Override
-        public AuthBridgeState currentState(Player player) {
+        public AuthState currentState(Player player) {
             return state;
         }
 
@@ -290,10 +355,6 @@ class AuthBridgeRuntimeTest {
         @Override
         public void delayed(Runnable task, long delayMillis) {
             tasks.add(task);
-        }
-
-        private int queued() {
-            return tasks.size();
         }
 
         private void runAll() {

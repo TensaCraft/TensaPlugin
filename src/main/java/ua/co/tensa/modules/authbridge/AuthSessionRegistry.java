@@ -1,83 +1,175 @@
 package ua.co.tensa.modules.authbridge;
 
 import com.velocitypowered.api.proxy.Player;
-import ua.co.tensa.authbridge.protocol.AuthBridgeState;
+import com.velocitypowered.api.proxy.ServerConnection;
+import ua.co.tensa.authbridge.protocol.AuthState;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 final class AuthSessionRegistry {
     private final ConcurrentHashMap<UUID, Session> sessions = new ConcurrentHashMap<>();
 
-    Snapshot begin(Player player) {
-        Session session = new Session(player, UUID.randomUUID());
-        sessions.put(player.getUniqueId(), session);
-        return session.snapshot();
+    Binding begin(Player player) {
+        Session session = new Session(player);
+        Session previous = sessions.put(player.getUniqueId(), session);
+        return previous == null ? null : previous.binding();
     }
 
     Snapshot ensure(Player player) {
         Session session = sessions.compute(player.getUniqueId(), (ignored, existing) -> {
             if (existing == null || existing.player != player) {
-                return new Session(player, UUID.randomUUID());
+                return new Session(player);
             }
             return existing;
         });
         return session.snapshot();
     }
 
-    Snapshot update(Player player, AuthBridgeState state) {
-        java.util.concurrent.atomic.AtomicReference<Snapshot> updated = new java.util.concurrent.atomic.AtomicReference<>();
+    Snapshot update(Player player, AuthState state) {
+        AtomicReference<Snapshot> updated = new AtomicReference<>();
         sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
             if (existing.player == player) {
-                existing.state = state;
-                updated.set(existing.snapshot());
+                updated.set(existing.update(state));
             }
             return existing;
         });
         return updated.get();
     }
 
-    Snapshot next(Player player) {
-        java.util.concurrent.atomic.AtomicReference<Snapshot> next = new java.util.concurrent.atomic.AtomicReference<>();
+    BindResult bind(
+            Player player,
+            ServerConnection connection,
+            String sourceServer,
+            String backendId,
+            UUID sessionId,
+            byte[] challenge
+    ) {
+        AtomicReference<BindResult> result = new AtomicReference<>();
+        sessions.compute(player.getUniqueId(), (ignored, existing) -> {
+            Session session = existing;
+            if (session == null) {
+                session = new Session(player);
+            } else if (session.player != player) {
+                return session;
+            }
+            result.set(session.bind(connection, sourceServer, backendId, sessionId, challenge));
+            return session;
+        });
+        return result.get();
+    }
+
+    Snapshot next(Player player, ServerConnection connection) {
+        AtomicReference<Snapshot> next = new AtomicReference<>();
         sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
             if (existing.player == player) {
-                next.set(existing.nextSnapshot());
+                next.set(existing.next(connection));
             }
             return existing;
         });
         return next.get();
     }
 
-    void remove(Player player) {
-        sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) ->
-                existing.player == player ? null : existing);
+    Binding remove(Player player) {
+        AtomicReference<Binding> removed = new AtomicReference<>();
+        sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
+            if (existing.player != player) {
+                return existing;
+            }
+            removed.set(existing.binding);
+            return null;
+        });
+        return removed.get();
     }
 
-    void clear() {
+    List<Binding> clear() {
+        List<Binding> bindings = new ArrayList<>();
+        sessions.forEach((ignored, session) -> {
+            if (session.binding != null) {
+                bindings.add(session.binding);
+            }
+        });
         sessions.clear();
+        return List.copyOf(bindings);
     }
 
-    record Snapshot(UUID sessionId, long sequence, AuthBridgeState state) {
+    record Snapshot(AuthState state, Binding binding, long sequence) {
+    }
+
+    record BindResult(Snapshot snapshot, Binding previousBinding) {
+    }
+
+    record Binding(
+            UUID playerId,
+            ServerConnection connection,
+            String sourceServer,
+            String backendId,
+            UUID sessionId,
+            byte[] challenge
+    ) {
+        Binding {
+            challenge = Arrays.copyOf(challenge, challenge.length);
+        }
+
+        @Override
+        public byte[] challenge() {
+            return challenge.clone();
+        }
     }
 
     private static final class Session {
         private final Player player;
-        private final UUID sessionId;
-        private final AtomicLong sequence = new AtomicLong();
-        private volatile AuthBridgeState state = AuthBridgeState.LOCKED;
+        private AuthState state = AuthState.PENDING;
+        private Binding binding;
+        private long sequence;
 
-        private Session(Player player, UUID sessionId) {
+        private Session(Player player) {
             this.player = player;
-            this.sessionId = sessionId;
         }
 
-        private Snapshot snapshot() {
-            return new Snapshot(sessionId, sequence.get(), state);
+        private synchronized Snapshot snapshot() {
+            return new Snapshot(state, binding, sequence);
         }
 
-        private Snapshot nextSnapshot() {
-            return new Snapshot(sessionId, sequence.incrementAndGet(), state);
+        private synchronized Binding binding() {
+            return binding;
+        }
+
+        private synchronized Snapshot update(AuthState state) {
+            this.state = state;
+            return snapshot();
+        }
+
+        private synchronized BindResult bind(
+                ServerConnection connection,
+                String sourceServer,
+                String backendId,
+                UUID sessionId,
+                byte[] challenge
+        ) {
+            Binding previous = binding;
+            binding = new Binding(
+                    player.getUniqueId(),
+                    connection,
+                    sourceServer,
+                    backendId,
+                    sessionId,
+                    challenge
+            );
+            sequence = 0L;
+            return new BindResult(snapshot(), previous);
+        }
+
+        private synchronized Snapshot next(ServerConnection connection) {
+            if (binding == null || binding.connection() != connection) {
+                return null;
+            }
+            sequence++;
+            return snapshot();
         }
     }
 }
