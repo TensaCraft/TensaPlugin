@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 interface AuthenticationStateSource extends AutoCloseable {
     AuthState currentState(Player player);
 
-    void subscribeAuthenticated(Consumer<Player> listener);
+    void subscribeStateChanges(Consumer<Player> listener);
 
     @Override
     void close();

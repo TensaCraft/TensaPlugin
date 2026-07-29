@@ -4,4 +4,6 @@ interface BridgeScheduler {
     void execute(Runnable task);
 
     void delayed(Runnable task, long delayMillis);
+
+    void repeating(Runnable task, long initialDelayMillis, long intervalMillis);
 }

@@ -8,15 +8,19 @@ import ua.co.tensa.Message;
 import ua.co.tensa.authbridge.protocol.AuthState;
 import xyz.kyngs.librelogin.api.LibreLoginPlugin;
 import xyz.kyngs.librelogin.api.event.Event;
-import xyz.kyngs.librelogin.api.event.events.AuthenticatedEvent;
+import xyz.kyngs.librelogin.api.event.EventType;
+import xyz.kyngs.librelogin.api.event.PlayerBasedEvent;
 import xyz.kyngs.librelogin.api.provider.LibreLoginProvider;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
 final class LibreLoginAuthSource implements AuthenticationStateSource {
     private final LibreLoginPlugin<Player, RegisteredServer> libreLogin;
-    private Consumer<AuthenticatedEvent<Player, RegisteredServer>> subscription;
+    private final List<Consumer<? extends Event<Player, RegisteredServer>>> subscriptions =
+            new ArrayList<>();
 
     static LibreLoginAuthSource open(ProxyServer server) {
         PluginContainer container = server.getPluginManager()
@@ -54,10 +58,20 @@ final class LibreLoginAuthSource implements AuthenticationStateSource {
     }
 
     @Override
-    public synchronized void subscribeAuthenticated(Consumer<Player> listener) {
+    public synchronized void subscribeStateChanges(Consumer<Player> listener) {
         Objects.requireNonNull(listener, "listener");
-        unsubscribe();
-        subscription = event -> {
+        unsubscribeAll();
+        var types = libreLogin.getEventTypes();
+        subscribe(types.authenticated, listener);
+        subscribe(types.wrongPassword, listener);
+        subscribe(types.premiumLoginSwitch, listener);
+    }
+
+    private <E extends PlayerBasedEvent<Player, RegisteredServer>> void subscribe(
+            EventType<Player, RegisteredServer, E> type,
+            Consumer<Player> listener
+    ) {
+        Consumer<E> handler = event -> {
             try {
                 Player player = event.getPlayer();
                 if (player != null) {
@@ -67,29 +81,27 @@ final class LibreLoginAuthSource implements AuthenticationStateSource {
                 Message.warn("LibreLogin auth bridge event failed: " + safeMessage(throwable));
             }
         };
-        libreLogin.getEventProvider().subscribe(
-                libreLogin.getEventTypes().authenticated,
-                subscription
-        );
+        subscriptions.add(libreLogin.getEventProvider().subscribe(type, handler));
     }
 
     @Override
     public synchronized void close() {
-        unsubscribe();
+        unsubscribeAll();
     }
 
-    private void unsubscribe() {
-        if (subscription == null) {
+    private void unsubscribeAll() {
+        if (subscriptions.isEmpty()) {
             return;
         }
-        try {
-            Consumer<? extends Event<Player, RegisteredServer>> current = subscription;
-            libreLogin.getEventProvider().unsubscribe(current);
-        } catch (Throwable throwable) {
-            Message.warn("LibreLogin auth bridge unsubscribe failed: " + safeMessage(throwable));
-        } finally {
-            subscription = null;
+        for (Consumer<? extends Event<Player, RegisteredServer>> subscription
+                : List.copyOf(subscriptions)) {
+            try {
+                libreLogin.getEventProvider().unsubscribe(subscription);
+            } catch (Throwable throwable) {
+                Message.warn("LibreLogin auth bridge unsubscribe failed: " + safeMessage(throwable));
+            }
         }
+        subscriptions.clear();
     }
 
     private static String safeMessage(Throwable throwable) {

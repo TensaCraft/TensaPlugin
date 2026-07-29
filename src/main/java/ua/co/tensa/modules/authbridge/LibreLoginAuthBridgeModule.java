@@ -58,6 +58,16 @@ public final class LibreLoginAuthBridgeModule {
                 public void delayed(Runnable task, long delayMillis) {
                     owner.schedule(task, delayMillis, TimeUnit.MILLISECONDS);
                 }
+
+                @Override
+                public void repeating(Runnable task, long initialDelayMillis, long intervalMillis) {
+                    owner.scheduleRepeating(
+                            task,
+                            initialDelayMillis,
+                            intervalMillis,
+                            TimeUnit.MILLISECONDS
+                    );
+                }
             };
             created = new AuthBridgeRuntime(
                     Tensa.server,
@@ -74,6 +84,7 @@ public final class LibreLoginAuthBridgeModule {
                             config.replayCapacity
                     ),
                     config.postLoginSyncDelayMillis,
+                    Duration.ofSeconds(config.heartbeatIntervalSeconds),
                     config.logTransitions
             );
             java.util.Arrays.fill(secret, (byte) 0);
@@ -112,6 +123,14 @@ public final class LibreLoginAuthBridgeModule {
         }
         if (config.postLoginSyncDelayMillis < 0 || config.postLoginSyncDelayMillis > 5_000) {
             throw new IllegalStateException("post_login_sync_delay_millis must be between 0 and 5000");
+        }
+        if (config.heartbeatIntervalSeconds <= 0
+                || config.heartbeatIntervalSeconds >= AuthBridgeRuntime.BACKEND_LEASE_SECONDS) {
+            throw new IllegalStateException(
+                    "heartbeat_interval_seconds must be between 1 and "
+                            + (AuthBridgeRuntime.BACKEND_LEASE_SECONDS - 1)
+                            + " so it remains shorter than the backend lease"
+            );
         }
     }
 

@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.defaultValue;
 import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.proxy;
 
@@ -109,7 +110,7 @@ class AuthBridgeRuntimeTest {
         assertThat(codec.decode(harness.payloads.getLast()).authState()).isEqualTo(AuthState.PENDING);
 
         harness.source.state = AuthState.AUTHORIZED;
-        harness.source.fireAuthenticated(harness.player);
+        harness.source.fireStateChange(harness.player);
         assertThat(harness.payloads).hasSize(1);
         harness.scheduler.runAll();
         AuthFrame authenticated = codec.decode(harness.payloads.getLast());
@@ -122,6 +123,56 @@ class AuthBridgeRuntimeTest {
         assertThat(resent.sessionId()).isEqualTo(challenge.sessionId());
         assertThat(resent.challenge()).isEqualTo(challenge.challenge());
         harness.runtime.close();
+    }
+
+    @Test
+    void heartbeatReconcilesOnlyActiveChallengesAndFailsClosedWithMonotonicSequence() {
+        Harness harness = harness(SOURCE_SERVER);
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        assertThat(harness.scheduler.recurringIntervalMillis).isEqualTo(10_000L);
+
+        int lookupsBeforeUnboundHeartbeat = harness.source.lookups;
+        harness.scheduler.runHeartbeat();
+        assertThat(harness.source.lookups).isEqualTo(lookupsBeforeUnboundHeartbeat);
+        assertThat(harness.payloads).isEmpty();
+
+        AuthFrame challenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 25),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 55)
+        );
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge)
+        ));
+        assertThat(codec.decode(harness.payloads.getLast()).sequence()).isEqualTo(1L);
+
+        harness.source.state = AuthState.AWAITING_SECOND_FACTOR;
+        harness.scheduler.runHeartbeat();
+        AuthFrame awaitingSecondFactor = codec.decode(harness.payloads.getLast());
+        assertThat(awaitingSecondFactor.authState()).isEqualTo(AuthState.AWAITING_SECOND_FACTOR);
+        assertThat(awaitingSecondFactor.sequence()).isEqualTo(2L);
+
+        harness.source.lookupFailure = new IllegalStateException("LibreLogin unavailable");
+        harness.scheduler.runHeartbeat();
+        AuthFrame failedClosed = codec.decode(harness.payloads.getLast());
+        assertThat(failedClosed.authState()).isEqualTo(AuthState.PENDING);
+        assertThat(failedClosed.sequence()).isEqualTo(3L);
+        assertThat(failedClosed.sessionId()).isEqualTo(challenge.sessionId());
+        assertThat(failedClosed.challenge()).isEqualTo(challenge.challenge());
+        harness.runtime.close();
+    }
+
+    @Test
+    void heartbeatIntervalMustRemainShorterThanBackendLease() {
+        assertThatThrownBy(() -> harness(SOURCE_SERVER, Duration.ofSeconds(30)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("shorter than the backend lease");
     }
 
     @Test
@@ -186,6 +237,10 @@ class AuthBridgeRuntimeTest {
     }
 
     private Harness harness(String connectionServer) {
+        return harness(connectionServer, Duration.ofSeconds(10));
+    }
+
+    private Harness harness(String connectionServer, Duration heartbeatInterval) {
         UUID playerId = UUID.randomUUID();
         List<byte[]> payloads = new ArrayList<>();
         AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
@@ -206,6 +261,7 @@ class AuthBridgeRuntimeTest {
                 new SecureRandom(),
                 new AuthSecurityPolicy(Duration.ofSeconds(5), Duration.ofSeconds(15), 128),
                 50L,
+                heartbeatInterval,
                 false
         );
         return new Harness(
@@ -322,18 +378,24 @@ class AuthBridgeRuntimeTest {
         private AuthState state = AuthState.PENDING;
         private Consumer<Player> listener;
         private boolean closed;
+        private int lookups;
+        private RuntimeException lookupFailure;
 
         @Override
         public AuthState currentState(Player player) {
+            lookups++;
+            if (lookupFailure != null) {
+                throw lookupFailure;
+            }
             return state;
         }
 
         @Override
-        public void subscribeAuthenticated(Consumer<Player> listener) {
+        public void subscribeStateChanges(Consumer<Player> listener) {
             this.listener = listener;
         }
 
-        private void fireAuthenticated(Player player) {
+        private void fireStateChange(Player player) {
             listener.accept(player);
         }
 
@@ -346,6 +408,8 @@ class AuthBridgeRuntimeTest {
 
     private static final class RecordingScheduler implements BridgeScheduler {
         private final Queue<Runnable> tasks = new ArrayDeque<>();
+        private Runnable recurringTask;
+        private long recurringIntervalMillis;
 
         @Override
         public void execute(Runnable task) {
@@ -357,9 +421,21 @@ class AuthBridgeRuntimeTest {
             tasks.add(task);
         }
 
+        @Override
+        public void repeating(Runnable task, long initialDelayMillis, long intervalMillis) {
+            recurringTask = task;
+            recurringIntervalMillis = intervalMillis;
+        }
+
         private void runAll() {
             while (!tasks.isEmpty()) {
                 tasks.remove().run();
+            }
+        }
+
+        private void runHeartbeat() {
+            if (recurringTask != null) {
+                recurringTask.run();
             }
         }
     }

@@ -11,6 +11,8 @@ import xyz.kyngs.librelogin.api.event.EventProvider;
 import xyz.kyngs.librelogin.api.event.EventType;
 import xyz.kyngs.librelogin.api.event.EventTypes;
 import xyz.kyngs.librelogin.api.event.events.AuthenticatedEvent;
+import xyz.kyngs.librelogin.api.event.events.PremiumLoginSwitchEvent;
+import xyz.kyngs.librelogin.api.event.events.WrongPasswordEvent;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,7 +35,7 @@ class LibreLoginAuthSourceTest {
         Player player = player();
         AtomicInteger callbacks = new AtomicInteger();
 
-        source.subscribeAuthenticated(ignored -> callbacks.incrementAndGet());
+        source.subscribeStateChanges(ignored -> callbacks.incrementAndGet());
         assertThat(source.currentState(player)).isEqualTo(AuthState.PENDING);
 
         authorized.set(true);
@@ -43,10 +45,12 @@ class LibreLoginAuthSourceTest {
         assertThat(source.currentState(player)).isEqualTo(AuthState.AWAITING_SECOND_FACTOR);
 
         events.fireAuthenticated(player);
-        assertThat(callbacks).hasValue(1);
+        events.fireWrongPassword(player);
+        events.firePremiumLoginSwitch(player);
+        assertThat(callbacks).hasValue(3);
 
         source.close();
-        assertThat(events.unsubscribedExactConsumer).isTrue();
+        assertThat(events.unsubscribedExactConsumers).hasValue(3);
     }
 
     @Test
@@ -56,7 +60,7 @@ class LibreLoginAuthSourceTest {
                 plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events)
         );
         Player player = player();
-        source.subscribeAuthenticated(ignored -> {
+        source.subscribeStateChanges(ignored -> {
             throw new IllegalStateException("test failure");
         });
 
@@ -100,7 +104,9 @@ class LibreLoginAuthSourceTest {
     private static final class FakeEventProvider implements EventProvider<Player, RegisteredServer> {
         private final EventTypes<Player, RegisteredServer> types = EventProvider.super.getTypes();
         private Consumer<AuthenticatedEvent<Player, RegisteredServer>> authenticated;
-        private boolean unsubscribedExactConsumer;
+        private Consumer<WrongPasswordEvent<Player, RegisteredServer>> wrongPassword;
+        private Consumer<PremiumLoginSwitchEvent<Player, RegisteredServer>> premiumLoginSwitch;
+        private final AtomicInteger unsubscribedExactConsumers = new AtomicInteger();
 
         @Override
         public EventTypes<Player, RegisteredServer> getTypes() {
@@ -115,15 +121,26 @@ class LibreLoginAuthSourceTest {
         ) {
             if (type.equals(types.authenticated)) {
                 authenticated = (Consumer<AuthenticatedEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
+            } else if (type.equals(types.wrongPassword)) {
+                wrongPassword = (Consumer<WrongPasswordEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
+            } else if (type.equals(types.premiumLoginSwitch)) {
+                premiumLoginSwitch =
+                        (Consumer<PremiumLoginSwitchEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
             }
             return handler;
         }
 
         @Override
         public void unsubscribe(Consumer<? extends Event<Player, RegisteredServer>> handler) {
-            unsubscribedExactConsumer = authenticated == handler;
-            if (unsubscribedExactConsumer) {
+            if (authenticated == handler) {
                 authenticated = null;
+                unsubscribedExactConsumers.incrementAndGet();
+            } else if (wrongPassword == handler) {
+                wrongPassword = null;
+                unsubscribedExactConsumers.incrementAndGet();
+            } else if (premiumLoginSwitch == handler) {
+                premiumLoginSwitch = null;
+                unsubscribedExactConsumers.incrementAndGet();
             }
         }
 
@@ -146,6 +163,33 @@ class LibreLoginAuthSourceTest {
                     }
             );
             authenticated.accept(event);
+        }
+
+        @SuppressWarnings("unchecked")
+        private void fireWrongPassword(Player player) {
+            WrongPasswordEvent<Player, RegisteredServer> event = proxy(
+                    WrongPasswordEvent.class,
+                    (method, args) -> switch (method.getName()) {
+                        case "getPlayer" -> player;
+                        case "getUUID" -> player.getUniqueId();
+                        case "getSource" -> WrongPasswordEvent.AuthenticationSource.TOTP;
+                        default -> defaultValue(method.getReturnType());
+                    }
+            );
+            wrongPassword.accept(event);
+        }
+
+        @SuppressWarnings("unchecked")
+        private void firePremiumLoginSwitch(Player player) {
+            PremiumLoginSwitchEvent<Player, RegisteredServer> event = proxy(
+                    PremiumLoginSwitchEvent.class,
+                    (method, args) -> switch (method.getName()) {
+                        case "getPlayer" -> player;
+                        case "getUUID" -> player.getUniqueId();
+                        default -> defaultValue(method.getReturnType());
+                    }
+            );
+            premiumLoginSwitch.accept(event);
         }
     }
 }

@@ -25,6 +25,7 @@ import ua.co.tensa.authbridge.protocol.security.ReplayWindow;
 
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class AuthBridgeRuntime implements AutoCloseable {
+    static final int BACKEND_LEASE_SECONDS = 30;
     private static final long WARNING_INTERVAL_MILLIS = 5_000L;
 
     private final ProxyServer server;
@@ -53,6 +55,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
     private final SecureRandom secureRandom;
     private final long messageTtlMillis;
     private final long postLoginDelayMillis;
+    private final long heartbeatIntervalMillis;
     private final boolean logTransitions;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong lastWarningAt = new AtomicLong();
@@ -68,6 +71,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
             SecureRandom secureRandom,
             AuthSecurityPolicy securityPolicy,
             long postLoginDelayMillis,
+            Duration heartbeatInterval,
             boolean logTransitions
     ) {
         this.server = java.util.Objects.requireNonNull(server, "server");
@@ -80,6 +84,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
         AuthSecurityPolicy policy = java.util.Objects.requireNonNull(securityPolicy, "securityPolicy");
         this.messageTtlMillis = policy.maximumFrameTtl().toMillis();
         this.postLoginDelayMillis = requireNonNegative(postLoginDelayMillis, "postLoginDelayMillis");
+        this.heartbeatIntervalMillis = requireHeartbeatInterval(heartbeatInterval);
         this.logTransitions = logTransitions;
         this.replayWindow = new ReplayWindow(policy.replayCapacity());
         this.authenticator = new HmacSha256Authenticator(secret, codec);
@@ -93,10 +98,15 @@ final class AuthBridgeRuntime implements AutoCloseable {
         for (Player player : onlinePlayers) {
             forget(sessions.begin(player));
         }
-        source.subscribeAuthenticated(this::onAuthenticated);
+        source.subscribeStateChanges(this::onAuthenticationStateChanged);
         for (Player player : onlinePlayers) {
             scheduleReconcileAndPublish(player, 0L);
         }
+        scheduler.repeating(
+                this::reconcileActiveSessions,
+                heartbeatIntervalMillis,
+                heartbeatIntervalMillis
+        );
     }
 
     @Subscribe
@@ -191,7 +201,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
         }
     }
 
-    private void onAuthenticated(Player player) {
+    private void onAuthenticationStateChanged(Player player) {
         try {
             scheduler.execute(() -> {
                 try {
@@ -205,7 +215,36 @@ final class AuthBridgeRuntime implements AutoCloseable {
                 }
             });
         } catch (Throwable throwable) {
-            warnThrottled("Auth bridge could not schedule authenticated event: " + safeMessage(throwable));
+            warnThrottled("Auth bridge could not schedule LibreLogin state event: " + safeMessage(throwable));
+        }
+    }
+
+    void reconcileActiveSessions() {
+        if (closed.get()) {
+            return;
+        }
+        List<Player> onlinePlayers;
+        try {
+            onlinePlayers = List.copyOf(server.getAllPlayers());
+        } catch (Throwable throwable) {
+            warnThrottled("Auth bridge heartbeat could not list online players: " + safeMessage(throwable));
+            return;
+        }
+
+        for (Player player : onlinePlayers) {
+            try {
+                if (closed.get()) {
+                    return;
+                }
+                ServerConnection connection = player.getCurrentServer().orElse(null);
+                if (connection == null || !sessions.hasActiveBinding(player, connection)) {
+                    continue;
+                }
+                reconcile(player);
+                sendState(connection, player);
+            } catch (Throwable throwable) {
+                warnThrottled("Auth bridge heartbeat failed for an online session: " + safeMessage(throwable));
+            }
         }
     }
 
@@ -229,7 +268,10 @@ final class AuthBridgeRuntime implements AutoCloseable {
     private AuthState reconcile(Player player) {
         AuthState state = AuthState.PENDING;
         try {
-            state = source.currentState(player);
+            AuthState resolved = source.currentState(player);
+            if (resolved != null) {
+                state = resolved;
+            }
         } catch (Throwable throwable) {
             warnThrottled("LibreLogin state lookup failed for " + player.getUsername() + ": " + safeMessage(throwable));
         }
@@ -464,6 +506,18 @@ final class AuthBridgeRuntime implements AutoCloseable {
             throw new IllegalArgumentException(name + " must not be negative");
         }
         return value;
+    }
+
+    private static long requireHeartbeatInterval(Duration interval) {
+        java.util.Objects.requireNonNull(interval, "heartbeatInterval");
+        long millis = interval.toMillis();
+        if (millis <= 0L
+                || millis >= Duration.ofSeconds(BACKEND_LEASE_SECONDS).toMillis()) {
+            throw new IllegalArgumentException(
+                    "heartbeatInterval must be positive and shorter than the backend lease"
+            );
+        }
+        return millis;
     }
 
     private static long saturatedAdd(long value, long addend) {

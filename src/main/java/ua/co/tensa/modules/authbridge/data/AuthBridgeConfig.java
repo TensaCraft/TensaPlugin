@@ -44,6 +44,12 @@ public final class AuthBridgeConfig extends ConfigBase {
     )
     public int postLoginSyncDelayMillis = 50;
 
+    @CfgKey(
+            value = "heartbeat_interval_seconds",
+            comment = "Periodic LibreLogin reconciliation interval; must be shorter than the 30 second backend lease"
+    )
+    public int heartbeatIntervalSeconds = 10;
+
     @CfgKey(value = "log_transitions", comment = "Log authentication state publications")
     public boolean logTransitions = false;
 

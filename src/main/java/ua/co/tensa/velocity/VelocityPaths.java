@@ -33,10 +33,6 @@ public final class VelocityPaths {
         return proxyRoot().resolve("velocity.toml");
     }
 
-    public static Path forwardingSecret() {
-        return proxyRoot().resolve("forwarding.secret");
-    }
-
     public static Path logsDirectory() {
         return proxyRoot().resolve("logs");
     }

@@ -74,6 +74,11 @@ final class AuthSessionRegistry {
         return next.get();
     }
 
+    boolean hasActiveBinding(Player player, ServerConnection connection) {
+        Session session = sessions.get(player.getUniqueId());
+        return session != null && session.hasActiveBinding(player, connection);
+    }
+
     Binding remove(Player player) {
         AtomicReference<Binding> removed = new AtomicReference<>();
         sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
@@ -170,6 +175,12 @@ final class AuthSessionRegistry {
             }
             sequence++;
             return snapshot();
+        }
+
+        private synchronized boolean hasActiveBinding(Player expectedPlayer, ServerConnection connection) {
+            return player == expectedPlayer
+                    && binding != null
+                    && binding.connection() == connection;
         }
     }
 }

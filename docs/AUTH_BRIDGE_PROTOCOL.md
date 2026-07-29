@@ -35,12 +35,28 @@ allow_from:
   - aero
 source_bindings:
   aero: aero
+heartbeat_interval_seconds: 10
 ```
 
 The backend creates the session UUID and 32-byte challenge. A valid challenge
 uses sequence `0`, state `PENDING`, and an empty reason. Velocity replies with
 the same player UUID, session UUID, challenge, and backend ID, plus a fresh
 message UUID, fresh 24-byte nonce, and a sequence greater than zero.
+
+For every online player with an active challenge binding, Velocity reconciles
+the LibreLogin state and publishes a fresh `AUTH_STATE` every
+`heartbeat_interval_seconds`. The default is 10 seconds and validation requires
+`1..29`, keeping the interval shorter than the backend's 30-second lease. Each
+heartbeat uses a fresh message ID and nonce and advances the session sequence
+monotonically. Sessions without an active challenge do not trigger heartbeat
+lookups or publications.
+
+LibreLogin 0.24.0 exposes no logout/revoke or 2FA-transition event. The bridge
+subscribes to `authenticated`, `wrongPassword`, and `premiumLoginSwitch` for
+low-latency reconciliation where possible, while the heartbeat remains the
+required authority for revoke and 2FA transitions. Module reload closes and
+unsubscribes the current API handlers before opening and scanning the new
+runtime.
 
 ## Binary Layout
 
@@ -80,7 +96,8 @@ LibreLogin state maps as follows:
 | authorized and not waiting for 2FA | `AUTHORIZED` |
 | explicit future revocation signal | `REVOKED` |
 
-Lookup failures remain fail-closed as `PENDING`.
+Lookup failures and null results remain fail-closed as `PENDING`; they never
+reuse a previously authorized state for a heartbeat response.
 
 ## Golden Vector
 
