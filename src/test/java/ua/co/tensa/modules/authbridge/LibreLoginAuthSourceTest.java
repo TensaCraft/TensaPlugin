@@ -1,7 +1,10 @@
 package ua.co.tensa.modules.authbridge;
 
+import com.google.common.collect.Multimap;
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.junit.jupiter.api.Test;
 import ua.co.tensa.authbridge.protocol.AuthState;
 import xyz.kyngs.librelogin.api.LibreLoginPlugin;
@@ -11,12 +14,21 @@ import xyz.kyngs.librelogin.api.event.EventProvider;
 import xyz.kyngs.librelogin.api.event.EventType;
 import xyz.kyngs.librelogin.api.event.EventTypes;
 import xyz.kyngs.librelogin.api.event.events.AuthenticatedEvent;
+import xyz.kyngs.librelogin.api.event.events.LimboServerChooseEvent;
+import xyz.kyngs.librelogin.api.event.events.LobbyServerChooseEvent;
 import xyz.kyngs.librelogin.api.event.events.PremiumLoginSwitchEvent;
 import xyz.kyngs.librelogin.api.event.events.WrongPasswordEvent;
+import xyz.kyngs.librelogin.api.server.ServerHandler;
 
+import java.net.InetSocketAddress;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,6 +79,145 @@ class LibreLoginAuthSourceTest {
         assertThatCode(() -> events.fireAuthenticated(player)).doesNotThrowAnyException();
     }
 
+    @Test
+    void keepsCurrentRegisteredServerForSameBackendAliasesInBothDirections() {
+        FakeEventProvider events = new FakeEventProvider();
+        LibreLoginAuthSource source = new LibreLoginAuthSource(
+                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
+                true,
+                List.of("aero-auth", "aeronautics"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero")
+        );
+        RegisteredServer aeroAuth = registeredServer("aero-auth");
+        RegisteredServer aeronautics = registeredServer("aeronautics");
+
+        source.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(events.fireLobbyServerChoose(player(aeroAuth), aeronautics))
+                .isSameAs(aeroAuth);
+        assertThat(events.fireLimboServerChoose(player(aeronautics), aeroAuth))
+                .isSameAs(aeronautics);
+
+        source.close();
+        assertThat(events.unsubscribedExactConsumers).hasValue(5);
+    }
+
+    @Test
+    void keepsCurrentServerWhenDefaultSelectionIsNullAndAllCandidatesShareBackendId() {
+        FakeEventProvider events = new FakeEventProvider();
+        RegisteredServer aeroAuth = registeredServer("aero-auth");
+        RegisteredServer aeronautics = registeredServer("aeronautics");
+        LibreLoginAuthSource source = new LibreLoginAuthSource(
+                plugin(
+                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
+                        events,
+                        List.of(aeroAuth, aeronautics),
+                        List.of(aeroAuth, aeronautics)
+                ),
+                true,
+                List.of("aero-auth", "aeronautics"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero")
+        );
+        source.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(events.fireLobbyServerChoose(player(), null)).isNull();
+        assertThat(events.fireLobbyServerChoose(player(aeroAuth), null))
+                .isSameAs(aeroAuth);
+        assertThat(events.fireLimboServerChoose(player(aeronautics), null))
+                .isSameAs(aeronautics);
+    }
+
+    @Test
+    void nullDefaultSelectionFailsClosedForMixedUnknownAndEmptyCandidates() {
+        RegisteredServer aeroAuth = registeredServer("aero-auth");
+        RegisteredServer aeronautics = registeredServer("aeronautics");
+        RegisteredServer lobby = registeredServer("lobby");
+        RegisteredServer untrusted = registeredServer("untrusted");
+        FakeEventProvider mixedEvents = new FakeEventProvider();
+        LibreLoginAuthSource mixedSource = new LibreLoginAuthSource(
+                plugin(
+                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
+                        mixedEvents,
+                        List.of(aeronautics, lobby),
+                        List.of(aeroAuth, untrusted)
+                ),
+                true,
+                List.of("aero-auth", "aeronautics", "lobby"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero", "lobby", "lobby")
+        );
+        mixedSource.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(mixedEvents.fireLobbyServerChoose(player(aeroAuth), null)).isNull();
+        assertThat(mixedEvents.fireLimboServerChoose(player(aeronautics), null)).isNull();
+
+        FakeEventProvider emptyEvents = new FakeEventProvider();
+        LibreLoginAuthSource emptySource = new LibreLoginAuthSource(
+                plugin(
+                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
+                        emptyEvents,
+                        List.of(),
+                        List.of()
+                ),
+                true,
+                List.of("aero-auth", "aeronautics"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero")
+        );
+        emptySource.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(emptyEvents.fireLobbyServerChoose(player(aeroAuth), null)).isNull();
+        assertThat(emptyEvents.fireLimboServerChoose(player(aeronautics), null)).isNull();
+    }
+
+    @Test
+    void leavesInitialUntrustedAndDifferentBackendRoutingUnchanged() {
+        FakeEventProvider events = new FakeEventProvider();
+        LibreLoginAuthSource source = new LibreLoginAuthSource(
+                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
+                true,
+                List.of("aero-auth", "aeronautics", "lobby"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero", "lobby", "lobby")
+        );
+        RegisteredServer aeroAuth = registeredServer("aero-auth");
+        RegisteredServer aeronautics = registeredServer("aeronautics");
+        RegisteredServer lobby = registeredServer("lobby");
+        RegisteredServer untrusted = registeredServer("untrusted");
+        source.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(events.fireLobbyServerChoose(player(), aeronautics))
+                .isSameAs(aeronautics);
+        assertThat(events.fireLobbyServerChoose(player(untrusted), aeronautics))
+                .isSameAs(aeronautics);
+        assertThat(events.fireLimboServerChoose(player(aeroAuth), untrusted))
+                .isSameAs(untrusted);
+        assertThat(events.fireLimboServerChoose(player(aeroAuth), lobby))
+                .isSameAs(lobby);
+        assertThat(events.fireLobbyServerChoose(playerWithCurrentServerFailure(), aeronautics))
+                .isSameAs(aeronautics);
+    }
+
+    @Test
+    void disabledAliasReconnectSuppressionLeavesLibreLoginRoutingUnchanged() {
+        FakeEventProvider events = new FakeEventProvider();
+        LibreLoginAuthSource source = new LibreLoginAuthSource(
+                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
+                false,
+                List.of("aero-auth", "aeronautics"),
+                Map.of("aero-auth", "aero", "aeronautics", "aero")
+        );
+
+        source.subscribeStateChanges(ignored -> {
+        });
+
+        assertThat(events.hasServerChoiceSubscriptions()).isFalse();
+        source.close();
+        assertThat(events.unsubscribedExactConsumers).hasValue(3);
+    }
+
     @SuppressWarnings("unchecked")
     private AuthorizationProvider<Player> authorization(
             AtomicBoolean authorized,
@@ -84,19 +235,80 @@ class LibreLoginAuthSourceTest {
             AuthorizationProvider<Player> authorization,
             FakeEventProvider events
     ) {
+        return plugin(authorization, events, List.of(), List.of());
+    }
+
+    @SuppressWarnings("unchecked")
+    private LibreLoginPlugin<Player, RegisteredServer> plugin(
+            AuthorizationProvider<Player> authorization,
+            FakeEventProvider events,
+            Collection<RegisteredServer> lobbyServers,
+            Collection<RegisteredServer> limboServers
+    ) {
+        ServerHandler<Player, RegisteredServer> serverHandler =
+                serverHandler(lobbyServers, limboServers);
         return proxy(LibreLoginPlugin.class, (method, args) -> switch (method.getName()) {
             case "getAuthorizationProvider" -> authorization;
             case "getEventProvider" -> events;
             case "getEventTypes" -> events.getTypes();
+            case "getServerHandler" -> serverHandler;
+            default -> defaultValue(method.getReturnType());
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private ServerHandler<Player, RegisteredServer> serverHandler(
+            Collection<RegisteredServer> lobbyServers,
+            Collection<RegisteredServer> limboServers
+    ) {
+        Multimap<String, RegisteredServer> lobbyServerMap = proxy(
+                Multimap.class,
+                (method, args) -> method.getName().equals("values")
+                        ? lobbyServers
+                        : defaultValue(method.getReturnType())
+        );
+        return proxy(ServerHandler.class, (method, args) -> switch (method.getName()) {
+            case "getLobbyServers" -> lobbyServerMap;
+            case "getLimboServers" -> limboServers;
             default -> defaultValue(method.getReturnType());
         });
     }
 
     private Player player() {
+        return player(null);
+    }
+
+    private Player player(RegisteredServer currentServer) {
+        UUID uuid = UUID.randomUUID();
+        ServerConnection connection = currentServer == null
+                ? null
+                : proxy(ServerConnection.class, (method, args) -> switch (method.getName()) {
+                    case "getServer" -> currentServer;
+                    case "getServerInfo" -> currentServer.getServerInfo();
+                    default -> defaultValue(method.getReturnType());
+                });
+        return proxy(Player.class, (method, args) -> switch (method.getName()) {
+            case "getUniqueId" -> uuid;
+            case "getUsername" -> "Steve";
+            case "getCurrentServer" -> Optional.ofNullable(connection);
+            default -> defaultValue(method.getReturnType());
+        });
+    }
+
+    private RegisteredServer registeredServer(String name) {
+        ServerInfo info = new ServerInfo(name, new InetSocketAddress("127.0.0.1", 25565));
+        return proxy(RegisteredServer.class, (method, args) -> switch (method.getName()) {
+            case "getServerInfo" -> info;
+            default -> defaultValue(method.getReturnType());
+        });
+    }
+
+    private Player playerWithCurrentServerFailure() {
         UUID uuid = UUID.randomUUID();
         return proxy(Player.class, (method, args) -> switch (method.getName()) {
             case "getUniqueId" -> uuid;
             case "getUsername" -> "Steve";
+            case "getCurrentServer" -> throw new IllegalStateException("current server unavailable");
             default -> defaultValue(method.getReturnType());
         });
     }
@@ -106,6 +318,8 @@ class LibreLoginAuthSourceTest {
         private Consumer<AuthenticatedEvent<Player, RegisteredServer>> authenticated;
         private Consumer<WrongPasswordEvent<Player, RegisteredServer>> wrongPassword;
         private Consumer<PremiumLoginSwitchEvent<Player, RegisteredServer>> premiumLoginSwitch;
+        private Consumer<LobbyServerChooseEvent<Player, RegisteredServer>> lobbyServerChoose;
+        private Consumer<LimboServerChooseEvent<Player, RegisteredServer>> limboServerChoose;
         private final AtomicInteger unsubscribedExactConsumers = new AtomicInteger();
 
         @Override
@@ -126,6 +340,12 @@ class LibreLoginAuthSourceTest {
             } else if (type.equals(types.premiumLoginSwitch)) {
                 premiumLoginSwitch =
                         (Consumer<PremiumLoginSwitchEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
+            } else if (type.equals(types.lobbyServerChoose)) {
+                lobbyServerChoose =
+                        (Consumer<LobbyServerChooseEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
+            } else if (type.equals(types.limboServerChoose)) {
+                limboServerChoose =
+                        (Consumer<LimboServerChooseEvent<Player, RegisteredServer>>) (Consumer<?>) handler;
             }
             return handler;
         }
@@ -141,6 +361,12 @@ class LibreLoginAuthSourceTest {
             } else if (premiumLoginSwitch == handler) {
                 premiumLoginSwitch = null;
                 unsubscribedExactConsumers.incrementAndGet();
+            } else if (lobbyServerChoose == handler) {
+                lobbyServerChoose = null;
+                unsubscribedExactConsumers.incrementAndGet();
+            } else if (limboServerChoose == handler) {
+                limboServerChoose = null;
+                unsubscribedExactConsumers.incrementAndGet();
             }
         }
 
@@ -149,6 +375,10 @@ class LibreLoginAuthSourceTest {
                 EventType<Player, RegisteredServer, E> type,
                 E event
         ) {
+        }
+
+        private boolean hasServerChoiceSubscriptions() {
+            return lobbyServerChoose != null || limboServerChoose != null;
         }
 
         @SuppressWarnings("unchecked")
@@ -190,6 +420,53 @@ class LibreLoginAuthSourceTest {
                     }
             );
             premiumLoginSwitch.accept(event);
+        }
+
+        @SuppressWarnings("unchecked")
+        private RegisteredServer fireLobbyServerChoose(
+                Player player,
+                RegisteredServer selectedServer
+        ) {
+            AtomicReference<RegisteredServer> selected = new AtomicReference<>(selectedServer);
+            LobbyServerChooseEvent<Player, RegisteredServer> event = proxy(
+                    LobbyServerChooseEvent.class,
+                    (method, args) -> switch (method.getName()) {
+                        case "getPlayer" -> player;
+                        case "getUUID" -> player.getUniqueId();
+                        case "getServer" -> selected.get();
+                        case "setServer" -> {
+                            selected.set((RegisteredServer) args[0]);
+                            yield null;
+                        }
+                        case "isFallback" -> false;
+                        default -> defaultValue(method.getReturnType());
+                    }
+            );
+            lobbyServerChoose.accept(event);
+            return selected.get();
+        }
+
+        @SuppressWarnings("unchecked")
+        private RegisteredServer fireLimboServerChoose(
+                Player player,
+                RegisteredServer selectedServer
+        ) {
+            AtomicReference<RegisteredServer> selected = new AtomicReference<>(selectedServer);
+            LimboServerChooseEvent<Player, RegisteredServer> event = proxy(
+                    LimboServerChooseEvent.class,
+                    (method, args) -> switch (method.getName()) {
+                        case "getPlayer" -> player;
+                        case "getUUID" -> player.getUniqueId();
+                        case "getServer" -> selected.get();
+                        case "setServer" -> {
+                            selected.set((RegisteredServer) args[0]);
+                            yield null;
+                        }
+                        default -> defaultValue(method.getReturnType());
+                    }
+            );
+            limboServerChoose.accept(event);
+            return selected.get();
         }
     }
 }
