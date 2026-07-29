@@ -159,12 +159,14 @@ public final class CoreStorageService implements AutoCloseable {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
+            Class.forName("org.h2.Driver");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to prepare local storage directory: " + e.getMessage(), e);
         }
 
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl("jdbc:h2:file:" + databaseFile.toAbsolutePath().normalize() + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
+        config.setDriverClassName("org.h2.Driver");
         config.setUsername("sa");
         config.setPassword("");
         config.setMaximumPoolSize(5);

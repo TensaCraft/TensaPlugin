@@ -25,7 +25,7 @@ public final class AuthBridgeConfig extends ConfigBase {
 
     @CfgKey(
             value = "source_bindings",
-            comment = "Exact Velocity server name to signed backend ID mapping; keys must match allow_from"
+            comment = "Exact Velocity server name to signed backend ID mapping; aliases may share an ID and keys must match allow_from"
     )
     public Map<String, Object> sourceBindings = new LinkedHashMap<>();
 

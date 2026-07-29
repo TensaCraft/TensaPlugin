@@ -81,10 +81,12 @@ public class Database {
 
     private boolean connectH2() {
         try {
+            Class.forName("org.h2.Driver");
             Path databasePath = Tensa.pluginPath.resolve("storage").resolve("server").toAbsolutePath().normalize();
             String url = "jdbc:h2:file:" + databasePath + ";MODE=MySQL;DB_CLOSE_DELAY=-1";
             HikariConfig cfg = new HikariConfig();
             cfg.setJdbcUrl(url);
+            cfg.setDriverClassName("org.h2.Driver");
             cfg.setUsername("sa");
             cfg.setPassword("");
             cfg.setMaximumPoolSize(5);

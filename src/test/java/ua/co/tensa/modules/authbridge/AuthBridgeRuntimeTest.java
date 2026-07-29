@@ -241,6 +241,43 @@ class AuthBridgeRuntimeTest {
     }
 
     @Test
+    void acceptsRegisteredServerAliasesForOneBackendAndRejectsUntrustedSourcesAndIdentities() {
+        List<String> allowedServers = List.of("aero-auth", "aeronautics");
+        Map<String, String> sourceBindings = Map.of(
+                "aero-auth", "aero",
+                "aeronautics", "aero"
+        );
+
+        Harness authAlias = harness("aero-auth", allowedServers, sourceBindings);
+        PluginMessageEvent authAliasEvent = sendChallenge(authAlias, "aero", 80);
+
+        Harness aeronauticsAlias = harness("aeronautics", allowedServers, sourceBindings);
+        PluginMessageEvent aeronauticsAliasEvent = sendChallenge(aeronauticsAlias, "aero", 90);
+
+        Harness untrustedSource = harness("other", allowedServers, sourceBindings);
+        PluginMessageEvent untrustedSourceEvent = sendChallenge(untrustedSource, "aero", 100);
+
+        Harness wrongBackend = harness("aeronautics", allowedServers, sourceBindings);
+        PluginMessageEvent wrongBackendEvent = sendChallenge(wrongBackend, "other-backend", 110);
+
+        assertThat(authAliasEvent.getResult().isAllowed()).isFalse();
+        assertThat(aeronauticsAliasEvent.getResult().isAllowed()).isFalse();
+        assertThat(untrustedSourceEvent.getResult().isAllowed()).isFalse();
+        assertThat(wrongBackendEvent.getResult().isAllowed()).isFalse();
+        assertThat(authAlias.payloads).hasSize(1);
+        assertThat(aeronauticsAlias.payloads).hasSize(1);
+        assertThat(codec.decode(authAlias.payloads.getLast()).backendId()).isEqualTo("aero");
+        assertThat(codec.decode(aeronauticsAlias.payloads.getLast()).backendId()).isEqualTo("aero");
+        assertThat(untrustedSource.payloads).isEmpty();
+        assertThat(wrongBackend.payloads).isEmpty();
+
+        authAlias.runtime.close();
+        aeronauticsAlias.runtime.close();
+        untrustedSource.runtime.close();
+        wrongBackend.runtime.close();
+    }
+
+    @Test
     void disallowedBackendCannotQueryOrReceiveStateAndCloseCleansUp() {
         Harness harness = harness("other");
         harness.runtime.beginSession(harness.player);
@@ -272,6 +309,36 @@ class AuthBridgeRuntimeTest {
             Duration heartbeatInterval,
             Duration authorizationLease
     ) {
+        return harness(
+                connectionServer,
+                List.of(SOURCE_SERVER),
+                Map.of(SOURCE_SERVER, BACKEND_ID),
+                heartbeatInterval,
+                authorizationLease
+        );
+    }
+
+    private Harness harness(
+            String connectionServer,
+            List<String> allowedServers,
+            Map<String, String> sourceBindings
+    ) {
+        return harness(
+                connectionServer,
+                allowedServers,
+                sourceBindings,
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(30)
+        );
+    }
+
+    private Harness harness(
+            String connectionServer,
+            List<String> allowedServers,
+            Map<String, String> sourceBindings,
+            Duration heartbeatInterval,
+            Duration authorizationLease
+    ) {
         UUID playerId = UUID.randomUUID();
         List<byte[]> payloads = new ArrayList<>();
         AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
@@ -285,8 +352,8 @@ class AuthBridgeRuntimeTest {
                 proxyServer(player, channels.proxy()),
                 source,
                 scheduler,
-                List.of(SOURCE_SERVER),
-                Map.of(SOURCE_SERVER, BACKEND_ID),
+                allowedServers,
+                sourceBindings,
                 SECRET,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 new SecureRandom(),
@@ -306,6 +373,26 @@ class AuthBridgeRuntimeTest {
                 scheduler,
                 runtime
         );
+    }
+
+    private PluginMessageEvent sendChallenge(Harness harness, String backendId, int seed) {
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        AuthFrame challenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                backendId,
+                bytes(ProtocolConstants.NONCE_BYTES, seed),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, seed + ProtocolConstants.NONCE_BYTES)
+        );
+        PluginMessageEvent event = pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge)
+        );
+        harness.runtime.onPluginMessage(event);
+        return event;
     }
 
     private AuthFrame challenge(

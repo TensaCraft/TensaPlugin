@@ -476,7 +476,6 @@ final class AuthBridgeRuntime implements AutoCloseable {
             Set<String> allowedServers
     ) {
         Map<String, String> normalized = new HashMap<>();
-        Set<String> backendIds = new HashSet<>();
         if (configured != null) {
             configured.forEach((server, backendId) -> {
                 if (server == null || server.isBlank() || backendId == null || backendId.isBlank()) {
@@ -486,9 +485,6 @@ final class AuthBridgeRuntime implements AutoCloseable {
                 String identity = backendId.trim();
                 if (normalized.putIfAbsent(source, identity) != null) {
                     throw new IllegalStateException("Duplicate source binding for server '" + source + "'");
-                }
-                if (!backendIds.add(identity)) {
-                    throw new IllegalStateException("Backend ID '" + identity + "' is bound more than once");
                 }
             });
         }

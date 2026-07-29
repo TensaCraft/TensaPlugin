@@ -26,15 +26,19 @@ Velocity marks every matching plugin message as handled before parsing. It only
 accepts frames from a `ServerConnection` whose registered Velocity server name
 is in `allow_from`. `source_bindings` binds that source name to exactly one
 signed `backendId`; packet data cannot select or override its trusted source
-identity.
+identity. Multiple registered server aliases may map to the same signed
+`backendId`, but every alias must be listed in both `allow_from` and
+`source_bindings`.
 
 Example:
 
 ```yaml
 allow_from:
-  - aero
+  - aero-auth
+  - aeronautics
 source_bindings:
-  aero: aero
+  aero-auth: aero
+  aeronautics: aero
 heartbeat_interval_seconds: 10
 authorization_lease_seconds: 30
 ```
