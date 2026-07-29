@@ -33,7 +33,8 @@ import java.nio.file.Path;
         description = "Tensa - Velocity Content Manager Plugin",
         authors = {"GIGABAIT"},
         dependencies = {
-                @Dependency(id = "papiproxybridge", optional = true)
+                @Dependency(id = "papiproxybridge", optional = true),
+                @Dependency(id = "librelogin", optional = true)
         }
 )
 

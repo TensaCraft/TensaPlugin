@@ -24,6 +24,7 @@
         <velocity.api.version>3.5.0-SNAPSHOT</velocity.api.version>
         <papiproxybridge.version>1.8.4</papiproxybridge.version>
         <luckperms.api.version>5.5</luckperms.api.version>
+        <librelogin.api.version>0.24.0</librelogin.api.version>
         <adventure.version>4.26.1</adventure.version>
         <gson.version>2.13.2</gson.version>
         <guice.version>7.0.0</guice.version>
@@ -57,6 +58,10 @@
         <repository>
             <id>william278-releases</id>
             <url>https://repo.william278.net/releases/</url>
+        </repository>
+        <repository>
+            <id>kyngs-releases</id>
+            <url>https://repo.kyngs.xyz/releases/</url>
         </repository>
     </repositories>
 
@@ -92,6 +97,13 @@
             <groupId>net.luckperms</groupId>
             <artifactId>api</artifactId>
             <version>${luckperms.api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>xyz.kyngs.librelogin</groupId>
+            <artifactId>API</artifactId>
+            <version>${librelogin.api.version}</version>
             <scope>provided</scope>
         </dependency>
 
