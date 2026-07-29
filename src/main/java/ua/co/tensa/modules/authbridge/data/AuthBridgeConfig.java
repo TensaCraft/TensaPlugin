@@ -46,9 +46,15 @@ public final class AuthBridgeConfig extends ConfigBase {
 
     @CfgKey(
             value = "heartbeat_interval_seconds",
-            comment = "Periodic LibreLogin reconciliation interval; must be shorter than the 30 second backend lease"
+            comment = "Periodic LibreLogin reconciliation interval; must fit at least twice inside the authorization lease"
     )
     public int heartbeatIntervalSeconds = 10;
+
+    @CfgKey(
+            value = "authorization_lease_seconds",
+            comment = "Backend authorization lease duration; supported range is 5 to 300 seconds"
+    )
+    public int authorizationLeaseSeconds = 30;
 
     @CfgKey(value = "log_transitions", comment = "Log authentication state publications")
     public boolean logTransitions = false;

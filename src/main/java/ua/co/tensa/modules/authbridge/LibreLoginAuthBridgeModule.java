@@ -85,6 +85,7 @@ public final class LibreLoginAuthBridgeModule {
                     ),
                     config.postLoginSyncDelayMillis,
                     Duration.ofSeconds(config.heartbeatIntervalSeconds),
+                    Duration.ofSeconds(config.authorizationLeaseSeconds),
                     config.logTransitions
             );
             java.util.Arrays.fill(secret, (byte) 0);
@@ -124,12 +125,28 @@ public final class LibreLoginAuthBridgeModule {
         if (config.postLoginSyncDelayMillis < 0 || config.postLoginSyncDelayMillis > 5_000) {
             throw new IllegalStateException("post_login_sync_delay_millis must be between 0 and 5000");
         }
-        if (config.heartbeatIntervalSeconds <= 0
-                || config.heartbeatIntervalSeconds >= AuthBridgeRuntime.BACKEND_LEASE_SECONDS) {
+        validateAuthorizationTiming(
+                config.heartbeatIntervalSeconds,
+                config.authorizationLeaseSeconds
+        );
+    }
+
+    static void validateAuthorizationTiming(
+            int heartbeatIntervalSeconds,
+            int authorizationLeaseSeconds
+    ) {
+        if (authorizationLeaseSeconds < 5 || authorizationLeaseSeconds > 300) {
             throw new IllegalStateException(
-                    "heartbeat_interval_seconds must be between 1 and "
-                            + (AuthBridgeRuntime.BACKEND_LEASE_SECONDS - 1)
-                            + " so it remains shorter than the backend lease"
+                    "authorization_lease_seconds must be between 5 and 300"
+            );
+        }
+        if (heartbeatIntervalSeconds <= 0) {
+            throw new IllegalStateException("heartbeat_interval_seconds must be greater than 0");
+        }
+        if ((long) heartbeatIntervalSeconds * 2L > authorizationLeaseSeconds) {
+            throw new IllegalStateException(
+                    "heartbeat_interval_seconds must fit at least twice inside "
+                            + "authorization_lease_seconds"
             );
         }
     }

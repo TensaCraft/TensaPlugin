@@ -36,6 +36,7 @@ allow_from:
 source_bindings:
   aero: aero
 heartbeat_interval_seconds: 10
+authorization_lease_seconds: 30
 ```
 
 The backend creates the session UUID and 32-byte challenge. A valid challenge
@@ -46,10 +47,13 @@ message UUID, fresh 24-byte nonce, and a sequence greater than zero.
 For every online player with an active challenge binding, Velocity reconciles
 the LibreLogin state and publishes a fresh `AUTH_STATE` every
 `heartbeat_interval_seconds`. The default is 10 seconds and validation requires
-`1..29`, keeping the interval shorter than the backend's 30-second lease. Each
-heartbeat uses a fresh message ID and nonce and advances the session sequence
-monotonically. Sessions without an active challenge do not trigger heartbeat
-lookups or publications.
+a positive value. `authorization_lease_seconds` defaults to 30 seconds and
+accepts `5..300`. The configured heartbeat must fit at least twice inside the
+lease (`heartbeat_interval_seconds * 2 <= authorization_lease_seconds`), which
+also guarantees that it is strictly shorter than the lease. Each heartbeat uses
+a fresh message ID and nonce and advances the session sequence monotonically.
+Sessions without an active challenge do not trigger heartbeat lookups or
+publications.
 
 LibreLogin 0.24.0 exposes no logout/revoke or 2FA-transition event. The bridge
 subscribes to `authenticated`, `wrongPassword`, and `premiumLoginSwitch` for

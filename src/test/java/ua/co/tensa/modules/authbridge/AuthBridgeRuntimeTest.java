@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.defaultValue;
 import static ua.co.tensa.modules.authbridge.AuthBridgeTestProxies.proxy;
@@ -169,10 +170,32 @@ class AuthBridgeRuntimeTest {
     }
 
     @Test
-    void heartbeatIntervalMustRemainShorterThanBackendLease() {
-        assertThatThrownBy(() -> harness(SOURCE_SERVER, Duration.ofSeconds(30)))
+    void authorizationTimingUsesConfiguredLeaseAndRequiresSafetyMargin() {
+        assertThatCode(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(10, 30))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(15, 30))
+                .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(16, 30))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("at least twice");
+        assertThatThrownBy(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(0, 30))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("greater than 0");
+        assertThatThrownBy(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(2, 4))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("between 5 and 300");
+        assertThatThrownBy(() -> LibreLoginAuthBridgeModule.validateAuthorizationTiming(10, 301))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("between 5 and 300");
+
+        assertThatThrownBy(() -> harness(
+                SOURCE_SERVER,
+                Duration.ofSeconds(16),
+                Duration.ofSeconds(30)
+        ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("shorter than the backend lease");
+                .hasMessageContaining("at least twice");
     }
 
     @Test
@@ -237,10 +260,18 @@ class AuthBridgeRuntimeTest {
     }
 
     private Harness harness(String connectionServer) {
-        return harness(connectionServer, Duration.ofSeconds(10));
+        return harness(
+                connectionServer,
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(30)
+        );
     }
 
-    private Harness harness(String connectionServer, Duration heartbeatInterval) {
+    private Harness harness(
+            String connectionServer,
+            Duration heartbeatInterval,
+            Duration authorizationLease
+    ) {
         UUID playerId = UUID.randomUUID();
         List<byte[]> payloads = new ArrayList<>();
         AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
@@ -262,6 +293,7 @@ class AuthBridgeRuntimeTest {
                 new AuthSecurityPolicy(Duration.ofSeconds(5), Duration.ofSeconds(15), 128),
                 50L,
                 heartbeatInterval,
+                authorizationLease,
                 false
         );
         return new Harness(

@@ -37,7 +37,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class AuthBridgeRuntime implements AutoCloseable {
-    static final int BACKEND_LEASE_SECONDS = 30;
     private static final long WARNING_INTERVAL_MILLIS = 5_000L;
 
     private final ProxyServer server;
@@ -72,6 +71,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
             AuthSecurityPolicy securityPolicy,
             long postLoginDelayMillis,
             Duration heartbeatInterval,
+            Duration authorizationLease,
             boolean logTransitions
     ) {
         this.server = java.util.Objects.requireNonNull(server, "server");
@@ -84,7 +84,10 @@ final class AuthBridgeRuntime implements AutoCloseable {
         AuthSecurityPolicy policy = java.util.Objects.requireNonNull(securityPolicy, "securityPolicy");
         this.messageTtlMillis = policy.maximumFrameTtl().toMillis();
         this.postLoginDelayMillis = requireNonNegative(postLoginDelayMillis, "postLoginDelayMillis");
-        this.heartbeatIntervalMillis = requireHeartbeatInterval(heartbeatInterval);
+        this.heartbeatIntervalMillis = requireHeartbeatInterval(
+                heartbeatInterval,
+                authorizationLease
+        );
         this.logTransitions = logTransitions;
         this.replayWindow = new ReplayWindow(policy.replayCapacity());
         this.authenticator = new HmacSha256Authenticator(secret, codec);
@@ -508,16 +511,31 @@ final class AuthBridgeRuntime implements AutoCloseable {
         return value;
     }
 
-    private static long requireHeartbeatInterval(Duration interval) {
-        java.util.Objects.requireNonNull(interval, "heartbeatInterval");
-        long millis = interval.toMillis();
-        if (millis <= 0L
-                || millis >= Duration.ofSeconds(BACKEND_LEASE_SECONDS).toMillis()) {
+    private static long requireHeartbeatInterval(
+            Duration heartbeatInterval,
+            Duration authorizationLease
+    ) {
+        java.util.Objects.requireNonNull(heartbeatInterval, "heartbeatInterval");
+        java.util.Objects.requireNonNull(authorizationLease, "authorizationLease");
+        long heartbeatMillis = heartbeatInterval.toMillis();
+        long leaseMillis = authorizationLease.toMillis();
+        if (leaseMillis < Duration.ofSeconds(5).toMillis()
+                || leaseMillis > Duration.ofSeconds(300).toMillis()) {
             throw new IllegalArgumentException(
-                    "heartbeatInterval must be positive and shorter than the backend lease"
+                    "authorizationLease must be between 5 and 300 seconds"
             );
         }
-        return millis;
+        if (heartbeatMillis <= 0L || saturatedMultiplyByTwo(heartbeatMillis) > leaseMillis) {
+            throw new IllegalArgumentException(
+                    "heartbeatInterval must be positive and fit at least twice inside "
+                            + "authorizationLease"
+            );
+        }
+        return heartbeatMillis;
+    }
+
+    private static long saturatedMultiplyByTwo(long value) {
+        return value > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : value * 2L;
     }
 
     private static long saturatedAdd(long value, long addend) {
