@@ -45,6 +45,8 @@ class CommunicationsConfigMigrationTest {
                 guild_id: "12345678901234567"
                 proxy_chat:
                   max_length: 777
+                  server_aliases:
+                    creative: Creative
                 """, StandardCharsets.UTF_8);
         Path links = tempDir.resolve("discord").resolve("links.json");
         Files.createDirectories(links.getParent());
@@ -69,8 +71,11 @@ class CommunicationsConfigMigrationTest {
         assertThat(discord.node("proxy_chat", "format").getString()).isEqualTo("<green>{message}</green>");
         assertThat(discord.node("proxy_chat", "server_aliases", "aeronautics").getString())
                 .isEqualTo("My Aero");
+        assertThat(discord.node("proxy_chat", "server_aliases", "creative").getString())
+                .isEqualTo("Creative");
 
         CommentedConfigurationNode chats = load("chats.yml");
+        assertThat(chats.node("enabled").getBoolean()).isFalse();
         assertThat(chats.node("proxy").virtual()).isTrue();
         assertThat(chats.node("global", "format").getString()).isEqualTo("manual global");
         assertThat(Files.readString(links, StandardCharsets.UTF_8)).isEqualTo("{\"version\":1,\"links\":[]}");

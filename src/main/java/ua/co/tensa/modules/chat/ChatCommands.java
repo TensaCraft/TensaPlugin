@@ -21,13 +21,23 @@ public class ChatCommands implements SimpleCommand {
     }
 
     private static final MiniMessage MINI = MiniMessage.miniMessage();
-    private final Map<UUID, UUID> lastPrivateTarget = new ConcurrentHashMap<>();
+    private final Map<UUID, UUID> lastPrivateTarget;
+    private final Set<String> registeredCommands = new LinkedHashSet<>();
     private final YamlAdapter chatCfg;
     private final ProxyChatService proxyChat;
 
     public ChatCommands(YamlAdapter chatCfg, ProxyChatService proxyChat) {
+        this(chatCfg, proxyChat, new ConcurrentHashMap<>());
+    }
+
+    public ChatCommands(
+            YamlAdapter chatCfg,
+            ProxyChatService proxyChat,
+            Map<UUID, UUID> lastPrivateTarget
+    ) {
         this.chatCfg = Objects.requireNonNull(chatCfg, "chatCfg");
         this.proxyChat = Objects.requireNonNull(proxyChat, "proxyChat");
+        this.lastPrivateTarget = Objects.requireNonNull(lastPrivateTarget, "lastPrivateTarget");
     }
 
     private static boolean isConsole(CommandSource source) {
@@ -201,19 +211,16 @@ public class ChatCommands implements SimpleCommand {
 
             for (String cmd : secCommands(sec)) {
                 Util.registerCommand(cmd, "", this);
+                registeredCommands.add(cmd);
             }
         }
     }
 
     public void unregister() {
-        for (String key : chatCfg.getKeys(false)) {
-            Map<String, Object> sec = chatCfg.getSection(key);
-            if (sec == null || sec.isEmpty()) continue;
-
-            for (String cmd : secCommands(sec)) {
-                Util.unregisterCommand(cmd);
-            }
+        for (String cmd : List.copyOf(registeredCommands)) {
+            Util.unregisterCommand(cmd);
         }
+        registeredCommands.clear();
     }
 
     public ChatRoute findRoute(String command) {

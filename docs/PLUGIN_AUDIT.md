@@ -6,7 +6,7 @@ Runtime target: Java 25, Velocity 3.5 API
 
 Test baseline supplied for this work: 95 tests
 
-Verified suite after remediation: 125 tests
+Verified suite after remediation: 127 tests
 
 ## Executive summary
 
@@ -20,8 +20,11 @@ Module reloads run outside the Velocity event loop. Configured modules validate
 YAML and semantic bounds before changing the active runtime. Runtime-owning
 modules use a serialized replacement slot that stops the old runtime, activates
 the validated plan, and restores the previous validated plan if activation
-fails. The auth bridge intentionally validates without replacing its session
-runtime, so connected players and active authentication sessions are preserved.
+fails. If old-runtime shutdown itself fails, the slot is marked empty instead of
+falsely reporting that the previous runtime was retained. The auth bridge
+intentionally validates without replacing its session runtime, so connected
+players and active authentication sessions are preserved; the command reports
+that a proxy restart is required to apply changed auth settings.
 
 No deployment, proxy reload, or proxy restart was performed as part of this
 audit. Live Discord verification remains a deployment gate because the test
@@ -128,12 +131,15 @@ keys. It is idempotent and follows destination-wins semantics:
   into `modules.communications`; an existing `communications` value is kept.
 - Legacy Discord enabled state is copied to `discord.yml` root `enabled` only
   when that destination is absent.
+- Legacy chat enabled state is copied to `chats.yml` root `enabled` only when
+  that destination is absent.
 - `chats.yml` `proxy` moves to `discord.yml` `proxy_chat`.
 - These values move without transformation: `enabled`, `excluded_servers`,
   `server_aliases`, `max_length`, `cooldown_millis`,
   `duplicate_window_millis`, `max_repeated_characters`, `format`,
   `discord_format`, `cooldown_message`, and `duplicate_message`.
-- Existing `discord.yml` values win key by key.
+- Existing destination values win key by key, including nested maps such as
+  `server_aliases`; missing nested keys are merged without replacing live keys.
 - The destination is saved and validated before the legacy source block is
   removed, so an interrupted migration can be retried.
 - `links.json`, guild/channel/role IDs, webhook configuration, environment
@@ -166,7 +172,7 @@ keys. It is idempotent and follows destination-wins semantics:
 
 Executed locally with Java 25:
 
-- `mvn -B test`: 125 tests, 0 failures, 0 errors, 0 skipped.
+- `mvn -B test`: 127 tests, 0 failures, 0 errors, 0 skipped.
 - `mvn -B dependency:analyze`: no dependency problems found.
 - Focused coverage includes localization merging, the actual Discord link
   MiniMessage template, quoted MiniMessage injection, link-code lifecycle,
@@ -189,7 +195,8 @@ Executed locally with Java 25:
    this prefers no duplicate delivery over at-least-once delivery.
 4. Auth-bridge targeted reload validates but deliberately does not rebuild the
    live auth runtime. This preserves sessions; changed handshake/security values
-   become active after a controlled proxy restart.
+   become active after a controlled proxy restart. The reload command reports
+   this state explicitly instead of claiming that the module was reloaded.
 5. Generic startup-time `YamlBackedFile` recovery still backs up and regenerates
    malformed legacy/core configs. Module reload paths preflight first and do not
    invoke that recovery for malformed module YAML.

@@ -27,7 +27,7 @@ class CommunicationsConfigOwnershipTest {
         String chatsYaml = Files.readString(tempDir.resolve("chats.yml"), StandardCharsets.UTF_8);
         String discordYaml = Files.readString(tempDir.resolve("discord.yml"), StandardCharsets.UTF_8);
 
-        assertThat(chatsYaml).contains("global:", "staff:", "alert:", "private:", "reply:");
+        assertThat(chatsYaml).contains("enabled: true", "global:", "staff:", "alert:", "private:", "reply:");
         assertThat(chatsYaml).doesNotContain("proxy:", "proxy_chat:", "discord_format:");
         assertThat(discordYaml).contains(
                 "enabled: false",

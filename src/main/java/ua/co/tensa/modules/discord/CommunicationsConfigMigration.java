@@ -40,12 +40,16 @@ public final class CommunicationsConfigMigration {
         if (discord == null) {
             discord = emptyNode(discordPath);
         }
+        if (chats == null && hasLegacyModules) {
+            chats = emptyNode(chatsPath);
+        }
 
         boolean discordChanged = migrateDiscordState(app, discord);
         discordChanged |= copyMissingProxySettings(chats, discord);
 
         boolean appChanged = migrateModuleState(app);
-        boolean chatsChanged = removeLegacyProxy(chats);
+        boolean chatsChanged = migrateChatState(app, chats);
+        chatsChanged |= removeLegacyProxy(chats);
 
         // Persist the destination before removing legacy source values. If a
         // later write fails, another startup can safely retry the migration.
@@ -86,13 +90,25 @@ public final class CommunicationsConfigMigration {
         boolean changed = false;
         CommentedConfigurationNode source = chats.node("proxy");
         CommentedConfigurationNode destination = discord.node("proxy_chat");
+        return copyMissingChildren(source, destination);
+    }
+
+    private static boolean copyMissingChildren(
+            CommentedConfigurationNode source,
+            CommentedConfigurationNode destination
+    ) throws IOException {
+        boolean changed = false;
         for (Map.Entry<Object, ? extends CommentedConfigurationNode> entry : source.childrenMap().entrySet()) {
+            CommentedConfigurationNode sourceChild = entry.getValue();
             CommentedConfigurationNode target = destination.node(entry.getKey());
-            if (!target.virtual()) {
+            if (target.virtual()) {
+                target.set(sourceChild.raw());
+                changed = true;
                 continue;
             }
-            target.set(entry.getValue().raw());
-            changed = true;
+            if (!sourceChild.childrenMap().isEmpty() && !target.childrenMap().isEmpty()) {
+                changed |= copyMissingChildren(sourceChild, target);
+            }
         }
         return changed;
     }
@@ -112,6 +128,21 @@ public final class CommunicationsConfigMigration {
         modules.node(LEGACY_CHAT_MODULE).set(null);
         modules.node(LEGACY_OLDER_CHAT_MODULE).set(null);
         modules.node(LEGACY_DISCORD_MODULE).set(null);
+        return true;
+    }
+
+    private static boolean migrateChatState(
+            CommentedConfigurationNode app,
+            CommentedConfigurationNode chats
+    ) throws IOException {
+        if (app == null || chats == null || !chats.node("enabled").virtual()) {
+            return false;
+        }
+        CommentedConfigurationNode modules = app.node("modules");
+        Boolean currentChat = booleanValue(modules.node(LEGACY_CHAT_MODULE));
+        Boolean olderChat = booleanValue(modules.node(LEGACY_OLDER_CHAT_MODULE));
+        boolean enabled = Boolean.TRUE.equals(currentChat) || Boolean.TRUE.equals(olderChat);
+        chats.node("enabled").set(enabled);
         return true;
     }
 

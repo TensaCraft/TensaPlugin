@@ -17,6 +17,9 @@ public class ChatConfig extends ConfigBase {
     private static final String LEGACY_PRIVATE_TO_FORMAT = PRIVATE_TO_FORMAT.replace("{message_payload}", "{message}");
     private static final String LEGACY_PRIVATE_FROM_FORMAT = PRIVATE_FROM_FORMAT.replace("{message_payload}", "{message}");
 
+    @CfgKey(value = "enabled", comment = "Enable proxy chat interception and chat commands inside Communications")
+    public boolean enabled = true;
+
     @CfgKey(value = "global", comment = "Global chat channel configuration")
     public Map<String, Object> global = defaults(
             entry("enabled", true),

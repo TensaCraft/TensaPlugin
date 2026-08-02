@@ -42,6 +42,11 @@ public final class LibreLoginAuthBridgeModule {
         protected boolean restartOnReloadFailure() {
             return false;
         }
+
+        @Override
+        public boolean reloadRequiresRestart() {
+            return true;
+        }
     };
 
     public static final ModuleEntry ENTRY = IMPL;

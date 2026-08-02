@@ -93,6 +93,9 @@ public final class ReloadCommand implements SimpleCommand {
         switch (result) {
             case RELOADED -> Message.privateMessage(source,
                     "<green>Module reloaded:</green> <white>" + Message.escapeMiniMessage(target) + "</white>");
+            case RESTART_REQUIRED -> Message.privateMessage(source,
+                    "<yellow>Configuration validated; restart required to apply:</yellow> <white>"
+                            + Message.escapeMiniMessage(target) + "</white>");
             case NOT_FOUND -> Message.privateMessage(source,
                     "<red>Unknown module:</red> <white>" + Message.escapeMiniMessage(target) + "</white>");
             case DISABLED -> Message.privateMessage(source,

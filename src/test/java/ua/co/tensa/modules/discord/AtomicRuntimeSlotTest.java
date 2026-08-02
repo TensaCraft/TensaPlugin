@@ -73,6 +73,21 @@ class AtomicRuntimeSlotTest {
         assertThat(slot.runtime()).isNull();
     }
 
+    @Test
+    void failedDeactivationNeverClaimsThatThePreviousRuntimeSurvived() {
+        AtomicRuntimeSlot<String, String> slot = new AtomicRuntimeSlot<>(
+                plan -> plan,
+                ignored -> { throw new IllegalStateException("deactivation failed"); }
+        );
+        slot.start("stable");
+
+        assertThatThrownBy(() -> slot.replace("next"))
+                .hasMessageContaining("deactivation failed")
+                .hasRootCauseMessage("deactivation failed");
+        assertThat(slot.plan()).isNull();
+        assertThat(slot.runtime()).isNull();
+    }
+
     private static final class FakeRuntime {
         private final Counters counters;
         private boolean closed;

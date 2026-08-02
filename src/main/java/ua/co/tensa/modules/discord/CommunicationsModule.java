@@ -22,6 +22,8 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,6 +34,7 @@ public final class CommunicationsModule extends AbstractModule {
 
     private final AtomicRuntimeSlot<Prepared, ActiveRuntime> runtimeSlot =
             new AtomicRuntimeSlot<>(this::activate, this::deactivate);
+    private final Map<UUID, UUID> privateReplyTargets = new ConcurrentHashMap<>();
 
     private CommunicationsModule() {
         super("communications", "Communications");
@@ -45,6 +48,7 @@ public final class CommunicationsModule extends AbstractModule {
     @Override
     protected void onDisable() {
         runtimeSlot.close();
+        privateReplyTargets.clear();
     }
 
     @Override
@@ -76,7 +80,7 @@ public final class CommunicationsModule extends AbstractModule {
         if (discordSettings != null) {
             validateLinkStore(discordSettings);
         }
-        return new Prepared(chatConfig.adapter(), discordConfig.adapter(), discordSettings);
+        return new Prepared(chatConfig.adapter(), discordConfig.adapter(), chatConfig.enabled, discordSettings);
     }
 
     private ActiveRuntime activate(Prepared plan) {
@@ -91,15 +95,17 @@ public final class CommunicationsModule extends AbstractModule {
                     }
                 }
         );
-        ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat);
+        ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat, privateReplyTargets);
         ActiveRuntime active = new ActiveRuntime(proxyChat, chatCommands);
 
         try {
             if (plan.discordSettings() != null) {
                 startDiscord(active, plan.discordSettings(), discordReference);
             }
-            registerListener(new ProxyChatListener(proxyChat, chatCommands));
-            chatCommands.register();
+            if (plan.chatEnabled()) {
+                registerListener(new ProxyChatListener(proxyChat, chatCommands));
+                chatCommands.register();
+            }
             return active;
         } catch (RuntimeException failure) {
             deactivate(active);
@@ -293,6 +299,7 @@ public final class CommunicationsModule extends AbstractModule {
     private record Prepared(
             YamlAdapter chatConfig,
             YamlAdapter discordConfig,
+            boolean chatEnabled,
             DiscordSettings discordSettings
     ) {
     }

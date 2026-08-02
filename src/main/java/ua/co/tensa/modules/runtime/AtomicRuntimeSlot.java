@@ -30,7 +30,17 @@ public final class AtomicRuntimeSlot<P, R> implements AutoCloseable {
     public synchronized void replace(P nextPlan) {
         Objects.requireNonNull(nextPlan, "nextPlan");
         P previousPlan = plan;
-        stopCurrent();
+        try {
+            stopCurrent();
+        } catch (RuntimeException deactivationFailure) {
+            plan = null;
+            runtime = null;
+            throw new RuntimeReplacementException(
+                    "Runtime deactivation failed; the runtime is stopped or partially stopped",
+                    deactivationFailure,
+                    false
+            );
+        }
         try {
             runtime = activator.apply(nextPlan);
             plan = nextPlan;
@@ -69,8 +79,12 @@ public final class AtomicRuntimeSlot<P, R> implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        stopCurrent();
-        plan = null;
+        try {
+            stopCurrent();
+        } finally {
+            plan = null;
+            runtime = null;
+        }
     }
 
     private void stopCurrent() {

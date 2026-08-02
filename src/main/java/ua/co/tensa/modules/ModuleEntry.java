@@ -18,6 +18,9 @@ public interface ModuleEntry {
         reload();
         return isEnabled();
     }
+    default boolean reloadRequiresRestart() {
+        return false;
+    }
     boolean isEnabled();
 
     static ModuleEntry of(String id, String title, Runnable onEnable, Runnable onDisable) {

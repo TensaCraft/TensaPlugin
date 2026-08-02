@@ -13,6 +13,7 @@ public class Modules {
 
     public enum ReloadResult {
         RELOADED,
+        RESTART_REQUIRED,
         NOT_FOUND,
         DISABLED,
         FAILED
@@ -86,7 +87,12 @@ public class Modules {
             return ReloadResult.DISABLED;
         }
         try {
-            return module.tryReload() ? ReloadResult.RELOADED : ReloadResult.FAILED;
+            if (!module.tryReload()) {
+                return ReloadResult.FAILED;
+            }
+            return module.reloadRequiresRestart()
+                    ? ReloadResult.RESTART_REQUIRED
+                    : ReloadResult.RELOADED;
         } catch (Throwable throwable) {
             ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + throwable.getMessage());
             return ReloadResult.FAILED;
@@ -142,7 +148,7 @@ public class Modules {
 
             if (reloadEnabled) {
                 try {
-                    if (!module.tryReload()) {
+                    if (!module.tryReload() || module.reloadRequiresRestart()) {
                         failures.add(id);
                     }
                 } catch (Throwable t) {

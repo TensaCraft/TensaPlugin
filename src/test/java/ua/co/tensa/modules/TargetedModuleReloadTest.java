@@ -37,18 +37,43 @@ class TargetedModuleReloadTest {
         assertThat(disabled.reloads.get()).isZero();
     }
 
+    @Test
+    void restartRequiredModuleDoesNotReportAppliedReload() {
+        CountingModule authentication = new CountingModule(
+                "librelogin-auth-bridge", true, 7, 12, true
+        );
+
+        assertThat(Modules.reloadModule(
+                Map.of(authentication.id(), authentication), authentication.id()
+        ))
+                .isEqualTo(Modules.ReloadResult.RESTART_REQUIRED);
+        assertThat(authentication.reloads.get()).isEqualTo(1);
+    }
+
     private static final class CountingModule implements ModuleEntry {
         private final String id;
         private final boolean enabled;
         private final AtomicInteger reloads = new AtomicInteger();
         private final AtomicInteger activeSessions;
         private final AtomicInteger connectedPlayers;
+        private final boolean restartRequired;
 
         private CountingModule(String id, boolean enabled, int activeSessions, int connectedPlayers) {
+            this(id, enabled, activeSessions, connectedPlayers, false);
+        }
+
+        private CountingModule(
+                String id,
+                boolean enabled,
+                int activeSessions,
+                int connectedPlayers,
+                boolean restartRequired
+        ) {
             this.id = id;
             this.enabled = enabled;
             this.activeSessions = new AtomicInteger(activeSessions);
             this.connectedPlayers = new AtomicInteger(connectedPlayers);
+            this.restartRequired = restartRequired;
         }
 
         @Override public String id() { return id; }
@@ -61,5 +86,6 @@ class TargetedModuleReloadTest {
             connectedPlayers.set(0);
         }
         @Override public boolean isEnabled() { return enabled; }
+        @Override public boolean reloadRequiresRestart() { return restartRequired; }
     }
 }
