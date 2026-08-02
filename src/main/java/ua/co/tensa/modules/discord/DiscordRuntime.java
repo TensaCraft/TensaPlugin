@@ -1,7 +1,6 @@
 package ua.co.tensa.modules.discord;
 
 import ua.co.tensa.Message;
-import ua.co.tensa.modules.chat.ChatModule;
 import ua.co.tensa.modules.chat.ProxyChatMessage;
 
 import java.net.URLEncoder;
@@ -20,6 +19,7 @@ final class DiscordRuntime implements AutoCloseable {
     private final DiscordGateway gateway;
     private final DiscordLinkService links;
     private final DiscordDelivery delivery;
+    private final InboundChatPublisher inboundChatPublisher;
     private final DiscordServerPolicy serverPolicy;
     private final DiscordEventFormatter eventFormatter;
     private final DiscordEventRateLimiter eventRateLimiter;
@@ -35,10 +35,21 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordLinkService links,
             DiscordDelivery delivery
     ) {
+        this(settings, gateway, links, delivery, (source, author, content) -> { });
+    }
+
+    DiscordRuntime(
+            DiscordSettings settings,
+            DiscordGateway gateway,
+            DiscordLinkService links,
+            DiscordDelivery delivery,
+            InboundChatPublisher inboundChatPublisher
+    ) {
         this.settings = settings;
         this.gateway = gateway;
         this.links = links;
         this.delivery = delivery;
+        this.inboundChatPublisher = inboundChatPublisher;
         this.serverPolicy = new DiscordServerPolicy(settings);
         this.eventFormatter = new DiscordEventFormatter(settings, serverPolicy);
         this.eventRateLimiter = new DiscordEventRateLimiter(settings.eventRatePerMinute());
@@ -208,7 +219,7 @@ final class DiscordRuntime implements AutoCloseable {
         if (content.isBlank()) {
             return;
         }
-        ChatModule.publishExternalMessage("Discord", author, content);
+        inboundChatPublisher.publish("Discord", author, content);
     }
 
     private void deliverToDiscord(DiscordOutboundMessage message) throws Exception {
@@ -306,5 +317,10 @@ final class DiscordRuntime implements AutoCloseable {
                 Message.warn(warning);
             }
         }
+    }
+
+    @FunctionalInterface
+    interface InboundChatPublisher {
+        void publish(String source, String author, String content);
     }
 }

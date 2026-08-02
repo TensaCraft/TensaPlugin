@@ -139,7 +139,7 @@ public final class CommandHelpCatalog {
             placeholders.put("file", safe(RequestsModule.fileByTrigger(command.primary()), "request config"));
             sortOrder = 310;
         } else if (handler instanceof ChatCommands) {
-            ChatCommands.ChatRoute route = ChatCommands.findRoute(display);
+            ChatCommands.ChatRoute route = ((ChatCommands) handler).findRoute(display);
             boolean privateRoute = route != null && route.privateRoute();
             boolean replyRoute = route != null && route.replyRoute();
             usageTemplate = replyRoute

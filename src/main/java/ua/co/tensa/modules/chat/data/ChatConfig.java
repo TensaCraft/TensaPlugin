@@ -8,31 +8,12 @@ import java.util.Map;
 
 /**
  * Typed entry for chats.yml using the model system.
- * Populates three default sections: global, staff, alert.
+ * Owns chat channel definitions only. Discord relay and proxy-wide chat
+ * transport settings are stored in discord.yml.
  */
 public class ChatConfig extends ConfigBase {
     private static final String PRIVATE_TO_FORMAT = "<hover:show_text:'<gray>Натисніть, щоб відповісти</gray>'><click:suggest_command:'/pm {from} '><#55ff55>{from}</#55ff55></click></hover> <aqua>→</aqua> <#55ff55>Вам</#55ff55><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Відповісти з цим текстом</gray>'><click:suggest_command:'/pm {from} {message}'>↻</click></hover><gray>]</gray>";
     private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message}'>↻</click></hover><gray>]</gray>";
-
-    private static ChatConfig instance;
-
-    @CfgKey(value = "proxy", comment = "Proxy-wide player chat interception and formatting")
-    public Map<String, Object> proxy = defaults(
-            entry("enabled", true),
-            entry("excluded_servers", java.util.List.of("auth", "aero-auth")),
-            entry("server_aliases", defaults(
-                    entry("aeronautics", "Aeronautics"),
-                    entry("creative", "Creative")
-            )),
-            entry("max_length", 256),
-            entry("cooldown_millis", 1500),
-            entry("duplicate_window_millis", 15000),
-            entry("max_repeated_characters", 4),
-            entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>"),
-            entry("discord_format", "<dark_gray>[</dark_gray><color:#5865f2>Discord</color><dark_gray>]</dark_gray> <color:#7fd7ff>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
-            entry("cooldown_message", "<color:#ffb84d>Зачекайте трохи перед наступним повідомленням.</color>"),
-            entry("duplicate_message", "<color:#ffb84d>Не надсилайте однакові повідомлення поспіль.</color>")
-    );
 
     @CfgKey(value = "global", comment = "Global chat channel configuration")
     public Map<String, Object> global = defaults(
@@ -96,6 +77,5 @@ public class ChatConfig extends ConfigBase {
     }
     private static Object[] entry(String k, Object v) { return new Object[]{k, v}; }
 
-    private ChatConfig() { super("chats.yml"); }
-    public static synchronized ChatConfig get() { if (instance == null) instance = new ChatConfig(); return instance; }
+    public ChatConfig() { super("chats.yml"); }
 }

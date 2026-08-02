@@ -11,6 +11,27 @@ import java.util.List;
 import java.util.Map;
 
 public final class DiscordConfig extends ConfigBase {
+    @CfgKey(value = "enabled", comment = "Enable the Discord bot, linking, relay and announcements inside Communications")
+    public boolean enabled = false;
+
+    @CfgKey(value = "proxy_chat", comment = "Proxy-wide player chat transport and Discord-to-Minecraft display settings")
+    public Map<String, Object> proxyChat = defaults(
+            entry("enabled", true),
+            entry("excluded_servers", List.of("auth", "aero-auth")),
+            entry("server_aliases", defaults(
+                    entry("aeronautics", "Aeronautics"),
+                    entry("creative", "Creative")
+            )),
+            entry("max_length", 256),
+            entry("cooldown_millis", 1500),
+            entry("duplicate_window_millis", 15000),
+            entry("max_repeated_characters", 4),
+            entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>"),
+            entry("discord_format", "<dark_gray>[</dark_gray><color:#5865f2>Discord</color><dark_gray>]</dark_gray> <color:#7fd7ff>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
+            entry("cooldown_message", "<color:#ffb84d>Зачекайте трохи перед наступним повідомленням.</color>"),
+            entry("duplicate_message", "<color:#ffb84d>Не надсилайте однакові повідомлення поспіль.</color>")
+    );
+
     @CfgKey(value = "bot.token", comment = "Secret. Prefer TENSA_DISCORD_BOT_TOKEN; this key is never generated automatically")
     public String botToken = "";
 
@@ -189,5 +210,19 @@ public final class DiscordConfig extends ConfigBase {
         return !"bot.token".equals(basePath)
                 && !"webhook.url".equals(basePath)
                 && !"announcements.route.webhook_url".equals(basePath);
+    }
+
+    private static Map<String, Object> defaults(Object... values) {
+        Map<String, Object> defaults = new LinkedHashMap<>();
+        for (Object value : values) {
+            if (value instanceof Object[] entry && entry.length == 2) {
+                defaults.put(String.valueOf(entry[0]), entry[1]);
+            }
+        }
+        return defaults;
+    }
+
+    private static Object[] entry(String key, Object value) {
+        return new Object[]{key, value};
     }
 }

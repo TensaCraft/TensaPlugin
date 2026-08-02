@@ -5,7 +5,6 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlAdapter;
-import ua.co.tensa.modules.chat.data.ChatConfig;
 
 import java.time.Clock;
 import java.util.HashMap;
@@ -14,8 +13,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
-final class ProxyChatService {
+public final class ProxyChatService {
     private record PlayerState(long sentAt, long duplicateAt, String duplicateKey) {
     }
 
@@ -36,28 +36,43 @@ final class ProxyChatService {
     }
 
     private final Clock clock;
+    private final YamlAdapter chatConfig;
+    private final YamlAdapter discordConfig;
+    private final Consumer<ProxyChatMessage> outbound;
     private final ConcurrentHashMap<UUID, PlayerState> playerStates = new ConcurrentHashMap<>();
     private volatile Settings settings;
 
-    ProxyChatService() {
-        this(Clock.systemUTC());
+    public ProxyChatService(
+            YamlAdapter chatConfig,
+            YamlAdapter discordConfig,
+            Consumer<ProxyChatMessage> outbound
+    ) {
+        this(Clock.systemUTC(), chatConfig, discordConfig, outbound);
     }
 
-    ProxyChatService(Clock clock) {
+    ProxyChatService(
+            Clock clock,
+            YamlAdapter chatConfig,
+            YamlAdapter discordConfig,
+            Consumer<ProxyChatMessage> outbound
+    ) {
         this.clock = clock;
+        this.chatConfig = java.util.Objects.requireNonNull(chatConfig, "chatConfig");
+        this.discordConfig = java.util.Objects.requireNonNull(discordConfig, "discordConfig");
+        this.outbound = outbound == null ? ignored -> { } : outbound;
         reload();
     }
 
-    void reload() {
-        YamlAdapter config = ChatConfig.get().adapter();
+    public void reload() {
+        YamlAdapter config = discordConfig;
         Set<String> excludedServers = new HashSet<>();
-        for (String server : config.getStringList("proxy.excluded_servers")) {
+        for (String server : config.getStringList("proxy_chat.excluded_servers")) {
             if (server != null && !server.isBlank()) {
                 excludedServers.add(server.trim().toLowerCase(java.util.Locale.ROOT));
             }
         }
         Map<String, String> serverAliases = new HashMap<>();
-        Map<String, Object> configuredAliases = config.getSection("proxy.server_aliases");
+        Map<String, Object> configuredAliases = config.getSection("proxy_chat.server_aliases");
         if (configuredAliases == null) {
             configuredAliases = Map.of();
         }
@@ -73,27 +88,27 @@ final class ProxyChatService {
         }
 
         settings = new Settings(
-                config.getBoolean("proxy.enabled", true),
+                config.getBoolean("proxy_chat.enabled", true),
                 nativeGlobalChatEnabled(
-                        config.getBoolean("proxy.enabled", true),
-                        config.getBoolean("global.enabled", true),
-                        config.getBoolean("global.native", true)
+                        config.getBoolean("proxy_chat.enabled", true),
+                        chatConfig.getBoolean("global.enabled", true),
+                        chatConfig.getBoolean("global.native", true)
                 ),
                 Set.copyOf(excludedServers),
                 Map.copyOf(serverAliases),
-                Math.max(1, config.getInt("proxy.max_length", 256)),
-                Math.max(0L, config.getLong("proxy.cooldown_millis", 1500L)),
-                Math.max(0L, config.getLong("proxy.duplicate_window_millis", 15000L)),
-                Math.max(1, config.getInt("proxy.max_repeated_characters", 4)),
-                config.getString("proxy.format", "<white>{player}: {message}</white>"),
-                config.getString("proxy.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>"),
-                config.getString("proxy.cooldown_message", "<yellow>Зачекайте перед наступним повідомленням.</yellow>"),
-                config.getString("proxy.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>")
+                Math.max(1, config.getInt("proxy_chat.max_length", 256)),
+                Math.max(0L, config.getLong("proxy_chat.cooldown_millis", 1500L)),
+                Math.max(0L, config.getLong("proxy_chat.duplicate_window_millis", 15000L)),
+                Math.max(1, config.getInt("proxy_chat.max_repeated_characters", 4)),
+                config.getString("proxy_chat.format", "<white>{player}: {message}</white>"),
+                config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>"),
+                config.getString("proxy_chat.cooldown_message", "<yellow>Зачекайте перед наступним повідомленням.</yellow>"),
+                config.getString("proxy_chat.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>")
         );
         playerStates.clear();
     }
 
-    boolean shouldIntercept(Player player) {
+    public boolean shouldIntercept(Player player) {
         Settings current = settings;
         if (!current.enabled()) {
             return false;
@@ -103,7 +118,7 @@ final class ProxyChatService {
         return !current.excludedServers().contains(server.toLowerCase(java.util.Locale.ROOT));
     }
 
-    boolean shouldInterceptNative(Player player) {
+    public boolean shouldInterceptNative(Player player) {
         Settings current = settings;
         return current.nativeGlobalChat() && shouldIntercept(player);
     }
@@ -116,7 +131,7 @@ final class ProxyChatService {
         return proxyEnabled && globalEnabled && nativeEnabled;
     }
 
-    boolean publishPlayer(Player player, String rawMessage, String channel) {
+    public boolean publishPlayer(Player player, String rawMessage, String channel) {
         if (player == null || !shouldIntercept(player)) {
             return false;
         }
@@ -156,11 +171,15 @@ final class ProxyChatService {
                 message
         );
         broadcast(payload, current.format(), current);
-        ChatModule.notifyOutbound(payload);
+        try {
+            outbound.accept(payload);
+        } catch (RuntimeException exception) {
+            Message.warn("Chat relay rejected a message: " + exception.getMessage());
+        }
         return true;
     }
 
-    void publishExternal(String source, String author, String rawMessage) {
+    public void publishExternal(String source, String author, String rawMessage) {
         Settings current = settings;
         String message = ProxyChatText.sanitize(
                 rawMessage,
@@ -183,11 +202,11 @@ final class ProxyChatService {
         broadcast(payload, current.discordFormat(), current);
     }
 
-    void clear() {
+    public void clear() {
         playerStates.clear();
     }
 
-    void forget(UUID playerId) {
+    public void forget(UUID playerId) {
         if (playerId != null) {
             playerStates.remove(playerId);
         }

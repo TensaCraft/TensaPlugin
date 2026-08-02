@@ -8,19 +8,21 @@ import java.util.ServiceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class DiscordProviderTest {
+class CommunicationsProviderTest {
     @Test
-    void providerIsDiscoverableAndDisabledByDefault() {
-        DiscordProvider provider = new DiscordProvider();
+    void neutralProviderReplacesSeparateChatAndDiscordModules() {
+        CommunicationsProvider provider = new CommunicationsProvider();
         TensaModule annotation = provider.getClass().getAnnotation(TensaModule.class);
 
-        assertThat(provider.id()).isEqualTo("discord");
-        assertThat(provider.entry().id()).isEqualTo("discord");
+        assertThat(provider.id()).isEqualTo("communications");
+        assertThat(provider.entry().id()).isEqualTo("communications");
+        assertThat(provider.entry().title()).isEqualTo("Communications");
         assertThat(annotation).isNotNull();
-        assertThat(annotation.defaultEnabled()).isFalse();
+        assertThat(annotation.defaultEnabled()).isTrue();
         assertThat(ServiceLoader.load(ModuleProvider.class).stream()
                 .map(ServiceLoader.Provider::get)
                 .map(ModuleProvider::id))
-                .contains("discord");
+                .contains("communications")
+                .doesNotContain("chat-manager", "discord");
     }
 }

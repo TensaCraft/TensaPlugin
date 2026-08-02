@@ -4,11 +4,13 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.player.PlayerChatEvent;
 
-final class ProxyChatListener {
+public final class ProxyChatListener {
     private final ProxyChatService service;
+    private final ChatCommands commands;
 
-    ProxyChatListener(ProxyChatService service) {
+    public ProxyChatListener(ProxyChatService service, ChatCommands commands) {
         this.service = service;
+        this.commands = commands;
     }
 
     @Subscribe
@@ -26,6 +28,6 @@ final class ProxyChatListener {
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
         service.forget(event.getPlayer().getUniqueId());
-        ChatCommands.forgetPlayer(event.getPlayer().getUniqueId());
+        commands.forgetPlayer(event.getPlayer().getUniqueId());
     }
 }
