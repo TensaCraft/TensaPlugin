@@ -21,6 +21,7 @@ final class ProxyChatService {
 
     private record Settings(
             boolean enabled,
+            boolean nativeGlobalChat,
             Set<String> excludedServers,
             Map<String, String> serverAliases,
             int maxLength,
@@ -73,6 +74,11 @@ final class ProxyChatService {
 
         settings = new Settings(
                 config.getBoolean("proxy.enabled", true),
+                nativeGlobalChatEnabled(
+                        config.getBoolean("proxy.enabled", true),
+                        config.getBoolean("global.enabled", true),
+                        config.getBoolean("global.native", true)
+                ),
                 Set.copyOf(excludedServers),
                 Map.copyOf(serverAliases),
                 Math.max(1, config.getInt("proxy.max_length", 256)),
@@ -95,6 +101,19 @@ final class ProxyChatService {
 
         String server = serverName(player);
         return !current.excludedServers().contains(server.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    boolean shouldInterceptNative(Player player) {
+        Settings current = settings;
+        return current.nativeGlobalChat() && shouldIntercept(player);
+    }
+
+    static boolean nativeGlobalChatEnabled(
+            boolean proxyEnabled,
+            boolean globalEnabled,
+            boolean nativeEnabled
+    ) {
+        return proxyEnabled && globalEnabled && nativeEnabled;
     }
 
     boolean publishPlayer(Player player, String rawMessage, String channel) {

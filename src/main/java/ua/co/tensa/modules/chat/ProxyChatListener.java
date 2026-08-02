@@ -13,7 +13,7 @@ final class ProxyChatListener {
 
     @Subscribe
     public void onPlayerChat(PlayerChatEvent event) {
-        if (!service.shouldIntercept(event.getPlayer())) {
+        if (!service.shouldInterceptNative(event.getPlayer())) {
             return;
         }
 

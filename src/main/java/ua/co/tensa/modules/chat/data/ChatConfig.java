@@ -19,7 +19,7 @@ public class ChatConfig extends ConfigBase {
             entry("excluded_servers", java.util.List.of("auth", "aero-auth")),
             entry("server_aliases", defaults(
                     entry("aeronautics", "Aeronautics"),
-                    entry("neopols", "NeoPols")
+                    entry("creative", "Creative")
             )),
             entry("max_length", 256),
             entry("cooldown_millis", 1500),
@@ -34,6 +34,7 @@ public class ChatConfig extends ConfigBase {
     @CfgKey(value = "global", comment = "Global chat channel configuration")
     public Map<String, Object> global = defaults(
             entry("enabled", true),
+            entry("native", true),
             entry("command", "g,global,gchat"),
             entry("permission", ""),
             entry("see_all", true),
