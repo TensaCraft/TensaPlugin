@@ -11,6 +11,9 @@ import java.util.Map;
  * Populates three default sections: global, staff, alert.
  */
 public class ChatConfig extends ConfigBase {
+    private static final String PRIVATE_TO_FORMAT = "<hover:show_text:'<gray>Натисніть, щоб відповісти</gray>'><click:suggest_command:'/pm {from} '><#55ff55>{from}</#55ff55></click></hover> <aqua>→</aqua> <#55ff55>Вам</#55ff55><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Відповісти з цим текстом</gray>'><click:suggest_command:'/pm {from} {message}'>↻</click></hover><gray>]</gray>";
+    private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message}'>↻</click></hover><gray>]</gray>";
+
     private static ChatConfig instance;
 
     @CfgKey(value = "proxy", comment = "Proxy-wide player chat interception and formatting")
@@ -68,8 +71,8 @@ public class ChatConfig extends ConfigBase {
             entry("type", "private"),
             entry("command", "msg,tell,w"),
             entry("permission", ""),
-            entry("to_format", "<dark_gray>[</dark_gray><color:#6edcff>PM</color><dark_gray>]</dark_gray> <color:#f4c15d>{from}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
-            entry("from_format", "<dark_gray>[</dark_gray><color:#6edcff>PM</color><dark_gray>]</dark_gray> <white>ви</white> <dark_gray>></dark_gray> <color:#f4c15d>{to}</color><dark_gray>:</dark_gray> <white>{message}</white>")
+            entry("to_format", PRIVATE_TO_FORMAT),
+            entry("from_format", PRIVATE_FROM_FORMAT)
     );
 
     @CfgKey(value = "reply", comment = "Reply to the last cross-server private conversation")
@@ -78,8 +81,8 @@ public class ChatConfig extends ConfigBase {
             entry("type", "reply"),
             entry("command", "r,reply"),
             entry("permission", ""),
-            entry("to_format", "<dark_gray>[</dark_gray><color:#6edcff>PM</color><dark_gray>]</dark_gray> <color:#f4c15d>{from}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
-            entry("from_format", "<dark_gray>[</dark_gray><color:#6edcff>PM</color><dark_gray>]</dark_gray> <white>ви</white> <dark_gray>></dark_gray> <color:#f4c15d>{to}</color><dark_gray>:</dark_gray> <white>{message}</white>")
+            entry("to_format", PRIVATE_TO_FORMAT),
+            entry("from_format", PRIVATE_FROM_FORMAT)
     );
 
     private static Map<String, Object> defaults(Object... kv) {
