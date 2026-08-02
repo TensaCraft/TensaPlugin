@@ -25,7 +25,7 @@ public class ChatConfig extends ConfigBase {
             entry("cooldown_millis", 1500),
             entry("duplicate_window_millis", 15000),
             entry("max_repeated_characters", 4),
-            entry("format", "<dark_gray>[</dark_gray><color:#32c8ff>{server}</color><dark_gray>]</dark_gray> <color:#f4c15d>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
+            entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>"),
             entry("discord_format", "<dark_gray>[</dark_gray><color:#5865f2>Discord</color><dark_gray>]</dark_gray> <color:#7fd7ff>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
             entry("cooldown_message", "<color:#ffb84d>Зачекайте трохи перед наступним повідомленням.</color>"),
             entry("duplicate_message", "<color:#ffb84d>Не надсилайте однакові повідомлення поспіль.</color>")
@@ -38,7 +38,7 @@ public class ChatConfig extends ConfigBase {
             entry("permission", ""),
             entry("see_all", true),
             entry("relay_to_discord", true),
-            entry("format", "<dark_gray>[</dark_gray><color:#32c8ff>{server}</color><dark_gray>]</dark_gray> <color:#f4c15d>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>")
+            entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>")
     );
 
     @CfgKey(value = "staff", comment = "Staff chat channel configuration")

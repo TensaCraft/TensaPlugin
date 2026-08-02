@@ -56,7 +56,7 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "announcements.server_switch", comment = "Send proxy server-switch messages to Discord")
     public boolean serverSwitchMessages = false;
 
-    @CfgKey(value = "announcements.backend_status", comment = "Send backend unavailability and recovery messages to Discord")
+    @CfgKey(value = "announcements.backend_status.enabled", comment = "Send backend unavailability and recovery messages to Discord")
     public boolean backendStatusMessages = false;
 
     @CfgKey(value = "announcements.advancements", comment = "Accept advancement events from the configured backend bridge")
