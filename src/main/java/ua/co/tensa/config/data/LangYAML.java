@@ -41,17 +41,7 @@ public class LangYAML extends YamlBackedFile {
                 java.nio.file.Path path = file.toPath();
                 YamlConfigurationLoader loader = YamlFileIO.loader(path);
                 CommentedConfigurationNode yf = YamlFileIO.load(loader);
-                boolean changed = false;
-                for (String key : keys) {
-                    // Only copy simple values (strings, numbers, booleans); skip sections
-                    CommentedConfigurationNode templateNode = node(template, key);
-                    if (!templateNode.childrenMap().isEmpty()) continue;
-                    CommentedConfigurationNode targetNode = node(yf, key);
-                    if (targetNode.virtual() || targetNode.raw() == null) {
-                        targetNode.set(templateNode.raw());
-                        changed = true;
-                    }
-                }
+                boolean changed = mergeMissingScalarValues(template, yf, keys);
                 if (changed) {
                     YamlFileIO.saveValidated(loader, yf, path);
                 }
@@ -287,6 +277,10 @@ public class LangYAML extends YamlBackedFile {
         setLocalizedConfigValue("queue_stats",
                 "<gold>Queue stats:</gold> <gray>total=</gray><white>{total}</white> <gray>due=</gray><white>{due}</white> <gray>online=</gray><white>{online}</white>",
                 "<gold>Статистика черги:</gold> <gray>усього=</gray><white>{total}</white> <gray>готово=</gray><white>{due}</white> <gray>онлайн=</gray><white>{online}</white>");
+
+        // Bundled translations can add module-specific keys without replacing
+        // established defaults above or administrator-maintained values on disk.
+        mergeBundledDefaults();
     }
 
     private void setLocalizedConfigValue(String path, String englishDefault, String ukrainianDefault) {
@@ -301,6 +295,48 @@ public class LangYAML extends YamlBackedFile {
         java.util.Set<String> keys = new java.util.LinkedHashSet<>();
         collectKeys(root, "", keys);
         return keys;
+    }
+
+    private void mergeBundledDefaults() {
+        String resource = "langs/" + getLangFile().toLowerCase(java.util.Locale.ROOT) + ".yml";
+        try (java.io.InputStream input = LangYAML.class.getClassLoader().getResourceAsStream(resource)) {
+            if (input == null) {
+                return;
+            }
+            String contents = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            YamlConfigurationLoader bundledLoader = YamlConfigurationLoader.builder()
+                    .source(() -> new java.io.BufferedReader(new java.io.StringReader(contents)))
+                    .build();
+            CommentedConfigurationNode defaults = bundledLoader.load();
+            if (mergeMissingScalarValues(defaults, yamlFile, collectKeys(defaults))) {
+                markDirty();
+            }
+        } catch (Exception e) {
+            Message.warn("Failed to load bundled language defaults for " + getLangFile() + ": " + e.getMessage());
+        }
+    }
+
+    private static boolean mergeMissingScalarValues(
+            CommentedConfigurationNode template,
+            CommentedConfigurationNode target,
+            java.util.Set<String> keys
+    ) throws org.spongepowered.configurate.serialize.SerializationException {
+        boolean changed = false;
+        for (String key : keys) {
+            CommentedConfigurationNode templateNode = node(template, key);
+            if (!templateNode.childrenMap().isEmpty()) {
+                continue;
+            }
+            CommentedConfigurationNode targetNode = node(target, key);
+            if (targetNode.virtual() || targetNode.raw() == null) {
+                targetNode.set(templateNode.raw());
+                if (templateNode.comment() != null) {
+                    targetNode.comment(templateNode.comment());
+                }
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static void collectKeys(CommentedConfigurationNode node, String prefix, java.util.Set<String> keys) {

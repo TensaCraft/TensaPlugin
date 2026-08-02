@@ -64,6 +64,26 @@ class LangYAMLTest {
     }
 
     @Test
+    void bundledUkrainianDefaultsAddDiscordLinkTemplateWithoutOverwritingManualTranslations() throws Exception {
+        Files.writeString(tempDir.resolve("config.yml"), "language: uk\n", StandardCharsets.UTF_8);
+        Tensa.config = new Config();
+        resetLangSingleton();
+
+        Path langFile = tempDir.resolve("lang").resolve("uk.yml");
+        Files.createDirectories(langFile.getParent());
+        Files.writeString(langFile, """
+                discord_usage: "<gold>Мій ручний переклад</gold>"
+                """, StandardCharsets.UTF_8);
+
+        LangYAML lang = LangYAML.getInstance();
+
+        assertThat(lang.getString("discord_usage", "")).isEqualTo("<gold>Мій ручний переклад</gold>");
+        assertThat(lang.getString("discord_link_code", ""))
+                .contains("copy_to_clipboard:'{code}'")
+                .contains("[Скопіювати]");
+    }
+
+    @Test
     void generatedLanguageCanReloadWithoutCorruptRecovery() throws Exception {
         LangYAML lang = LangYAML.getInstance();
         Path langFile = tempDir.resolve("lang").resolve("en.yml");
