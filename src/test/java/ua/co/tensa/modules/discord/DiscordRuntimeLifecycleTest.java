@@ -46,6 +46,13 @@ class DiscordRuntimeLifecycleTest {
         runtime.announceJoin("Pilot", "Aero");
         awaitCount(gateway.sentMessages, 2);
         assertThat(gateway.routes).containsExactly(DiscordRoute.CHAT, DiscordRoute.EVENTS);
+        assertThat(gateway.embeds)
+                .singleElement()
+                .satisfies(embed -> {
+                    assertThat(embed.title()).isEqualTo("Гравець приєднався");
+                    assertThat(embed.color()).isEqualTo(DiscordEmbedMessage.GREEN);
+                    assertThat(embed.description()).contains("Pilot");
+                });
 
         runtime.close();
 
@@ -76,6 +83,7 @@ class DiscordRuntimeLifecycleTest {
     private static final class FakeGateway implements DiscordGateway {
         private final AtomicInteger sentMessages = new AtomicInteger();
         private final ConcurrentLinkedQueue<DiscordRoute> routes = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<DiscordEmbedMessage> embeds = new ConcurrentLinkedQueue<>();
         private volatile boolean ready;
         private volatile boolean closed;
 
@@ -92,6 +100,14 @@ class DiscordRuntimeLifecycleTest {
         @Override
         public CompletableFuture<Void> sendBotMessage(DiscordRoute route, String content) {
             routes.add(route);
+            sentMessages.incrementAndGet();
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<Void> sendBotEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+            routes.add(route);
+            embeds.add(embed);
             sentMessages.incrementAndGet();
             return CompletableFuture.completedFuture(null);
         }

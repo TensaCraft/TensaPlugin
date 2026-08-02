@@ -45,7 +45,7 @@ public final class DiscordConfig extends ConfigBase {
     public String minecraftToDiscordFormat = "{message}";
 
     @CfgKey(value = "relay.avatar_url_template", comment = "HTTPS avatar URL supporting {uuid} and {player}")
-    public String avatarUrlTemplate = "https://mc-heads.net/avatar/{uuid}/128";
+    public String avatarUrlTemplate = "https://mc-heads.net/avatar/{player}/128";
 
     @CfgKey(value = "announcements.join", comment = "Send player join messages to Discord")
     public boolean joinMessages = false;

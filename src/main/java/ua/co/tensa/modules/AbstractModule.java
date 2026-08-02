@@ -81,6 +81,7 @@ public abstract class AbstractModule implements ModuleEntry {
     protected abstract void onEnable();
     protected abstract void onDisable();
     protected void onReload() { /* optional soft reload */ }
+    protected boolean restartOnReloadFailure() { return true; }
 
     // Reload: if onReload is overridden -> use it; otherwise perform full restart
     @Override
@@ -99,7 +100,13 @@ public abstract class AbstractModule implements ModuleEntry {
                 ModuleStatusLogger.reloaded(id, title);
                 return;
             } catch (Throwable t) {
-                ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getMessage() + "; restarting module");
+                if (!restartOnReloadFailure()) {
+                    ua.co.tensa.Message.warn("Soft reload rejected for '" + id + "': " + t.getMessage()
+                            + "; keeping the active runtime");
+                    return;
+                }
+                ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getMessage()
+                        + "; restarting module");
             }
         }
         try { doDisable(false); } catch (Throwable ignored) {}

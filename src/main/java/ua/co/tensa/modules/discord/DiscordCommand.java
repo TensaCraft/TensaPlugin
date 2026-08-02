@@ -70,7 +70,11 @@ final class DiscordCommand implements SimpleCommand {
         DiscordMessages.send(
                 player,
                 "discord_link_code",
-                "<green>Код прив'язки:</green> <white>{code}</white><gray>. У Discord виконайте </gray><white>/{command} code:{code}</white><gray>. Код діє {minutes} хв.</gray>",
+                "<green>Код прив'язки:</green> <white>{code}</white> "
+                        + "<click:copy_to_clipboard:'{code}'><hover:show_text:'<gray>Натисніть, щоб скопіювати</gray>'>"
+                        + "<aqua>[Скопіювати]</aqua></hover></click>"
+                        + "<gray>. У Discord виконайте </gray><white>/{command} code:{code}</white>"
+                        + "<gray>. Код діє {minutes} хв.</gray>",
                 Map.of(
                         "code", issued.code(),
                         "command", runtime.linkCommandName(),

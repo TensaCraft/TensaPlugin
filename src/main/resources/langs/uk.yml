@@ -98,7 +98,7 @@ queue_stats: "<gold>Статистика черги:</gold> <gray>усього=<
 # Discord Module
 discord_player_only: "<red>Ця команда доступна лише гравцям.</red>"
 discord_usage: "<gold>Використання:</gold> <white>/discord link|unlink|status</white>"
-discord_link_code: "<green>Код прив'язки:</green> <white>{code}</white><gray>. У Discord виконайте </gray><white>/{command} code:{code}</white><gray>. Код діє {minutes} хв.</gray>"
+discord_link_code: "<green>Код прив'язки:</green> <white>{code}</white> <click:copy_to_clipboard:'{code}'><hover:show_text:'<gray>Натисніть, щоб скопіювати</gray>'><aqua>[Скопіювати]</aqua></hover></click><gray>. У Discord виконайте </gray><white>/{command} code:{code}</white><gray>. Код діє {minutes} хв.</gray>"
 discord_link_already: "<yellow>Ваш Minecraft-акаунт уже прив'язаний до Discord.</yellow>"
 discord_status_linked: "<green>Прив'язано до Discord:</green> <white>{discord}</white>"
 discord_status_unlinked: "<gray>Discord-акаунт не прив'язано.</gray>"

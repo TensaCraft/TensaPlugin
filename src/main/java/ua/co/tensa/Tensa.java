@@ -73,17 +73,14 @@ public class Tensa {
     }
 
     public static void reloadPlugin() {
-        Modules.disableAll();
-        closeCoreServices();
         config = config == null ? new Config() : config;
         config.reload();
-        initialiseDatabase();
-        initialiseUserData();
         Lang.initialise();
         PlaceholderManager.reload();
-        initialiseUserMeta();
+        registerUserMetaBindings();
         EventManager.reload();
         Modules.refresh();
+        Message.info("Configuration reloaded without interrupting database or authentication sessions");
     }
 
     private static void initialiseDatabase() {
@@ -116,6 +113,19 @@ public class Tensa {
             return;
         }
         userMeta = new UserMetaService(userData, config == null || config.userMetaDefaultPersist());
+        registerUserMetaBindings();
+    }
+
+    private static void registerUserMetaBindings() {
+        Util.unregisterCommand("tmeta");
+        Util.unregisterCommand("usermeta");
+        PlaceholderManager.unregisterRawPrefixResolver("meta_");
+        PlaceholderManager.unregisterRawPrefixResolver("tensa_meta_");
+        PlaceholderManager.unregisterAnglePrefixResolver("meta_");
+        PlaceholderManager.unregisterAnglePrefixResolver("tensa_meta_");
+        if (userMeta == null) {
+            return;
+        }
         Util.registerCommand("tmeta", "usermeta", new UserMetaCommand(userMeta));
         PlaceholderManager.registerRawPrefixResolver("meta_", (player, key) -> {
             if (player == null || userMeta == null) return "";

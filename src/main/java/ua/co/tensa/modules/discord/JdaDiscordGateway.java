@@ -2,6 +2,8 @@ package ua.co.tensa.modules.discord;
 
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.EmbedBuilder;
+import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Role;
@@ -35,7 +37,9 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private volatile TextChannel channel;
     private volatile TextChannel eventsChannel;
     private volatile Consumer<DiscordInboundMessage> inboundHandler = ignored -> { };
-    private volatile SlashLinkHandler slashLinkHandler = (code, id, name) -> CompletableFuture.completedFuture("Сервіс прив'язки недоступний.");
+    private volatile SlashLinkHandler slashLinkHandler = (code, id, name) -> CompletableFuture.completedFuture(
+            DiscordEmbedMessage.linkError("Сервіс прив'язки недоступний.")
+    );
     private volatile Runnable readyHandler = () -> { };
 
     JdaDiscordGateway(DiscordSettings settings) {
@@ -142,17 +146,27 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
             return;
         }
         if (!event.isFromGuild() || event.getGuild() == null || !event.getGuild().getId().equals(settings.guildId())) {
-            event.reply("Ця команда доступна лише на налаштованому Discord-сервері.").setEphemeral(true).queue();
+            event.replyEmbeds(toMessageEmbed(DiscordEmbedMessage.linkError(
+                            "Ця команда доступна лише на налаштованому Discord-сервері."
+                    )))
+                    .setEphemeral(true)
+                    .queue();
             return;
         }
         String code = event.getOption("code", "", option -> option.getAsString());
         String userName = event.getMember() == null
                 ? event.getUser().getEffectiveName()
                 : event.getMember().getEffectiveName();
-        event.deferReply(true).queue(hook -> slashLinkHandler
-                .link(code, event.getUser().getId(), userName)
-                .exceptionally(ignored -> "Не вдалося завершити прив'язку. Спробуйте ще раз пізніше.")
-                .thenAccept(reply -> hook.editOriginal(reply).queue()));
+        event.deferReply(true).queue(
+                hook -> slashLinkHandler
+                        .link(code, event.getUser().getId(), userName)
+                        .exceptionally(ignored -> DiscordEmbedMessage.linkError(
+                                "Не вдалося завершити прив'язку. Спробуйте ще раз пізніше."
+                        ))
+                        .thenAccept(reply -> hook.editOriginalEmbeds(toMessageEmbed(reply)).queue()),
+                ignored -> Message.warn("Discord slash command acknowledgement failed; verify that no second bot process handles /"
+                        + settings.linkCommandName())
+        );
     }
 
     @Override
@@ -162,6 +176,18 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
             return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
         }
         return target.sendMessage(content)
+                .setAllowedMentions(List.of())
+                .submit()
+                .thenApply(ignored -> null);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendBotEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+        TextChannel target = route == DiscordRoute.EVENTS ? eventsChannel : channel;
+        if (!ready.get() || target == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
+        }
+        return target.sendMessageEmbeds(toMessageEmbed(embed))
                 .setAllowedMentions(List.of())
                 .submit()
                 .thenApply(ignored -> null);
@@ -251,5 +277,14 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                         ignored -> Message.info("Discord slash command registered: /" + settings.linkCommandName()),
                         ignored -> Message.warn("Discord slash command registration failed")
                 );
+    }
+
+    private static MessageEmbed toMessageEmbed(DiscordEmbedMessage embed) {
+        return new EmbedBuilder()
+                .setTitle(embed.title())
+                .setDescription(embed.description())
+                .setColor(embed.color())
+                .setTimestamp(embed.timestamp())
+                .build();
     }
 }

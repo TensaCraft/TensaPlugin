@@ -31,16 +31,29 @@ final class DiscordWebhookClient {
     }
 
     CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("content", content);
+        if (username != null && !username.isBlank()) {
+            payload.put("username", username);
+        }
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            payload.put("avatar_url", avatarUrl);
+        }
+        return sendPayload(route, payload);
+    }
+
+    CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("title", embed.title());
+        body.put("description", embed.description());
+        body.put("color", embed.color());
+        body.put("timestamp", embed.timestamp().toString());
+        return sendPayload(route, new LinkedHashMap<>(Map.of("embeds", List.of(body))));
+    }
+
+    private CompletableFuture<Void> sendPayload(DiscordRoute route, Map<String, Object> payload) {
         return webhookUri(route)
                 .map(uri -> {
-                    Map<String, Object> payload = new LinkedHashMap<>();
-                    payload.put("content", content);
-                    if (username != null && !username.isBlank()) {
-                        payload.put("username", username);
-                    }
-                    if (avatarUrl != null && !avatarUrl.isBlank()) {
-                        payload.put("avatar_url", avatarUrl);
-                    }
                     payload.put("allowed_mentions", Map.of("parse", List.of()));
                     HttpRequest request = HttpRequest.newBuilder(uri)
                             .timeout(settings.deliveryTimeout())

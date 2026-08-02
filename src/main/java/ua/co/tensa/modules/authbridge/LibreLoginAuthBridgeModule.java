@@ -27,6 +27,19 @@ public final class LibreLoginAuthBridgeModule {
         protected void onDisable() {
             LibreLoginAuthBridgeModule.disableImpl();
         }
+
+        @Override
+        protected void onReload() {
+            AuthBridgeConfig config = AuthBridgeConfig.get();
+            config.reloadCfg();
+            validateConfig(config);
+            ua.co.tensa.Message.info("Auth bridge configuration validated; active sessions were preserved");
+        }
+
+        @Override
+        protected boolean restartOnReloadFailure() {
+            return false;
+        }
     };
 
     public static final ModuleEntry ENTRY = IMPL;

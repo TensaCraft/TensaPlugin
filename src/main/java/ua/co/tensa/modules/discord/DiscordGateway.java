@@ -13,6 +13,8 @@ interface DiscordGateway extends AutoCloseable {
 
     CompletableFuture<Void> sendBotMessage(DiscordRoute route, String content);
 
+    CompletableFuture<Void> sendBotEmbed(DiscordRoute route, DiscordEmbedMessage embed);
+
     CompletableFuture<Void> assignLinkedRole(String discordUserId);
 
     CompletableFuture<Void> removeLinkedRole(String discordUserId);
@@ -34,6 +36,6 @@ interface DiscordGateway extends AutoCloseable {
 
     @FunctionalInterface
     interface SlashLinkHandler {
-        CompletableFuture<String> link(String code, String discordUserId, String discordUserName);
+        CompletableFuture<DiscordEmbedMessage> link(String code, String discordUserId, String discordUserName);
     }
 }

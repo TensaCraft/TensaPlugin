@@ -113,37 +113,37 @@ final class DiscordRuntime implements AutoCloseable {
 
     void announceJoin(String playerName, String serverName) {
         if (settings.joinMessages()) {
-            announce(eventFormatter.join(playerName, serverName));
+            announce("Гравець приєднався", eventFormatter.join(playerName, serverName), DiscordEmbedMessage.GREEN);
         }
     }
 
     void announceQuit(String playerName, String serverName) {
         if (settings.quitMessages()) {
-            announce(eventFormatter.quit(playerName, serverName));
+            announce("Гравець вийшов", eventFormatter.quit(playerName, serverName), DiscordEmbedMessage.GRAY);
         }
     }
 
     void announceServerSwitch(String playerName, String fromServer, String toServer) {
         if (settings.serverSwitchMessages()) {
-            announce(eventFormatter.switchServer(playerName, fromServer, toServer));
+            announce("Перехід між серверами", eventFormatter.switchServer(playerName, fromServer, toServer), DiscordEmbedMessage.BLURPLE);
         }
     }
 
     void announceBackendUnavailable(String serverName) {
         if (settings.backendStatusMessages()) {
-            announce(eventFormatter.backendUnavailable(serverName));
+            announce("Сервер недоступний", eventFormatter.backendUnavailable(serverName), DiscordEmbedMessage.RED);
         }
     }
 
     void announceBackendRecovered(String serverName) {
         if (settings.backendStatusMessages()) {
-            announce(eventFormatter.backendRecovered(serverName));
+            announce("Сервер знову доступний", eventFormatter.backendRecovered(serverName), DiscordEmbedMessage.GREEN);
         }
     }
 
     void announceAdvancement(String playerName, String serverName, String advancement) {
         if (settings.advancementMessages()) {
-            announce(eventFormatter.advancement(playerName, serverName, advancement));
+            announce("Нове досягнення", eventFormatter.advancement(playerName, serverName, advancement), DiscordEmbedMessage.YELLOW);
         }
     }
 
@@ -246,30 +246,54 @@ final class DiscordRuntime implements AutoCloseable {
         }
     }
 
-    private CompletableFuture<String> completeLinkFromDiscord(String code, String discordUserId, String discordUserName) {
+    private CompletableFuture<DiscordEmbedMessage> completeLinkFromDiscord(
+            String code,
+            String discordUserId,
+            String discordUserName
+    ) {
         return links.complete(code, discordUserId, discordUserName)
                 .thenApply(this::slashReply)
-                .exceptionally(ignored -> "Сервіс прив'язки зараз перевантажений. Спробуйте пізніше.");
+                .exceptionally(ignored -> DiscordEmbedMessage.linkError(
+                        "Сервіс прив'язки зараз перевантажений. Спробуйте пізніше."
+                ));
     }
 
-    private String slashReply(DiscordLinkService.Result result) {
+    private DiscordEmbedMessage slashReply(DiscordLinkService.Result result) {
         return switch (result.type()) {
-            case LINKED -> "Акаунт успішно прив'язано до " + result.account().playerName() + ".";
-            case INVALID_CODE -> "Код недійсний або вже використаний. Створіть новий через /discord link у Minecraft.";
-            case EXPIRED_CODE -> "Термін дії коду минув. Створіть новий через /discord link у Minecraft.";
-            case PLAYER_ALREADY_LINKED -> "Цей Minecraft-акаунт уже прив'язаний.";
-            case DISCORD_ALREADY_LINKED -> "Цей Discord-акаунт уже прив'язаний до іншого гравця.";
-            case ROLE_FAILED -> "Не вдалося видати роль. Прив'язку не збережено; зверніться до адміністратора.";
-            case BUSY -> "Сервіс прив'язки зараз перевантажений. Спробуйте пізніше.";
-            default -> "Не вдалося зберегти прив'язку. Спробуйте ще раз пізніше.";
+            case LINKED -> DiscordEmbedMessage.success(
+                    "Акаунт успішно прив'язано до " + result.account().playerName() + "."
+            );
+            case INVALID_CODE -> DiscordEmbedMessage.linkError(
+                    "Код недійсний або вже використаний. Створіть новий через /discord link у Minecraft."
+            );
+            case EXPIRED_CODE -> DiscordEmbedMessage.linkError(
+                    "Термін дії коду минув. Створіть новий через /discord link у Minecraft."
+            );
+            case PLAYER_ALREADY_LINKED -> DiscordEmbedMessage.linkError(
+                    "Цей Minecraft-акаунт уже прив'язаний."
+            );
+            case DISCORD_ALREADY_LINKED -> DiscordEmbedMessage.linkError(
+                    "Цей Discord-акаунт уже прив'язаний до іншого гравця."
+            );
+            case ROLE_FAILED -> DiscordEmbedMessage.linkError(
+                    "Не вдалося видати роль. Прив'язку не збережено; зверніться до адміністратора."
+            );
+            case BUSY -> DiscordEmbedMessage.linkError(
+                    "Сервіс прив'язки зараз перевантажений. Спробуйте пізніше."
+            );
+            default -> DiscordEmbedMessage.linkError(
+                    "Не вдалося зберегти прив'язку. Спробуйте ще раз пізніше."
+            );
         };
     }
 
-    private void announce(String content) {
+    private void announce(String title, String content, int color) {
         if (!running.get() || !eventRateLimiter.tryAcquire(Instant.now())) {
             return;
         }
-        if (!content.isBlank() && !outboundQueue.offer(DiscordOutboundMessage.announcement(content))) {
+        if (!content.isBlank() && !outboundQueue.offer(DiscordOutboundMessage.announcement(
+                DiscordEmbedMessage.of(title, content, color)
+        ))) {
             warnRateLimited("Discord outbound relay queue is full; dropping an announcement");
         }
     }
