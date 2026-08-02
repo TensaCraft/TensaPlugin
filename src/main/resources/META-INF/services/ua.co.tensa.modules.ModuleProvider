@@ -7,4 +7,5 @@ ua.co.tensa.modules.requests.RequestsProvider
 ua.co.tensa.modules.playertime.PlayerTimeProvider
 ua.co.tensa.modules.queue.CommandQueueProvider
 ua.co.tensa.modules.text.TextReaderProvider
+ua.co.tensa.modules.discord.DiscordProvider
 

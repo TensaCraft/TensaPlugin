@@ -94,3 +94,15 @@ queue_cleared: "<green>Видалено </green><white>{count}</white><green> к
 queue_run_offline: "<red>Команду з черги #{id} ще не можна виконати, бо цільовий гравець офлайн.</red>"
 queue_run_ok: "<green>Виконано команду з черги #</green><yellow>{id}</yellow><green> для </green><white>{player}</white>"
 queue_stats: "<gold>Статистика черги:</gold> <gray>усього=</gray><white>{total}</white> <gray>готово=</gray><white>{due}</white> <gray>онлайн=</gray><white>{online}</white>"
+
+# Discord Module
+discord_player_only: "<red>Ця команда доступна лише гравцям.</red>"
+discord_usage: "<gold>Використання:</gold> <white>/discord link|unlink|status</white>"
+discord_link_code: "<green>Код прив'язки:</green> <white>{code}</white><gray>. У Discord виконайте </gray><white>/{command} code:{code}</white><gray>. Код діє {minutes} хв.</gray>"
+discord_link_already: "<yellow>Ваш Minecraft-акаунт уже прив'язаний до Discord.</yellow>"
+discord_status_linked: "<green>Прив'язано до Discord:</green> <white>{discord}</white>"
+discord_status_unlinked: "<gray>Discord-акаунт не прив'язано.</gray>"
+discord_unlink_success: "<green>Discord-акаунт відв'язано.</green>"
+discord_unlink_role_failed: "<red>Не вдалося зняти Discord-роль. Прив'язку залишено без змін.</red>"
+discord_link_busy: "<yellow>Сервіс прив'язки зараз зайнятий. Спробуйте пізніше.</yellow>"
+discord_link_error: "<red>Не вдалося змінити прив'язку. Спробуйте пізніше.</red>"

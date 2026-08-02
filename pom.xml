@@ -28,6 +28,7 @@
         <adventure.version>4.26.1</adventure.version>
         <gson.version>2.13.2</gson.version>
         <guice.version>7.0.0</guice.version>
+        <jda.version>5.6.1</jda.version>
 
         <netty.version>4.2.12.Final</netty.version>
         <configurate.version>4.2.0</configurate.version>
@@ -201,6 +202,18 @@
             <version>${hikari.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>net.dv8tion</groupId>
+            <artifactId>JDA</artifactId>
+            <version>${jda.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>club.minnced</groupId>
+                    <artifactId>opus-java</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- Test libraries -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -316,11 +329,48 @@
                                 </excludes>
                             </artifactSet>
 
+                            <relocations>
+                                <relocation>
+                                    <pattern>net.dv8tion.jda</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.jda</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>okhttp3</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.okhttp3</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>okio</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.okio</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.neovisionaries.ws.client</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.websocket</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.fasterxml.jackson</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.jackson</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.apache.commons.collections4</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.collections4</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>gnu.trove</pattern>
+                                    <shadedPattern>ua.co.tensa.libs.trove</shadedPattern>
+                                </relocation>
+                            </relocations>
+
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
 
                             <filters>
+                                <filter>
+                                    <artifact>com.squareup.okio:okio</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/okio.kotlin_module</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>

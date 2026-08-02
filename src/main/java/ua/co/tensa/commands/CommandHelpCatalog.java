@@ -141,9 +141,12 @@ public final class CommandHelpCatalog {
         } else if (handler instanceof ChatCommands) {
             ChatCommands.ChatRoute route = ChatCommands.findRoute(display);
             boolean privateRoute = route != null && route.privateRoute();
-            usageTemplate = privateRoute ? "/{command} <player> <message>" : "/{command} <message>";
-            descriptionKey = privateRoute ? "help_desc_chat_private" : "help_desc_chat_public";
-            descriptionFallback = privateRoute
+            boolean replyRoute = route != null && route.replyRoute();
+            usageTemplate = replyRoute
+                    ? "/{command} <message>"
+                    : privateRoute ? "/{command} <player> <message>" : "/{command} <message>";
+            descriptionKey = privateRoute || replyRoute ? "help_desc_chat_private" : "help_desc_chat_public";
+            descriptionFallback = privateRoute || replyRoute
                     ? "Send a private message through {command}."
                     : "Send a message to chat {command}.";
             placeholders.put("chat", route == null ? display : route.key());

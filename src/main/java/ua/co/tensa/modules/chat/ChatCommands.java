@@ -14,13 +14,15 @@ import ua.co.tensa.modules.chat.data.ChatConfig;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatCommands implements SimpleCommand {
 
-    public record ChatRoute(String key, boolean privateRoute) {
+    public record ChatRoute(String key, boolean privateRoute, boolean replyRoute) {
     }
 
     private static final MiniMessage MINI = MiniMessage.miniMessage();
+    private static final Map<UUID, UUID> LAST_PRIVATE_TARGET = new ConcurrentHashMap<>();
 
     private static YamlAdapter chatCfg = ChatConfig.get().adapter();
 
@@ -113,6 +115,28 @@ public class ChatCommands implements SimpleCommand {
 
     private static boolean isPrivate(Map<String, Object> sec) {
         return "private".equalsIgnoreCase(secString(sec, "type", "public"));
+    }
+
+    private static boolean isReply(Map<String, Object> sec) {
+        return "reply".equalsIgnoreCase(secString(sec, "type", "public"));
+    }
+
+    private static String findSectionKey(String alias) {
+        String used = normalizeCmd(alias);
+        if (used == null || used.isBlank()) {
+            return "";
+        }
+
+        for (String key : chatCfg.getKeys(false)) {
+            Map<String, Object> sec = chatCfg.getSection(key);
+            if (sec == null || sec.isEmpty() || !secBool(sec, "enabled", true)) {
+                continue;
+            }
+            if (secCommands(sec).contains(used)) {
+                return key;
+            }
+        }
+        return "";
     }
 
     private static String getServerName(CommandSource source) {
@@ -212,7 +236,7 @@ public class ChatCommands implements SimpleCommand {
 
             if (!secCommands(sec).contains(normalized)) continue;
 
-            return new ChatRoute(key, isPrivate(sec));
+            return new ChatRoute(key, isPrivate(sec), isReply(sec));
         }
 
         return null;
@@ -229,38 +253,82 @@ public class ChatCommands implements SimpleCommand {
         String server = getServerName(source);
         String playerName = getSenderName(source);
 
-        if (isPrivate(sec)) {
-            handlePrivateChat(invocation, sec, server, playerName);
+        if (isPrivate(sec) || isReply(sec)) {
+            handlePrivateChat(invocation, sec, server, playerName, isReply(sec));
             return;
         }
 
-        handlePublicChat(invocation, sec, server, playerName);
+        handlePublicChat(invocation, sec, findSectionKey(invocation.alias()), server, playerName);
     }
 
-    private void handlePrivateChat(Invocation invocation, Map<String, Object> sec, String server, String playerName) {
+    static void forgetPlayer(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        LAST_PRIVATE_TARGET.remove(playerId);
+        LAST_PRIVATE_TARGET.entrySet().removeIf(entry -> playerId.equals(entry.getValue()));
+    }
+
+    private void handlePrivateChat(
+            Invocation invocation,
+            Map<String, Object> sec,
+            String server,
+            String playerName,
+            boolean reply
+    ) {
         CommandSource sender = invocation.source();
         boolean console = isConsole(sender);
 
-        if (invocation.arguments().length < 2) {
+        int messageOffset = reply ? 0 : 1;
+        int requiredArguments = reply ? 1 : 2;
+        if (invocation.arguments().length < requiredArguments) {
             Message.sendLang(sender, Lang.chat_usage, "{command}", invocation.alias());
             return;
         }
 
-        String targetName = invocation.arguments()[0];
-        Player target = Tensa.server.getPlayer(targetName).orElse(null);
+        Player target;
+        String targetName;
+        if (reply && sender instanceof Player player) {
+            UUID targetId = LAST_PRIVATE_TARGET.get(player.getUniqueId());
+            target = targetId == null ? null : Tensa.server.getPlayer(targetId).orElse(null);
+            targetName = target == null ? "" : target.getUsername();
+        } else {
+            targetName = invocation.arguments()[0];
+            target = Tensa.server.getPlayer(targetName).orElse(null);
+        }
         if (target == null) {
+            if (reply) {
+                Message.privateMessage(sender, "<color:#ffb84d>Немає активної приватної розмови або гравець уже офлайн.</color>");
+                return;
+            }
             Message.sendLang(sender, Lang.player_not_found, "{player}", targetName);
             return;
         }
 
-        String msg = String.join(" ", Arrays.copyOfRange(invocation.arguments(), 1, invocation.arguments().length));
-
-        if (console) {
-            sendMini(target, msg);
+        String rawMessage = String.join(
+                " ",
+                Arrays.copyOfRange(invocation.arguments(), messageOffset, invocation.arguments().length)
+        );
+        String msg = ProxyChatText.sanitize(rawMessage, 256, 4);
+        if (msg.isBlank()) {
             return;
         }
 
-        Map<String, String> ctx = privateCtx(server, playerName, target.getUsername(), msg);
+        if (console) {
+            sendMini(target, Message.escapeMiniMessage(msg));
+            return;
+        }
+
+        Player player = (Player) sender;
+        LAST_PRIVATE_TARGET.put(player.getUniqueId(), target.getUniqueId());
+        LAST_PRIVATE_TARGET.put(target.getUniqueId(), player.getUniqueId());
+
+        Map<String, String> ctx = privateCtx(
+                Message.escapeMiniMessage(server),
+                Message.escapeMiniMessage(playerName),
+                Message.escapeMiniMessage(target.getUsername()),
+                Message.escapeMiniMessage(msg)
+        );
 
         String toFmt = secString(sec, "to_format", "{from}: {message}");
         String fromFmt = secString(sec, "from_format", "{to}: {message}");
@@ -272,7 +340,13 @@ public class ChatCommands implements SimpleCommand {
         Message.privateMessage(sender, fromMsg);
     }
 
-    private void handlePublicChat(Invocation invocation, Map<String, Object> sec, String server, String playerName) {
+    private void handlePublicChat(
+            Invocation invocation,
+            Map<String, Object> sec,
+            String sectionKey,
+            String server,
+            String playerName
+    ) {
         CommandSource source = invocation.source();
         String perm = secString(sec, "permission", "");
         boolean seeAll = secBool(sec, "see_all", false);
@@ -282,14 +356,26 @@ public class ChatCommands implements SimpleCommand {
             return;
         }
 
-        String msg = String.join(" ", invocation.arguments());
+        String msg = ProxyChatText.sanitize(String.join(" ", invocation.arguments()), 256, 4);
+        if (msg.isBlank()) {
+            return;
+        }
 
         if (isConsole(source)) {
             sendMiniToPlayers(msg, perm, seeAll);
             return;
         }
 
-        Map<String, String> ctx = publicCtx(server, playerName, msg);
+        if ("global".equalsIgnoreCase(sectionKey)) {
+            ChatModule.publishPlayerMessage((Player) source, msg);
+            return;
+        }
+
+        Map<String, String> ctx = publicCtx(
+                Message.escapeMiniMessage(server),
+                Message.escapeMiniMessage(playerName),
+                Message.escapeMiniMessage(msg)
+        );
         String fmt = secString(sec, "format", "{player}: {message}");
         String rendered = Message.renderTemplateString(fmt, ctx);
 
@@ -304,7 +390,11 @@ public class ChatCommands implements SimpleCommand {
     @Override
     public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
         Map<String, Object> sec = findSection(invocation.alias());
-        if (sec == null || !isPrivate(sec)) {
+        if (sec == null || (!isPrivate(sec) && !isReply(sec))) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        if (isReply(sec)) {
             return CompletableFuture.completedFuture(List.of());
         }
 
