@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 final class AuthBridgeRuntime implements AutoCloseable {
     private static final long WARNING_INTERVAL_MILLIS = 5_000L;
@@ -56,6 +57,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
     private final long postLoginDelayMillis;
     private final long heartbeatIntervalMillis;
     private final boolean logTransitions;
+    private final Consumer<String> transitionLogger;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong lastWarningAt = new AtomicLong();
 
@@ -72,7 +74,8 @@ final class AuthBridgeRuntime implements AutoCloseable {
             long postLoginDelayMillis,
             Duration heartbeatInterval,
             Duration authorizationLease,
-            boolean logTransitions
+            boolean logTransitions,
+            Consumer<String> transitionLogger
     ) {
         this.server = java.util.Objects.requireNonNull(server, "server");
         this.source = java.util.Objects.requireNonNull(source, "source");
@@ -89,6 +92,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
                 authorizationLease
         );
         this.logTransitions = logTransitions;
+        this.transitionLogger = java.util.Objects.requireNonNull(transitionLogger, "transitionLogger");
         this.replayWindow = new ReplayWindow(policy.replayCapacity());
         this.authenticator = new HmacSha256Authenticator(secret, codec);
         this.verifiers = createVerifiers(this.sourceBindings, policy, authenticator, replayWindow);
@@ -212,7 +216,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
                         return;
                     }
                     reconcile(player);
-                    publishToCurrentServer(player);
+                    publishStateChangeToCurrentServer(player);
                 } catch (Throwable throwable) {
                     warnThrottled("Auth bridge async publication failed: " + safeMessage(throwable));
                 }
@@ -261,7 +265,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
                     return;
                 }
                 reconcile(player);
-                publishToCurrentServer(player);
+                publishStateChangeToCurrentServer(player);
             }, delayMillis);
         } catch (Throwable throwable) {
             warnThrottled("Auth bridge state synchronization could not be scheduled: " + safeMessage(throwable));
@@ -282,17 +286,31 @@ final class AuthBridgeRuntime implements AutoCloseable {
         return state;
     }
 
-    private void publishToCurrentServer(Player player) {
-        player.getCurrentServer().ifPresent(connection -> sendState(connection, player));
+    private void publishStateChangeToCurrentServer(Player player) {
+        player.getCurrentServer().ifPresent(connection -> sendStateIfChanged(connection, player));
     }
 
     private void sendState(ServerConnection connection, Player player) {
+        sendState(connection, player, false);
+    }
+
+    private void sendStateIfChanged(ServerConnection connection, Player player) {
+        sendState(connection, player, true);
+    }
+
+    private void sendState(
+            ServerConnection connection,
+            Player player,
+            boolean stateChangeOnly
+    ) {
         String sourceServer = normalizeServerName(connection.getServerInfo().getName());
         if (!allowedServers.contains(sourceServer)) {
             return;
         }
 
-        AuthSessionRegistry.Snapshot snapshot = sessions.next(player, connection);
+        AuthSessionRegistry.Snapshot snapshot = stateChangeOnly
+                ? sessions.nextIfStateChanged(player, connection)
+                : sessions.next(player, connection);
         if (snapshot == null || snapshot.binding() == null) {
             return;
         }
@@ -330,21 +348,30 @@ final class AuthBridgeRuntime implements AutoCloseable {
                 warnThrottled("Auth bridge state could not be sent to '" + sourceServer + "'");
                 return;
             }
-            if (logTransitions) {
-                Message.info(
-                        "Auth bridge: "
-                                + player.getUsername()
-                                + " -> "
-                                + snapshot.state()
-                                + " on "
-                                + sourceServer
-                );
+            boolean transition = sessions.markPublished(player, snapshot);
+            if (logTransitions && transition) {
+                logTransition(player, sourceServer, snapshot.state());
             }
         } catch (Throwable throwable) {
             warnThrottled(
                     "Auth bridge state publication failed for '" + sourceServer + "': "
                             + safeMessage(throwable)
             );
+        }
+    }
+
+    private void logTransition(Player player, String sourceServer, AuthState state) {
+        try {
+            transitionLogger.accept(
+                    "Auth bridge: "
+                            + player.getUsername()
+                            + " -> "
+                            + state
+                            + " on "
+                            + sourceServer
+            );
+        } catch (Throwable throwable) {
+            warnThrottled("Auth bridge transition logging failed: " + safeMessage(throwable));
         }
     }
 

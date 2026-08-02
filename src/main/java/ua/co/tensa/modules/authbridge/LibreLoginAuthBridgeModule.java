@@ -92,7 +92,8 @@ public final class LibreLoginAuthBridgeModule {
                     config.postLoginSyncDelayMillis,
                     Duration.ofSeconds(config.heartbeatIntervalSeconds),
                     Duration.ofSeconds(config.authorizationLeaseSeconds),
-                    config.logTransitions
+                    config.logTransitions,
+                    ua.co.tensa.Message::info
             );
             java.util.Arrays.fill(secret, (byte) 0);
             runtime = created;

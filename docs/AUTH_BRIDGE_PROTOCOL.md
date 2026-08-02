@@ -84,6 +84,25 @@ a fresh message ID and nonce and advances the session sequence monotonically.
 Sessions without an active challenge do not trigger heartbeat lookups or
 publications.
 
+These periodic frames are required lease renewals, not duplicate transition
+notifications. Protocol `1.0` has no acknowledgement or separate heartbeat
+message, and the NeoForge backend extends its authorization lease only after it
+accepts a fresh signed `AUTH_STATE`. Removing unchanged heartbeat frames would
+therefore lock and disconnect an otherwise authorized player when the lease
+expires.
+
+Challenge responses, heartbeat renewals, and explicit post-connect resyncs are
+always eligible to publish. Delayed login reconciliation and LibreLogin state
+callbacks publish only when the resolved state differs from the last
+successfully published state for the active challenge binding. A failed send is
+not recorded as published and remains eligible for a later retry. A new backend
+challenge resets the publication state and receives an immediate response,
+which preserves reconnect and backend-restart resynchronization.
+
+When `log_transitions` is enabled, the first successful state publication for a
+challenge and later successful state changes are logged. Unchanged heartbeat
+renewals and resync frames are intentionally not logged.
+
 LibreLogin 0.24.0 exposes no logout/revoke or 2FA-transition event. The bridge
 subscribes to `authenticated`, `wrongPassword`, and `premiumLoginSwitch` for
 low-latency reconciliation where possible, while the heartbeat remains the

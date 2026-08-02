@@ -87,11 +87,30 @@ class AuthBridgeRuntimeTest {
 
         harness.runtime.onPluginMessage(pluginMessage(harness.connection, harness.player, payload));
         assertThat(harness.payloads).hasSize(1);
+
+        AuthFrame restartedBackendChallenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 11),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 41)
+        );
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(restartedBackendChallenge)
+        ));
+        AuthFrame restartedBackendResponse = codec.decode(harness.payloads.getLast());
+        assertThat(harness.payloads).hasSize(2);
+        assertThat(restartedBackendResponse.sessionId())
+                .isEqualTo(restartedBackendChallenge.sessionId());
+        assertThat(restartedBackendResponse.sequence()).isEqualTo(1L);
         harness.runtime.close();
     }
 
     @Test
-    void authenticatedEventPublishesAsyncAndServerPostConnectResendsBoundState() {
+    void unchangedReconciliationsDoNotDuplicateFramesButPostConnectStillResends() {
         Harness harness = harness(SOURCE_SERVER);
         harness.runtime.start();
         harness.scheduler.runAll();
@@ -110,6 +129,10 @@ class AuthBridgeRuntimeTest {
         ));
         assertThat(codec.decode(harness.payloads.getLast()).authState()).isEqualTo(AuthState.PENDING);
 
+        harness.runtime.synchronizeAfterLogin(harness.player);
+        harness.scheduler.runAll();
+        assertThat(harness.payloads).hasSize(1);
+
         harness.source.state = AuthState.AUTHORIZED;
         harness.source.fireStateChange(harness.player);
         assertThat(harness.payloads).hasSize(1);
@@ -117,6 +140,10 @@ class AuthBridgeRuntimeTest {
         AuthFrame authenticated = codec.decode(harness.payloads.getLast());
         assertThat(authenticated.authState()).isEqualTo(AuthState.AUTHORIZED);
         assertThat(authenticated.sequence()).isEqualTo(2L);
+
+        harness.source.fireStateChange(harness.player);
+        harness.scheduler.runAll();
+        assertThat(harness.payloads).hasSize(2);
 
         harness.runtime.resendToCurrentServer(harness.player);
         AuthFrame resent = codec.decode(harness.payloads.getLast());
@@ -153,19 +180,65 @@ class AuthBridgeRuntimeTest {
         ));
         assertThat(codec.decode(harness.payloads.getLast()).sequence()).isEqualTo(1L);
 
+        harness.scheduler.runHeartbeat();
+        AuthFrame unchangedHeartbeat = codec.decode(harness.payloads.getLast());
+        assertThat(unchangedHeartbeat.authState()).isEqualTo(AuthState.PENDING);
+        assertThat(unchangedHeartbeat.sequence()).isEqualTo(2L);
+
         harness.source.state = AuthState.AWAITING_SECOND_FACTOR;
         harness.scheduler.runHeartbeat();
         AuthFrame awaitingSecondFactor = codec.decode(harness.payloads.getLast());
         assertThat(awaitingSecondFactor.authState()).isEqualTo(AuthState.AWAITING_SECOND_FACTOR);
-        assertThat(awaitingSecondFactor.sequence()).isEqualTo(2L);
+        assertThat(awaitingSecondFactor.sequence()).isEqualTo(3L);
 
         harness.source.lookupFailure = new IllegalStateException("LibreLogin unavailable");
         harness.scheduler.runHeartbeat();
         AuthFrame failedClosed = codec.decode(harness.payloads.getLast());
         assertThat(failedClosed.authState()).isEqualTo(AuthState.PENDING);
-        assertThat(failedClosed.sequence()).isEqualTo(3L);
+        assertThat(failedClosed.sequence()).isEqualTo(4L);
         assertThat(failedClosed.sessionId()).isEqualTo(challenge.sessionId());
         assertThat(failedClosed.challenge()).isEqualTo(challenge.challenge());
+        harness.runtime.close();
+    }
+
+    @Test
+    void logsOnlySuccessfulStateTransitionsWhileHeartbeatAndResyncFramesContinue() {
+        Harness harness = harness(SOURCE_SERVER, true);
+        harness.source.state = AuthState.AUTHORIZED;
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        AuthFrame challenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 27),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 57)
+        );
+
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge)
+        ));
+        harness.scheduler.runHeartbeat();
+
+        assertThat(harness.payloads).hasSize(2);
+        assertThat(codec.decode(harness.payloads.getLast()).sequence()).isEqualTo(2L);
+        assertThat(harness.transitionLogs)
+                .singleElement()
+                .asString()
+                .contains("AUTHORIZED");
+
+        harness.source.state = AuthState.AWAITING_SECOND_FACTOR;
+        harness.source.fireStateChange(harness.player);
+        harness.scheduler.runAll();
+        harness.runtime.resendToCurrentServer(harness.player);
+
+        assertThat(harness.payloads).hasSize(4);
+        assertThat(codec.decode(harness.payloads.getLast()).sequence()).isEqualTo(4L);
+        assertThat(harness.transitionLogs).hasSize(2);
+        assertThat(harness.transitionLogs.getLast()).contains("AWAITING_SECOND_FACTOR");
         harness.runtime.close();
     }
 
@@ -304,6 +377,17 @@ class AuthBridgeRuntimeTest {
         );
     }
 
+    private Harness harness(String connectionServer, boolean logTransitions) {
+        return harness(
+                connectionServer,
+                List.of(SOURCE_SERVER),
+                Map.of(SOURCE_SERVER, BACKEND_ID),
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(30),
+                logTransitions
+        );
+    }
+
     private Harness harness(
             String connectionServer,
             Duration heartbeatInterval,
@@ -339,8 +423,27 @@ class AuthBridgeRuntimeTest {
             Duration heartbeatInterval,
             Duration authorizationLease
     ) {
+        return harness(
+                connectionServer,
+                allowedServers,
+                sourceBindings,
+                heartbeatInterval,
+                authorizationLease,
+                false
+        );
+    }
+
+    private Harness harness(
+            String connectionServer,
+            List<String> allowedServers,
+            Map<String, String> sourceBindings,
+            Duration heartbeatInterval,
+            Duration authorizationLease,
+            boolean logTransitions
+    ) {
         UUID playerId = UUID.randomUUID();
         List<byte[]> payloads = new ArrayList<>();
+        List<String> transitionLogs = new ArrayList<>();
         AtomicReference<ServerConnection> connectionRef = new AtomicReference<>();
         Player player = player(playerId, connectionRef);
         ServerConnection connection = connection(connectionServer, player, payloads);
@@ -361,13 +464,15 @@ class AuthBridgeRuntimeTest {
                 50L,
                 heartbeatInterval,
                 authorizationLease,
-                false
+                logTransitions,
+                transitionLogs::add
         );
         return new Harness(
                 playerId,
                 player,
                 connection,
                 payloads,
+                transitionLogs,
                 channels,
                 source,
                 scheduler,
@@ -486,6 +591,7 @@ class AuthBridgeRuntimeTest {
             Player player,
             ServerConnection connection,
             List<byte[]> payloads,
+            List<String> transitionLogs,
             RecordingChannelRegistrar channels,
             FakeAuthenticationSource source,
             RecordingScheduler scheduler,

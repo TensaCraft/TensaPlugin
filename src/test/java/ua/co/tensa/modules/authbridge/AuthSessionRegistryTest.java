@@ -42,6 +42,18 @@ class AuthSessionRegistryTest {
         assertThat(bound.snapshot().binding().challenge()).isEqualTo(challenge);
         assertThat(first.sequence()).isEqualTo(1L);
         assertThat(second.sequence()).isEqualTo(2L);
+        assertThat(registry.markPublished(player, first)).isTrue();
+        assertThat(registry.markPublished(player, second)).isFalse();
+        assertThat(registry.nextIfStateChanged(player, connection)).isNull();
+
+        registry.update(player, AuthState.AUTHORIZED);
+        AuthSessionRegistry.Snapshot unsent = registry.nextIfStateChanged(player, connection);
+        AuthSessionRegistry.Snapshot retry = registry.nextIfStateChanged(player, connection);
+
+        assertThat(unsent.sequence()).isEqualTo(3L);
+        assertThat(retry.sequence()).isEqualTo(4L);
+        assertThat(registry.markPublished(player, retry)).isTrue();
+        assertThat(registry.nextIfStateChanged(player, connection)).isNull();
     }
 
     @Test
@@ -88,6 +100,7 @@ class AuthSessionRegistryTest {
 
         assertThat(registry.next(player, oldConnection)).isNull();
         assertThat(registry.next(player, currentConnection).sequence()).isEqualTo(1L);
+        assertThat(registry.nextIfStateChanged(player, oldConnection)).isNull();
     }
 
     private Player player(String username, UUID uuid) {

@@ -62,7 +62,10 @@ public final class AuthBridgeConfig extends ConfigBase {
     )
     public int authorizationLeaseSeconds = 30;
 
-    @CfgKey(value = "log_transitions", comment = "Log authentication state publications")
+    @CfgKey(
+            value = "log_transitions",
+            comment = "Log successful authentication state transitions, excluding heartbeat refreshes"
+    )
     public boolean logTransitions = false;
 
     private AuthBridgeConfig() {

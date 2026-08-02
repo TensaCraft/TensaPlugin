@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class AuthSessionRegistry {
@@ -64,14 +65,33 @@ final class AuthSessionRegistry {
     }
 
     Snapshot next(Player player, ServerConnection connection) {
+        return next(player, connection, false);
+    }
+
+    Snapshot nextIfStateChanged(Player player, ServerConnection connection) {
+        return next(player, connection, true);
+    }
+
+    private Snapshot next(Player player, ServerConnection connection, boolean stateChangeOnly) {
         AtomicReference<Snapshot> next = new AtomicReference<>();
         sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
             if (existing.player == player) {
-                next.set(existing.next(connection));
+                next.set(existing.next(connection, stateChangeOnly));
             }
             return existing;
         });
         return next.get();
+    }
+
+    boolean markPublished(Player player, Snapshot snapshot) {
+        AtomicBoolean transition = new AtomicBoolean();
+        sessions.computeIfPresent(player.getUniqueId(), (ignored, existing) -> {
+            if (existing.player == player) {
+                transition.set(existing.markPublished(snapshot));
+            }
+            return existing;
+        });
+        return transition.get();
     }
 
     boolean hasActiveBinding(Player player, ServerConnection connection) {
@@ -131,6 +151,8 @@ final class AuthSessionRegistry {
         private AuthState state = AuthState.PENDING;
         private Binding binding;
         private long sequence;
+        private AuthState lastPublishedState;
+        private long lastPublishedSequence;
 
         private Session(Player player) {
             this.player = player;
@@ -166,15 +188,35 @@ final class AuthSessionRegistry {
                     challenge
             );
             sequence = 0L;
+            lastPublishedState = null;
+            lastPublishedSequence = 0L;
             return new BindResult(snapshot(), previous);
         }
 
-        private synchronized Snapshot next(ServerConnection connection) {
+        private synchronized Snapshot next(
+                ServerConnection connection,
+                boolean stateChangeOnly
+        ) {
             if (binding == null || binding.connection() != connection) {
+                return null;
+            }
+            if (stateChangeOnly && state == lastPublishedState) {
                 return null;
             }
             sequence++;
             return snapshot();
+        }
+
+        private synchronized boolean markPublished(Snapshot published) {
+            if (published == null
+                    || published.binding() != binding
+                    || published.sequence() <= lastPublishedSequence) {
+                return false;
+            }
+            boolean transition = lastPublishedState != published.state();
+            lastPublishedState = published.state();
+            lastPublishedSequence = published.sequence();
+            return transition;
         }
 
         private synchronized boolean hasActiveBinding(Player expectedPlayer, ServerConnection connection) {
