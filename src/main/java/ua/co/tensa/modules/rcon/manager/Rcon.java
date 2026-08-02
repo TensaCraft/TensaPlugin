@@ -7,7 +7,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
 
-public class Rcon {
+public class Rcon implements AutoCloseable {
 	private static final int MIN_PORT = 1;
 	private static final int MAX_PORT = 65535;
 
@@ -23,7 +23,16 @@ public class Rcon {
 		this.rand = new Random();
 		this.charset = StandardCharsets.UTF_8;
 
-		connect(host, port, password);
+		try {
+			connect(host, port, password);
+		} catch (IOException | AuthenticationException | RuntimeException failure) {
+			try {
+				disconnect();
+			} catch (IOException closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 
 	public void connect(String host, int port, byte[] password) throws IOException, AuthenticationException {
@@ -55,6 +64,11 @@ public class Rcon {
 				this.socket.close();
 			}
 		}
+	}
+
+	@Override
+	public void close() throws IOException {
+		disconnect();
 	}
 
 	public String command(String payload) throws IOException {

@@ -6,6 +6,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class RconPacket {
+	private static final int MIN_PACKET_SIZE = 10;
+	private static final int MAX_PACKET_SIZE = 4 * 1024 * 1024;
+	private static final int MAX_RESPONSE_SIZE = 16 * 1024 * 1024;
 	public static final int SERVERDATA_RESPONSE_VALUE = 0;
 	public static final int SERVERDATA_EXECCOMMAND = 2;
 	public static final int SERVERDATA_AUTH = 3;
@@ -45,6 +48,9 @@ public class RconPacket {
 	}
 
 	private static void write(OutputStream out, int requestId, int type, byte[] payload) throws IOException {
+		if (payload == null || payload.length > MAX_PACKET_SIZE - MIN_PACKET_SIZE) {
+			throw new IOException("RCON request payload exceeds the safe size limit");
+		}
 		ByteBuffer buffer = ByteBuffer.allocate(4 + 4 + 4 + payload.length + 2);
 		buffer.order(ByteOrder.LITTLE_ENDIAN);
 
@@ -60,7 +66,10 @@ public class RconPacket {
 	}
 
 	private static RconPacket readResponse(Rcon rcon) throws IOException {
-		InputStream in = rcon.getSocket().getInputStream();
+		return readResponse(rcon.getSocket().getInputStream());
+	}
+
+	static RconPacket readResponse(InputStream in) throws IOException {
 		DataInputStream dis = new DataInputStream(in);
 
 		ByteArrayOutputStream payloadStream = new ByteArrayOutputStream();
@@ -74,6 +83,9 @@ public class RconPacket {
             } catch (IOException e) {
                 throw new IOException("Failed to read packet size", e);
             }
+			if (packetSize < MIN_PACKET_SIZE || packetSize > MAX_PACKET_SIZE) {
+				throw new IOException("RCON response packet size is outside safe bounds");
+			}
 
 			byte[] packetData = new byte[packetSize];
 			dis.readFully(packetData);
@@ -85,11 +97,15 @@ public class RconPacket {
 			int type = packetBuffer.getInt();
 
 			byte[] payload = new byte[packetSize - 8 - 2]; // Exclude requestId, type, and two null bytes
+			if ((long) payloadStream.size() + payload.length > MAX_RESPONSE_SIZE) {
+				throw new IOException("RCON aggregate response exceeds the safe size limit");
+			}
 			packetBuffer.get(payload);
 
 			// Read the two null bytes
-			packetBuffer.get(); // Null byte
-			packetBuffer.get(); // Null byte
+			if (packetBuffer.get() != 0 || packetBuffer.get() != 0) {
+				throw new IOException("RCON response has invalid string terminators");
+			}
 
 			if (responseRequestId == -1) {
 				responseRequestId = requestId;

@@ -1,10 +1,10 @@
 package ua.co.tensa.modules.playertime;
 
-import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 
 public class PlayerTimeTopCommand implements SimpleCommand {
@@ -35,7 +35,7 @@ public class PlayerTimeTopCommand implements SimpleCommand {
                 String playTime = PlayerTimeModule.formatTime(entry.playTime());
                 Message.sendLang(sender, Lang.player_time_top_entry,
                         "{position}", String.valueOf(position),
-                        "{player}", entry.playerName(),
+                        "{player}", Message.escapeMiniMessage(entry.playerName()),
                         "{time}", playTime);
                 position += 1;
             }
@@ -45,8 +45,7 @@ public class PlayerTimeTopCommand implements SimpleCommand {
     }
 
     public static void unregister() {
-        CommandManager manager = Tensa.server.getCommandManager();
-        manager.unregister("tplayertop");
-        manager.unregister("tptop");
+        Util.unregisterCommand("tplayertop");
+        Util.unregisterCommand("tptop");
     }
 }

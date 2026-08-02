@@ -1,11 +1,11 @@
 package ua.co.tensa.modules.playertime;
 
-import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
+import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 
 import java.util.ArrayList;
@@ -45,11 +45,11 @@ public class PlayerTimeCommand implements SimpleCommand {
             String playerName = args[0];
             timeTracker.getPlayerTimeByName(playerName).thenAccept(playTime -> {
                 if (playTime == null) {
-                    Message.sendLang(sender, Lang.player_not_found, "{player}", playerName);
+                    Message.sendLang(sender, Lang.player_not_found, "{player}", Message.escapeMiniMessage(playerName));
                     return;
                 }
                 Message.sendLang(sender, Lang.player_time_other,
-                        "{player}", playerName,
+                        "{player}", Message.escapeMiniMessage(playerName),
                         "{time}", PlayerTimeModule.formatTime(playTime));
             });
         } else {
@@ -58,9 +58,8 @@ public class PlayerTimeCommand implements SimpleCommand {
     }
 
     public static void unregister() {
-        CommandManager manager = Tensa.server.getCommandManager();
-        manager.unregister("tplayertime");
-        manager.unregister("tptime");
+        Util.unregisterCommand("tplayertime");
+        Util.unregisterCommand("tptime");
     }
 
     @Override

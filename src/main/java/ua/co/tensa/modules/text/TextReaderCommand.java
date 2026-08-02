@@ -1,6 +1,5 @@
 package ua.co.tensa.modules.text;
 
-import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import ua.co.tensa.Message;
@@ -72,9 +71,8 @@ public final class TextReaderCommand implements SimpleCommand {
     }
 
     public static void unregister() {
-        CommandManager manager = Tensa.server.getCommandManager();
         for (String cmd : TextReaderModule.getTxtFileNamesWithoutExtension()) {
-            manager.unregister(cmd);
+            ua.co.tensa.Util.unregisterCommand(cmd);
         }
     }
 }

@@ -29,7 +29,7 @@ public class RconServer {
 	public RconServer(ProxyServer server, final String password) {
         this.server = server;
 
-        int workers = Math.max(2, Runtime.getRuntime().availableProcessors());
+        int workers = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
         this.bossGroup = new MultiThreadIoEventLoopGroup(
                 1,
                 new DefaultThreadFactory("tensa-rcon-boss", true),
@@ -79,13 +79,13 @@ public class RconServer {
             workerGroup.shutdownGracefully(0, 2, TimeUnit.SECONDS)
                     .awaitUninterruptibly(3, TimeUnit.SECONDS);
         } catch (Throwable e) {
-            ua.co.tensa.Message.debug("Worker group shutdown interrupted: " + e.getMessage());
+            ua.co.tensa.Message.debug("Worker group shutdown interrupted: " + e.getClass().getSimpleName());
         }
         try {
             bossGroup.shutdownGracefully(0, 2, TimeUnit.SECONDS)
                     .awaitUninterruptibly(3, TimeUnit.SECONDS);
         } catch (Throwable e) {
-            ua.co.tensa.Message.debug("Boss group shutdown interrupted: " + e.getMessage());
+            ua.co.tensa.Message.debug("Boss group shutdown interrupted: " + e.getClass().getSimpleName());
         }
     }
 

@@ -5,6 +5,7 @@ import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.authbridge.data.AuthBridgeConfig;
 import ua.co.tensa.authbridge.protocol.security.AuthSecurityPolicy;
+import ua.co.tensa.config.model.YamlConfigPreflight;
 
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -30,6 +31,7 @@ public final class LibreLoginAuthBridgeModule {
 
         @Override
         protected void onReload() {
+            YamlConfigPreflight.validate(Tensa.pluginPath.resolve("auth-bridge/config.yml"));
             AuthBridgeConfig config = AuthBridgeConfig.get();
             config.reloadCfg();
             validateConfig(config);
@@ -53,6 +55,7 @@ public final class LibreLoginAuthBridgeModule {
             throw new IllegalStateException("LibreLogin is not installed; auth bridge remains disabled");
         }
 
+        YamlConfigPreflight.validate(Tensa.pluginPath.resolve("auth-bridge/config.yml"));
         AuthBridgeConfig config = AuthBridgeConfig.get();
         config.reloadCfg();
         validateConfig(config);

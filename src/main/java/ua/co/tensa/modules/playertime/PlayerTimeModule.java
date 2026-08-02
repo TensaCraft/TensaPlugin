@@ -1,23 +1,26 @@
 package ua.co.tensa.modules.playertime;
 
 import ua.co.tensa.Tensa;
+import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 
 public class PlayerTimeModule {
 
+    private static final AtomicRuntimeSlot<UserDataService, Boolean> RUNTIME =
+            new AtomicRuntimeSlot<>(PlayerTimeModule::activate, ignored -> deactivate());
+
     private static final ModuleEntry IMPL = new AbstractModule(
             "player-time", "Player Time") {
-        @Override protected void onEnable() { PlayerTimeModule.enableImpl(); }
-        @Override protected void onDisable() { PlayerTimeModule.disableImpl(); }
+        @Override protected void onEnable() { RUNTIME.start(plan()); }
+        @Override protected void onDisable() { RUNTIME.close(); }
+        @Override protected void onReload() { RUNTIME.replace(plan()); }
+        @Override protected boolean restartOnReloadFailure() { return false; }
     };
     public static final ModuleEntry ENTRY = IMPL;
 
-    private static void enableImpl() {
-        initialize();
-    }
-
-    private static void disableImpl() {
+    private static void deactivate() {
         PlayerTimeCommand.unregister();
         PlayerTimeTopCommand.unregister();
     }
@@ -26,12 +29,26 @@ public class PlayerTimeModule {
     public static void disable() { IMPL.disable(); }
 
     public static void initialize() {
+        RUNTIME.start(plan());
+    }
+
+    private static UserDataService plan() {
         if (Tensa.userData == null) {
             throw new IllegalStateException("PlayerTime module requires core user data service");
         }
-        PlayerTimeTracker timeTracker = new PlayerTimeTracker(Tensa.userData);
-        AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
-        AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
+        return Tensa.userData;
+    }
+
+    private static Boolean activate(UserDataService userData) {
+        PlayerTimeTracker timeTracker = new PlayerTimeTracker(userData);
+        try {
+            AbstractModule.registerCommand("tplayertime", "tptime", new PlayerTimeCommand(timeTracker));
+            AbstractModule.registerCommand("tplayertop", "tptop", new PlayerTimeTopCommand(timeTracker));
+            return Boolean.TRUE;
+        } catch (RuntimeException failure) {
+            deactivate();
+            throw failure;
+        }
     }
 
     public static String formatTime(long timeMillis) {

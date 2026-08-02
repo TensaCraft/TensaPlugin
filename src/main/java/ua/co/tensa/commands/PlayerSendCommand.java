@@ -30,7 +30,7 @@ public class PlayerSendCommand implements SimpleCommand {
         Optional<RegisteredServer> toServer = Tensa.server.getServer(args[1]);
         RegisteredServer destination = toServer.orElse(null);
         if (destination == null) {
-            Message.sendLang(source, Lang.server_not_found, "{server}", args[1]);
+            Message.sendLang(source, Lang.server_not_found, "{server}", Message.escapeMiniMessage(args[1]));
             return;
         }
 
@@ -38,19 +38,21 @@ public class PlayerSendCommand implements SimpleCommand {
             for (Player p : Tensa.server.getAllPlayers()) {
                 p.createConnectionRequest(destination).fireAndForget();
             }
-            Message.sendLang(source, Lang.send_success, "{player}", "all", "{server}", args[1]);
+            Message.sendLang(source, Lang.send_success, "{player}", "all", "{server}", Message.escapeMiniMessage(args[1]));
             return;
         }
 
         Optional<Player> player = Tensa.server.getPlayer(args[0]);
         Player target = player.orElse(null);
         if (target == null) {
-            Message.sendLang(source, Lang.player_not_found, "{player}", args[0]);
+            Message.sendLang(source, Lang.player_not_found, "{player}", Message.escapeMiniMessage(args[0]));
             return;
         }
 
         target.createConnectionRequest(destination).fireAndForget();
-        Message.sendLang(source, Lang.send_success, "{player}", args[0], "{server}", args[1]);
+        Message.sendLang(source, Lang.send_success,
+                "{player}", Message.escapeMiniMessage(args[0]),
+                "{server}", Message.escapeMiniMessage(args[1]));
     }
 
     @Override

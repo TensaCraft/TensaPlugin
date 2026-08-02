@@ -1,6 +1,7 @@
 package ua.co.tensa.modules.discord;
 
 import org.junit.jupiter.api.Test;
+import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -52,6 +53,24 @@ class AtomicRuntimeSlotTest {
         assertThat(slot.plan()).isEqualTo("stable");
         assertThat(counters.botRuntimes.get()).isOne();
         assertThat(counters.listeners.get()).isOne();
+    }
+
+    @Test
+    void failedRollbackIsReportedWithoutClaimingTheOldRuntimeWasRestored() {
+        AtomicInteger activations = new AtomicInteger();
+        AtomicRuntimeSlot<String, String> slot = new AtomicRuntimeSlot<>(plan -> {
+            if ("stable".equals(plan) && activations.incrementAndGet() == 1) {
+                return plan;
+            }
+            throw new IllegalStateException("activation failed");
+        }, ignored -> { });
+        slot.start("stable");
+
+        assertThatThrownBy(() -> slot.replace("broken"))
+                .hasMessageContaining("rollback failed")
+                .hasRootCauseMessage("activation failed");
+        assertThat(slot.plan()).isNull();
+        assertThat(slot.runtime()).isNull();
     }
 
     private static final class FakeRuntime {

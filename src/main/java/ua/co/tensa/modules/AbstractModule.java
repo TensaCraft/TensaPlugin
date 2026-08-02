@@ -109,6 +109,16 @@ public abstract class AbstractModule implements ModuleEntry {
                 return true;
             } catch (Throwable t) {
                 if (!restartOnReloadFailure()) {
+                    if (t instanceof ua.co.tensa.modules.runtime.RuntimeReplacementException replacement
+                            && !replacement.previousRuntimeRestored()) {
+                        unregisterAllListeners();
+                        cancelAllTasks();
+                        unregisterAllPlaceholders();
+                        enabled = false;
+                        ua.co.tensa.Message.error("Reload failed for '" + id
+                                + "' and rollback could not restore the runtime; module is disabled");
+                        return false;
+                    }
                     ua.co.tensa.Message.warn("Soft reload rejected for '" + id + "': " + t.getMessage()
                             + "; keeping the active runtime");
                     return false;
@@ -225,6 +235,12 @@ public abstract class AbstractModule implements ModuleEntry {
                 .schedule();
         tasks.add(t);
         return t;
+    }
+
+    public void cancelTask(ScheduledTask task) {
+        if (task == null) return;
+        try { task.cancel(); } catch (Throwable ignored) {}
+        tasks.remove(task);
     }
 
     protected void cancelAllTasks() {

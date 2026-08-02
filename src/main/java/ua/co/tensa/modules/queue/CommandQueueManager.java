@@ -19,15 +19,21 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class CommandQueueManager implements AutoCloseable {
-    private final CommandQueueConfig config;
+    private final CommandQueueSettings config;
     private final CommandQueueStore store;
     private final ConcurrentMap<Long, QueuedCommandEntry> entries = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1L);
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public CommandQueueManager(CommandQueueConfig config, CoreStorageService storage) {
+        this(CommandQueueSettings.from(config), storage);
+    }
+
+    CommandQueueManager(CommandQueueSettings config, CoreStorageService storage) {
         this.config = config;
         this.store = new JdbcCommandQueueStore(Objects.requireNonNull(storage, "Core storage is not initialized"));
         reload();
@@ -45,11 +51,12 @@ public final class CommandQueueManager implements AutoCloseable {
             }
             nextId.set(store.nextId());
         } catch (Exception e) {
-            Message.error("Queue: failed to load queue data: " + e.getMessage());
+            throw new IllegalStateException("Queue data could not be loaded safely", e);
         }
     }
 
     public QueuedCommandEntry enqueue(String targetInput, String command, long delaySeconds, String createdBy) {
+        ensureOpen();
         long id = nextId.getAndIncrement();
         long createdAt = System.currentTimeMillis();
         long notBefore = createdAt + Math.max(0L, delaySeconds) * 1000L;
@@ -66,7 +73,7 @@ public final class CommandQueueManager implements AutoCloseable {
         );
         store.save(entry);
         entries.put(id, entry);
-        if (config.logDispatch) {
+        if (config.logDispatch()) {
             Message.info("Queue -> queued #" + entry.id() + " for " + entry.displayTarget()
                     + " delay=" + entry.delaySeconds() + "s");
         }
@@ -91,6 +98,7 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     public boolean remove(long id) {
+        ensureOpen();
         QueuedCommandEntry removed = entries.remove(id);
         if (removed != null) {
             store.delete(id);
@@ -100,6 +108,7 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     public int clear(String selector) {
+        ensureOpen();
         List<QueuedCommandEntry> matches = snapshot(selector);
         if (matches.isEmpty()) {
             return 0;
@@ -119,6 +128,7 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     public DispatchResult dispatchNow(long id) {
+        ensureOpen();
         QueuedCommandEntry entry = entries.get(id);
         if (entry == null) {
             return DispatchResult.notFound(id);
@@ -140,10 +150,16 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     public int dispatchDueForPlayer(Player player) {
+        if (closed.get()) {
+            return 0;
+        }
         long now = System.currentTimeMillis();
         int dispatched = 0;
-        int limit = Math.max(1, config.maxDispatchPerSweep);
+        int limit = config.maxDispatchPerSweep();
         for (QueuedCommandEntry entry : snapshot()) {
+            if (closed.get()) {
+                break;
+            }
             if (dispatched >= limit) {
                 break;
             }
@@ -182,6 +198,10 @@ public final class CommandQueueManager implements AutoCloseable {
         return new QueueStats(entries.size(), due, online, nextId.get());
     }
 
+    public int maxEntries() {
+        return config.maxEntries();
+    }
+
     public List<String> targetSuggestions() {
         java.util.LinkedHashSet<String> suggestions = new java.util.LinkedHashSet<>();
         for (Player player : Tensa.server.getAllPlayers()) {
@@ -207,6 +227,7 @@ public final class CommandQueueManager implements AutoCloseable {
     @Override
     public void close() {
         // Persistence is handled synchronously through core storage on each mutation.
+        closed.set(true);
     }
 
     private void dispatch(QueuedCommandEntry entry, Player player, String trigger) {
@@ -218,7 +239,7 @@ public final class CommandQueueManager implements AutoCloseable {
             Message.warn("Queue: command #" + entry.id() + " rendered to an empty string and was dropped");
             return;
         }
-        if (config.logDispatch) {
+        if (config.logDispatch()) {
             Message.info("Queue -> dispatching #" + entry.id() + " for " + player.getUsername() + " via " + trigger);
         }
         String finalCommand = command;
@@ -227,7 +248,7 @@ public final class CommandQueueManager implements AutoCloseable {
                 Message.error("Queue -> command #" + entry.id() + " failed for " + player.getUsername() + ": " + throwable.getMessage());
                 return;
             }
-            if (config.logDispatch) {
+            if (config.logDispatch()) {
                 Message.info("Queue -> executed #" + entry.id() + " for " + player.getUsername() + " accepted=" + success);
             }
         });
@@ -276,7 +297,13 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     private boolean isPlayerReady(Player player) {
-        return player != null && (!config.requireServerConnection || player.getCurrentServer().isPresent());
+        return player != null && (!config.requireServerConnection() || player.getCurrentServer().isPresent());
+    }
+
+    private void ensureOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("Command queue runtime is closed");
+        }
     }
 
     private boolean matchesPlayer(QueuedCommandEntry entry, Player player) {

@@ -1,7 +1,6 @@
 package ua.co.tensa.modules.requests;
 
 import com.google.gson.JsonObject;
-import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
@@ -306,12 +305,11 @@ public class RequestCommand implements SimpleCommand {
     }
 
     public static void unregister() {
-        CommandManager manager = Tensa.server.getCommandManager();
         List<Map<String, String>> triggers = RequestsModule.getTriggerToFileMapping();
 
         for (Map<String, String> triggerMap : triggers) {
             String trigger = triggerMap.get("trigger");
-            manager.unregister(trigger);
+            Util.unregisterCommand(trigger);
         }
     }
 }

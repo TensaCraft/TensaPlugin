@@ -52,13 +52,13 @@ public class Modules {
         synchronizeModules(false);
     }
 
-    public static void reloadAll() {
-        synchronizeModules(true);
+    public static java.util.List<String> reloadAll() {
+        return synchronizeModules(true);
     }
 
     /** Apply config states (enable/disable) and soft-reload enabled modules. */
-    public static void refresh() {
-        synchronizeModules(true);
+    public static java.util.List<String> refresh() {
+        return synchronizeModules(true);
     }
 
     // Snapshot view for info commands or admin tools
@@ -118,7 +118,8 @@ public class Modules {
         Util.registerCommand("tinfo", "", new TensaInfoCommand());
     }
 
-    private static void synchronizeModules(boolean reloadEnabled) {
+    private static java.util.List<String> synchronizeModules(boolean reloadEnabled) {
+        java.util.List<String> failures = new java.util.ArrayList<>();
         for (Map.Entry<String, ModuleEntry> entry : REGISTRY.entrySet()) {
             String id = entry.getKey();
             ModuleEntry module = entry.getValue();
@@ -133,17 +134,24 @@ public class Modules {
 
             if (!module.isEnabled()) {
                 module.enable();
+                if (!module.isEnabled()) {
+                    failures.add(id);
+                }
                 continue;
             }
 
             if (reloadEnabled) {
                 try {
-                    module.reload();
+                    if (!module.tryReload()) {
+                        failures.add(id);
+                    }
                 } catch (Throwable t) {
                     ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + t.getMessage());
+                    failures.add(id);
                 }
             }
         }
+        return java.util.List.copyOf(failures);
     }
 
     // wrappers replaced by module-provided ENTRY

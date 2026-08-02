@@ -1,5 +1,7 @@
 package ua.co.tensa.modules.rcon.manager;
 
+import ua.co.tensa.Tensa;
+import ua.co.tensa.config.model.YamlConfigPreflight;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.rcon.data.RconManagerConfig;
@@ -16,50 +18,59 @@ import java.util.function.Supplier;
 
 public class RconManagerModule {
     private static ExecutorService commandExecutor;
+    private static volatile RconManagerSettings settings = RconManagerSettings.empty();
 
     private static final ModuleEntry IMPL = new AbstractModule(
             "rcon-manager", "Rcon Manager") {
         @Override protected void onEnable() {
             try {
+                RconManagerSettings plan = prepare();
                 commandExecutor = createExecutor();
-                RconManagerConfig.get().reloadCfg();
+                settings = plan;
                 ua.co.tensa.modules.AbstractModule.registerCommand("rcon", "trcon", new RconManagerCommand());
-            } catch (Exception e) {
-                ua.co.tensa.Message.rcon("MANAGER ENABLE FAILED", e.getClass().getSimpleName() + " → " + e.getMessage());
+            } catch (RuntimeException failure) {
+                ua.co.tensa.modules.AbstractModule.unregisterCommands("rcon", "trcon");
+                shutdownExecutor();
+                settings = RconManagerSettings.empty();
+                throw failure;
             }
         }
-        @Override protected void onReload() { RconManagerConfig.get().reloadCfg(); }
+        @Override protected void onReload() { settings = prepare(); }
+        @Override protected boolean restartOnReloadFailure() { return false; }
         @Override protected void onDisable() {
             ua.co.tensa.modules.AbstractModule.unregisterCommands("rcon", "trcon");
             shutdownExecutor();
+            settings = RconManagerSettings.empty();
         }
     };
 
     public static final ModuleEntry ENTRY = IMPL;
 
     public static boolean serverIs(String server) {
-        String ip = RconManagerConfig.get().ip(server, "");
-        return !ip.isEmpty();
+        return connection(server) != null;
     }
 
     public static List<String> getServers() {
-        return new ArrayList<>(RconManagerConfig.get().serverKeys());
+        return new ArrayList<>(settings.servers().keySet());
     }
 
     public static Integer getPort(String server) {
-        return RconManagerConfig.get().port(server, 25575);
+        RconManagerSettings.RconConnection connection = connection(server);
+        return connection == null ? 25575 : connection.port();
     }
 
     public static String getIP(String server) {
-        return RconManagerConfig.get().ip(server, "127.0.0.1");
+        RconManagerSettings.RconConnection connection = connection(server);
+        return connection == null ? "127.0.0.1" : connection.host();
     }
 
     public static String getPass(String server) {
-        return RconManagerConfig.get().pass(server, "");
+        RconManagerSettings.RconConnection connection = connection(server);
+        return connection == null ? "" : connection.password();
     }
 
     public static ArrayList<String> getCommandArgs() {
-        return new ArrayList<>(RconManagerConfig.get().tabComplete);
+        return new ArrayList<>(settings.tabComplete());
     }
 
     public static <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
@@ -80,6 +91,18 @@ public class RconManagerModule {
             commandExecutor = createExecutor();
         }
         return commandExecutor;
+    }
+
+    static RconManagerSettings.RconConnection connection(String server) {
+        if (server == null) return null;
+        return settings.servers().get(server.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private static RconManagerSettings prepare() {
+        YamlConfigPreflight.validate(Tensa.pluginPath.resolve("rcon/rcon-manager.yml"));
+        RconManagerConfig config = RconManagerConfig.get();
+        config.reloadCfg();
+        return RconManagerSettings.from(config);
     }
 
     private static ExecutorService createExecutor() {

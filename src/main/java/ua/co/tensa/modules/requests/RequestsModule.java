@@ -4,32 +4,48 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.model.YamlAdapter;
 import ua.co.tensa.config.model.YamlBackedFile;
+import ua.co.tensa.config.model.YamlConfigPreflight;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class RequestsModule {
 
+    private static final AtomicRuntimeSlot<Plan, Runtime> RUNTIME =
+            new AtomicRuntimeSlot<>(RequestsModule::activate, RequestsModule::deactivate);
+
     private static final ModuleEntry IMPL = new AbstractModule(
             "request-module", "Requests") {
-        @Override protected void onEnable() { RequestsModule.enableImpl(); }
-        @Override protected void onDisable() { RequestsModule.disableImpl(); }
-        @Override protected void onReload() { reloadImpl(); }
+        @Override protected void onEnable() { RUNTIME.start(prepare()); }
+        @Override protected void onDisable() {
+            RUNTIME.close();
+            HttpRequest.shutdown();
+        }
+        @Override protected void onReload() { RUNTIME.replace(prepare()); }
+        @Override protected boolean restartOnReloadFailure() { return false; }
     };
     public static final ModuleEntry ENTRY = IMPL;
 
-    private static List<RequestConfig> configs;
+    private static volatile List<RequestConfig> configs = List.of();
 
     private static Path requestsDir() { return Tensa.pluginPath.resolve("requests"); }
 
     public static void load() {
+        configs = loadConfigs();
+    }
+
+    private static List<RequestConfig> loadConfigs() {
         File directory = requestsDir().toFile();
         if (!directory.exists() && !directory.mkdirs()) {
             throw new IllegalStateException("Failed to create requests directory: " + directory);
@@ -38,20 +54,31 @@ public class RequestsModule {
             Util.copyFile(directory.getPath(), "linkaccount.yml");
         }
 
-        configs = new ArrayList<>();
+        List<RequestConfig> loaded = new ArrayList<>();
         for (String fileName : getConfigurationFiles(directory.getPath())) {
             File file = new File(directory, fileName);
             if (file.isFile()) {
-                configs.add(new RequestConfig(file.toPath(), file.getName()));
+                YamlConfigPreflight.validate(file.toPath());
+                loaded.add(new RequestConfig(file.toPath(), file.getName()));
             }
         }
+        return List.copyOf(loaded);
     }
 
-    private static void enableImpl() {
-        load();
-        for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
-            AbstractModule.registerCommand(triggerMap.get("trigger"), "", new RequestCommand());
+    private static Plan prepare() {
+        List<RequestConfig> loaded = loadConfigs();
+        List<Map<String, String>> triggers = triggerMappings(loaded);
+        Set<String> unique = new HashSet<>();
+        for (Map<String, String> triggerMap : triggers) {
+            String trigger = triggerMap.get("trigger").trim().toLowerCase(Locale.ROOT);
+            if (!trigger.matches("[a-z0-9_-]{1,64}")) {
+                throw new IllegalStateException("Invalid request command trigger in " + triggerMap.get("file"));
+            }
+            if (!unique.add(trigger)) {
+                throw new IllegalStateException("Duplicate request command trigger: " + trigger);
+            }
         }
+        return new Plan(loaded, triggers);
     }
 
     private static boolean isDirectoryEmpty(File directory) {
@@ -59,11 +86,28 @@ public class RequestsModule {
         return entries != null && entries.length == 0;
     }
 
-    private static void disableImpl() {
-        for (Map<String, String> triggerMap : getTriggerToFileMapping()) {
-            AbstractModule.unregisterCommands(triggerMap.get("trigger"));
+    private static Runtime activate(Plan plan) {
+        List<String> registered = new ArrayList<>();
+        configs = plan.configs();
+        try {
+            for (Map<String, String> triggerMap : plan.triggers()) {
+                String trigger = triggerMap.get("trigger");
+                AbstractModule.registerCommand(trigger, "", new RequestCommand());
+                registered.add(trigger);
+            }
+            return new Runtime(List.copyOf(registered));
+        } catch (RuntimeException failure) {
+            AbstractModule.unregisterCommands(registered.toArray(String[]::new));
+            configs = List.of();
+            throw failure;
         }
-        HttpRequest.shutdown();
+    }
+
+    private static void deactivate(Runtime runtime) {
+        if (runtime != null) {
+            AbstractModule.unregisterCommands(runtime.commands().toArray(String[]::new));
+        }
+        configs = List.of();
     }
 
     public static void enable() { IMPL.enable(); }
@@ -78,15 +122,20 @@ public class RequestsModule {
                 .filter(File::isFile)
                 .map(File::getName)
                 .filter(name -> name.endsWith(".yml") || name.endsWith(".yaml"))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
                 .collect(Collectors.toList());
     }
 
     public static List<Map<String, String>> getTriggerToFileMapping() {
+        return triggerMappings(configs);
+    }
+
+    private static List<Map<String, String>> triggerMappings(List<RequestConfig> source) {
         List<Map<String, String>> result = new ArrayList<>();
-        if (configs == null || configs.isEmpty()) {
+        if (source == null || source.isEmpty()) {
             return result;
         }
-        for (RequestConfig config : configs) {
+        for (RequestConfig config : source) {
             for (String trigger : config.getStringList("triggers")) {
                 if (trigger == null || trigger.isBlank()) {
                     continue;
@@ -137,14 +186,6 @@ public class RequestsModule {
         return null;
     }
 
-    private static void reloadImpl() {
-        disableImpl();
-        if (configs != null) {
-            configs.clear();
-        }
-        enableImpl();
-    }
-
     private static final class RequestConfig extends YamlBackedFile {
         private final String fileName;
 
@@ -160,5 +201,11 @@ public class RequestsModule {
         private String fileName() {
             return fileName;
         }
+    }
+
+    private record Plan(List<RequestConfig> configs, List<Map<String, String>> triggers) {
+    }
+
+    private record Runtime(List<String> commands) {
     }
 }

@@ -6,7 +6,6 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.modules.queue.data.CommandQueueConfig;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -111,7 +110,7 @@ public final class CommandQueueCommand implements SimpleCommand {
             Message.sendLang(source, parsed.errorKey());
             return;
         }
-        if (manager.stats().totalEntries() >= CommandQueueConfig.get().maxEntries) {
+        if (manager.stats().totalEntries() >= manager.maxEntries()) {
             Message.sendLang(source, Lang.queue_limit_reached);
             return;
         }
@@ -120,7 +119,7 @@ public final class CommandQueueCommand implements SimpleCommand {
         int dispatched = manager.dispatchDue();
         Message.sendLang(source, Lang.queue_added,
                 "{id}", Long.toString(entry.id()),
-                "{target}", entry.displayTarget(),
+                "{target}", Message.escapeMiniMessage(entry.displayTarget()),
                 "{delay}", Long.toString(entry.delaySeconds()));
         if (dispatched > 0) {
             Message.sendLang(source, Lang.queue_dispatched_ready, "{count}", Integer.toString(dispatched));
@@ -136,7 +135,7 @@ public final class CommandQueueCommand implements SimpleCommand {
 
         Message.sendLang(source, Lang.queue_list_header,
                 "{count}", Integer.toString(entries.size()),
-                "{filter}", selector == null || selector.isBlank() ? "*" : selector);
+                "{filter}", selector == null || selector.isBlank() ? "*" : Message.escapeMiniMessage(selector));
 
         long now = System.currentTimeMillis();
         for (QueuedCommandEntry entry : entries.stream()
@@ -146,7 +145,7 @@ public final class CommandQueueCommand implements SimpleCommand {
                     "<gray>#</gray><yellow>{id}</yellow> <white>{target}</white> <dark_gray>[</dark_gray><aqua>{remaining}s</aqua><dark_gray>]</dark_gray> <gray>{command}</gray>",
                     Map.of(
                             "id", Long.toString(entry.id()),
-                            "target", entry.displayTarget(),
+                            "target", Message.escapeMiniMessage(entry.displayTarget()),
                             "remaining", Long.toString(entry.remainingSeconds(now)),
                             "command", Message.escapeMiniMessage(entry.preview())
                     ));
@@ -167,7 +166,7 @@ public final class CommandQueueCommand implements SimpleCommand {
 
         Message.sendTemplate(source,
                 "<gold>Queue #</gold><yellow>{id}</yellow> <gray>target:</gray> <white>{target}</white>",
-                Map.of("id", Long.toString(entry.id()), "target", entry.displayTarget()));
+                Map.of("id", Long.toString(entry.id()), "target", Message.escapeMiniMessage(entry.displayTarget())));
         Message.sendTemplate(source,
                 "<gray>Created by:</gray> <white>{createdBy}</white> <gray>at</gray> <white>{createdAt}</white>",
                 Map.of(
@@ -206,7 +205,7 @@ public final class CommandQueueCommand implements SimpleCommand {
         int removed = manager.clear(args[1]);
         Message.sendLang(source, Lang.queue_cleared,
                 "{count}", Integer.toString(removed),
-                "{target}", args[1]);
+                "{target}", Message.escapeMiniMessage(args[1]));
     }
 
     private void runEntry(CommandSource source, String[] args, String commandName) {
@@ -221,7 +220,7 @@ public final class CommandQueueCommand implements SimpleCommand {
             case TARGET_OFFLINE -> Message.sendLang(source, Lang.queue_run_offline, "{id}", Long.toString(id));
             case DISPATCHED -> Message.sendLang(source, Lang.queue_run_ok,
                     "{id}", Long.toString(id),
-                    "{player}", result.playerName());
+                    "{player}", Message.escapeMiniMessage(result.playerName()));
         }
     }
 

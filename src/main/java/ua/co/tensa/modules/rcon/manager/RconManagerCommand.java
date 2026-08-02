@@ -1,6 +1,5 @@
 package ua.co.tensa.modules.rcon.manager;
 
-import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
@@ -8,7 +7,6 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
-import ua.co.tensa.modules.rcon.data.RconManagerConfig;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -58,10 +56,11 @@ public class RconManagerCommand implements SimpleCommand {
 			return;
 		}
 
+        RconManagerSettings.RconConnection connection = RconManagerModule.connection(server);
         if ("all".equalsIgnoreCase(server)) {
             executeCommandForAllServers(invocation, command, sender);
-        } else if (RconManagerModule.serverIs(server)) {
-            executeCommandForServer(invocation, command, sender, server);
+        } else if (connection != null) {
+            executeCommandForServer(invocation, command, sender, server, connection);
         } else {
             Message.rcon("SERVER NOT FOUND", "'" + server + "' not in config");
         }
@@ -97,18 +96,17 @@ public class RconManagerCommand implements SimpleCommand {
 	}
 
 	public static void unregister() {
-		CommandManager manager = Tensa.server.getCommandManager();
         String[] commands = { "rcon", "trcon" };
 		for (String command : commands) {
-			manager.unregister(command);
+			Util.unregisterCommand(command);
 		}
 	}
 
 	private void executeCommandForServer(Invocation invocation, String command, CommandSource sender,
-										 String server) {
+										 String server, RconManagerSettings.RconConnection connection) {
 		if (hasPermission(invocation, "all") || hasPermission(invocation, server)) {
             RconManagerModule.supplyAsync(() -> {
-                tryExecuteRconCommand(command, sender, server);
+                tryExecuteRconCommand(command, sender, server, connection);
                 return null;
             }).exceptionally(error -> {
                 Message.privateMessage(sender, "<yellow>RCON command queue is busy. Try again later.</yellow>");
@@ -129,9 +127,16 @@ public class RconManagerCommand implements SimpleCommand {
             return;
         }
 
+		java.util.Map<String, RconManagerSettings.RconConnection> targets = new java.util.LinkedHashMap<>();
+        for (String serverName : allowedServers) {
+            RconManagerSettings.RconConnection connection = RconManagerModule.connection(serverName);
+            if (connection != null) {
+                targets.put(serverName, connection);
+            }
+        }
         RconManagerModule.supplyAsync(() -> {
-            for (String serverName : allowedServers) {
-                tryExecuteRconCommand(command, sender, serverName);
+            for (java.util.Map.Entry<String, RconManagerSettings.RconConnection> target : targets.entrySet()) {
+                tryExecuteRconCommand(command, sender, target.getKey(), target.getValue());
             }
             return null;
         }).exceptionally(error -> {
@@ -140,17 +145,22 @@ public class RconManagerCommand implements SimpleCommand {
         });
 	}
 
-	private void tryExecuteRconCommand(String command, CommandSource sender, String server) {
+	private void tryExecuteRconCommand(
+            String command,
+            CommandSource sender,
+            String server,
+            RconManagerSettings.RconConnection connection
+    ) {
 		try {
-			String ip = RconManagerModule.getIP(server);
-			Integer port = RconManagerModule.getPort(server);
-			String password = RconManagerModule.getPass(server);
-
         // Minimal trace only on error; avoid noisy logs on success
 
-			Rcon rcon = new Rcon(ip, port, password.getBytes());
-			String result = rcon.command(command.trim());
-			rcon.disconnect(); // Close connection after command
+			byte[] password = connection.password().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			String result;
+			try (Rcon rcon = new Rcon(connection.host(), connection.port(), password)) {
+				result = rcon.command(command.trim());
+			} finally {
+				java.util.Arrays.fill(password, (byte) 0);
+			}
 
 			if (result.isEmpty()) {
 				result = Lang.rcon_response_empty.getClean();
@@ -163,18 +173,20 @@ public class RconManagerCommand implements SimpleCommand {
 			result = formatMultilineResponse(result);
 
 			// Always inform the invoker, including console
-			Message.sendLang(sender, Lang.rcon_response, "{server}", Util.capitalize(server), "{response}", result);
+			Message.sendLang(sender, Lang.rcon_response,
+                    "{server}", Message.escapeMiniMessage(Util.capitalize(server)),
+                    "{response}", Message.escapeMiniMessage(result));
         } catch (UnknownHostException e) {
-            Message.sendLang(sender, Lang.rcon_unknown_error, "{server}", Util.capitalize(server));
+            Message.sendLang(sender, Lang.rcon_unknown_error, "{server}", Message.escapeMiniMessage(Util.capitalize(server)));
         } catch (IOException e) {
-            Message.sendLang(sender, Lang.rcon_io_error, "{server}", Util.capitalize(server));
+            Message.sendLang(sender, Lang.rcon_io_error, "{server}", Message.escapeMiniMessage(Util.capitalize(server)));
         } catch (AuthenticationException e) {
-            Message.sendLang(sender, Lang.rcon_auth_error, "{server}", Util.capitalize(server));
+            Message.sendLang(sender, Lang.rcon_auth_error, "{server}", Message.escapeMiniMessage(Util.capitalize(server)));
         } catch (Exception e) {
             // Catch any other exceptions
             Message.sendLang(sender, Lang.unknown_error);
             // For debugging - log detailed errors:
-            Message.rcon("COMMAND ERROR", server + " → " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            Message.rcon("COMMAND ERROR", server + " → " + e.getClass().getSimpleName());
         }
 	}
 

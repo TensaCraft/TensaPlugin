@@ -108,7 +108,7 @@ final class LegacyProxyBridgeRuntime implements AutoCloseable {
                     "ProxyBridge compatibility execution from "
                             + serverName
                             + ": /"
-                            + command
+                            + commandLabel(command)
             );
         }
         commandExecutor.accept(command);
@@ -145,5 +145,11 @@ final class LegacyProxyBridgeRuntime implements AutoCloseable {
 
     private static String normalizeServerName(String value) {
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String commandLabel(String command) {
+        int separator = command.indexOf(' ');
+        String label = separator < 0 ? command : command.substring(0, separator);
+        return label.length() > 64 ? label.substring(0, 64) : label;
     }
 }

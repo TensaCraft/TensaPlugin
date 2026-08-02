@@ -273,7 +273,7 @@ public class ChatCommands implements SimpleCommand {
         int messageOffset = reply ? 0 : 1;
         int requiredArguments = reply ? 1 : 2;
         if (invocation.arguments().length < requiredArguments) {
-            Message.sendLang(sender, Lang.chat_usage, "{command}", invocation.alias());
+            Message.sendLang(sender, Lang.chat_usage, "{command}", Message.escapeMiniMessage(invocation.alias()));
             return;
         }
 
@@ -292,7 +292,7 @@ public class ChatCommands implements SimpleCommand {
                 Message.privateMessage(sender, "<color:#ffb84d>Немає активної приватної розмови або гравець уже офлайн.</color>");
                 return;
             }
-            Message.sendLang(sender, Lang.player_not_found, "{player}", targetName);
+            Message.sendLang(sender, Lang.player_not_found, "{player}", Message.escapeMiniMessage(targetName));
             return;
         }
 

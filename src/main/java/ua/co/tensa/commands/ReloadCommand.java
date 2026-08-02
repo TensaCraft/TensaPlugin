@@ -78,8 +78,14 @@ public final class ReloadCommand implements SimpleCommand {
             if (Tensa.config == null) {
                 Tensa.config = new Config();
             }
-            Tensa.reloadPlugin();
-            Message.sendLang(source, Lang.reload);
+            List<String> failures = Tensa.reloadPlugin();
+            if (failures.isEmpty()) {
+                Message.sendLang(source, Lang.reload);
+            } else {
+                Message.privateMessage(source,
+                        "<red>Reload completed with failures:</red> <white>"
+                                + Message.escapeMiniMessage(String.join(", ", failures)) + "</white>");
+            }
             return;
         }
 

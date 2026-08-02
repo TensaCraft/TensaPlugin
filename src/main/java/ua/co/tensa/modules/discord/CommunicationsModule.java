@@ -9,6 +9,7 @@ import ua.co.tensa.config.model.YamlAdapter;
 import ua.co.tensa.config.model.YamlFileIO;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
+import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.chat.ProxyChatListener;
 import ua.co.tensa.modules.chat.ProxyChatService;

@@ -81,15 +81,20 @@ public class Tensa {
         }
     }
 
-    public static void reloadPlugin() {
+    public static java.util.List<String> reloadPlugin() {
         config = config == null ? new Config() : config;
         config.reload();
         Lang.initialise();
         PlaceholderManager.reload();
         registerUserMetaBindings();
         EventManager.reload();
-        Modules.refresh();
-        Message.info("Configuration reloaded without interrupting database or authentication sessions");
+        java.util.List<String> failures = Modules.refresh();
+        if (failures.isEmpty()) {
+            Message.info("Configuration reloaded without interrupting database or authentication sessions");
+        } else {
+            Message.warn("Configuration reload completed with module failures: " + String.join(", ", failures));
+        }
+        return failures;
     }
 
     private static void initialiseDatabase() {
