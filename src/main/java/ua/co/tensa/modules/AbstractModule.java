@@ -86,7 +86,15 @@ public abstract class AbstractModule implements ModuleEntry {
     // Reload: if onReload is overridden -> use it; otherwise perform full restart
     @Override
     public void reload() {
-        if (!isEnabled()) { enable(); return; }
+        tryReload();
+    }
+
+    @Override
+    public boolean tryReload() {
+        if (!isEnabled()) {
+            enable();
+            return isEnabled();
+        }
         boolean overridden = false;
         try {
             // Detect if subclass provided its own onReload implementation
@@ -98,12 +106,12 @@ public abstract class AbstractModule implements ModuleEntry {
             try {
                 onReload();
                 ModuleStatusLogger.reloaded(id, title);
-                return;
+                return true;
             } catch (Throwable t) {
                 if (!restartOnReloadFailure()) {
                     ua.co.tensa.Message.warn("Soft reload rejected for '" + id + "': " + t.getMessage()
                             + "; keeping the active runtime");
-                    return;
+                    return false;
                 }
                 ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getMessage()
                         + "; restarting module");
@@ -113,8 +121,10 @@ public abstract class AbstractModule implements ModuleEntry {
         doEnable(false);
         if (isEnabled()) {
             ModuleStatusLogger.reloaded(id, title);
+            return true;
         } else {
             ua.co.tensa.Message.warn("Module reload failed for '" + id + "': module did not enable cleanly");
+            return false;
         }
     }
 

@@ -9,6 +9,14 @@ import java.util.Map;
 
 public class Modules {
     private static final Map<String, ModuleEntry> REGISTRY = new LinkedHashMap<>();
+    private static final Object RELOAD_LOCK = new Object();
+
+    public enum ReloadResult {
+        RELOADED,
+        NOT_FOUND,
+        DISABLED,
+        FAILED
+    }
 
     public Modules() {
         REGISTRY.clear();
@@ -56,6 +64,31 @@ public class Modules {
     // Snapshot view for info commands or admin tools
     public static java.util.Map<String, ModuleEntry> getEntries() {
         return java.util.Collections.unmodifiableMap(REGISTRY);
+    }
+
+    public static ReloadResult reloadModule(String moduleId) {
+        synchronized (RELOAD_LOCK) {
+            return reloadModule(REGISTRY, moduleId);
+        }
+    }
+
+    static ReloadResult reloadModule(Map<String, ModuleEntry> registry, String moduleId) {
+        if (moduleId == null || moduleId.isBlank()) {
+            return ReloadResult.NOT_FOUND;
+        }
+        ModuleEntry module = registry.get(moduleId.trim().toLowerCase(java.util.Locale.ROOT));
+        if (module == null) {
+            return ReloadResult.NOT_FOUND;
+        }
+        if (!module.isEnabled()) {
+            return ReloadResult.DISABLED;
+        }
+        try {
+            return module.tryReload() ? ReloadResult.RELOADED : ReloadResult.FAILED;
+        } catch (Throwable throwable) {
+            ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + throwable.getMessage());
+            return ReloadResult.FAILED;
+        }
     }
 
     public static void disableAll() {

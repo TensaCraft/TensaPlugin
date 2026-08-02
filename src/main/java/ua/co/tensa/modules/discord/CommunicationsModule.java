@@ -29,9 +29,8 @@ public final class CommunicationsModule extends AbstractModule {
     private static final CommunicationsModule INSTANCE = new CommunicationsModule();
     public static final ModuleEntry ENTRY = INSTANCE;
 
-    private final Object lifecycleLock = new Object();
-    private volatile Prepared activePlan;
-    private volatile ActiveRuntime activeRuntime;
+    private final AtomicRuntimeSlot<Prepared, ActiveRuntime> runtimeSlot =
+            new AtomicRuntimeSlot<>(this::activate, this::deactivate);
 
     private CommunicationsModule() {
         super("communications", "Communications");
@@ -39,51 +38,19 @@ public final class CommunicationsModule extends AbstractModule {
 
     @Override
     protected void onEnable() {
-        synchronized (lifecycleLock) {
-            Prepared plan = prepare();
-            activeRuntime = activate(plan);
-            activePlan = plan;
-        }
+        runtimeSlot.start(prepare());
     }
 
     @Override
     protected void onDisable() {
-        synchronized (lifecycleLock) {
-            deactivate(activeRuntime);
-            activeRuntime = null;
-            activePlan = null;
-        }
+        runtimeSlot.close();
     }
 
     @Override
     protected void onReload() {
-        synchronized (lifecycleLock) {
-            // Preparation performs parsing and all semantic validation while
-            // the current runtime is still fully operational.
-            Prepared nextPlan = prepare();
-            Prepared previousPlan = activePlan;
-            ActiveRuntime previousRuntime = activeRuntime;
-
-            deactivate(previousRuntime);
-            activeRuntime = null;
-            try {
-                activeRuntime = activate(nextPlan);
-                activePlan = nextPlan;
-            } catch (RuntimeException replacementFailure) {
-                if (previousPlan != null) {
-                    try {
-                        activeRuntime = activate(previousPlan);
-                        activePlan = previousPlan;
-                    } catch (RuntimeException rollbackFailure) {
-                        replacementFailure.addSuppressed(rollbackFailure);
-                    }
-                }
-                throw new IllegalStateException(
-                        "Communications replacement failed; previous validated configuration was restored",
-                        replacementFailure
-                );
-            }
-        }
+        // Preparation performs parsing and all semantic validation while the
+        // current runtime is still fully operational.
+        runtimeSlot.replace(prepare());
     }
 
     @Override

@@ -14,6 +14,10 @@ public interface ModuleEntry {
         disable();
         enable();
     }
+    default boolean tryReload() {
+        reload();
+        return isEnabled();
+    }
     boolean isEnabled();
 
     static ModuleEntry of(String id, String title, Runnable onEnable, Runnable onDisable) {
