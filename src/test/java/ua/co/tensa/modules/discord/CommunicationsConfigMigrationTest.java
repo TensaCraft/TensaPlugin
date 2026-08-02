@@ -86,6 +86,25 @@ class CommunicationsConfigMigrationTest {
                 .isEqualTo(afterFirstRun);
     }
 
+    @Test
+    void preservesEnabledLegacyChatStateBeforeRemovingLegacyModuleKeys() throws Exception {
+        Files.writeString(tempDir.resolve("config.yml"), """
+                modules:
+                  chat-manager: true
+                  discord: false
+                """, StandardCharsets.UTF_8);
+
+        CommunicationsConfigMigration.Result result = CommunicationsConfigMigration.migrate(tempDir);
+
+        CommentedConfigurationNode app = load("config.yml");
+        assertThat(app.node("modules", "communications").getBoolean()).isTrue();
+        assertThat(app.node("modules", "chat-manager").virtual()).isTrue();
+
+        CommentedConfigurationNode chats = load("chats.yml");
+        assertThat(chats.node("enabled").getBoolean()).isTrue();
+        assertThat(result.changed()).isTrue();
+    }
+
     private CommentedConfigurationNode load(String relative) throws Exception {
         Path file = tempDir.resolve(relative);
         return YamlFileIO.load(YamlFileIO.loader(file));

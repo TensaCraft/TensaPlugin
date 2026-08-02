@@ -47,20 +47,20 @@ public final class CommunicationsConfigMigration {
         boolean discordChanged = migrateDiscordState(app, discord);
         discordChanged |= copyMissingProxySettings(chats, discord);
 
-        boolean appChanged = migrateModuleState(app);
         boolean chatsChanged = migrateChatState(app, chats);
         chatsChanged |= removeLegacyProxy(chats);
+        boolean appChanged = migrateModuleState(app);
 
         // Persist the destination before removing legacy source values. If a
         // later write fails, another startup can safely retry the migration.
         if (discordChanged) {
             save(discordPath, discord);
         }
-        if (appChanged) {
-            save(configPath, app);
-        }
         if (chatsChanged) {
             save(chatsPath, chats);
+        }
+        if (appChanged) {
+            save(configPath, app);
         }
         return new Result(discordChanged || appChanged || chatsChanged);
     }
