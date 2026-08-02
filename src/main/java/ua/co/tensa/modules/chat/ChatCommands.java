@@ -163,19 +163,21 @@ public class ChatCommands implements SimpleCommand {
 
     private static Map<String, String> publicCtx(String server, String player, String msg) {
         Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", server);
-        ctx.put("player", player);
-        ctx.put("message", msg);
+        ctx.put("server", Message.escapeMiniMessage(server));
+        ctx.put("player", Message.escapeMiniMessage(player));
+        ctx.put("message", Message.escapeMiniMessage(msg));
+        ctx.put("message_payload", Message.escapeMiniMessageArgument(msg));
         return ctx;
     }
 
-    private static Map<String, String> privateCtx(String server, String from, String to, String msg) {
+    static Map<String, String> privateCtx(String server, String from, String to, String msg) {
         Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", server);
-        ctx.put("from", from);
-        ctx.put("to", to);
-        ctx.put("target", to);
-        ctx.put("message", msg);
+        ctx.put("server", Message.escapeMiniMessage(server));
+        ctx.put("from", Message.escapeMiniMessage(from));
+        ctx.put("to", Message.escapeMiniMessage(to));
+        ctx.put("target", Message.escapeMiniMessage(to));
+        ctx.put("message", Message.escapeMiniMessage(msg));
+        ctx.put("message_payload", Message.escapeMiniMessageArgument(msg));
         return ctx;
     }
 
@@ -313,10 +315,10 @@ public class ChatCommands implements SimpleCommand {
         lastPrivateTarget.put(target.getUniqueId(), player.getUniqueId());
 
         Map<String, String> ctx = privateCtx(
-                Message.escapeMiniMessage(server),
-                Message.escapeMiniMessage(playerName),
-                Message.escapeMiniMessage(target.getUsername()),
-                Message.escapeMiniMessage(msg)
+                server,
+                playerName,
+                target.getUsername(),
+                msg
         );
 
         String toFmt = secString(sec, "to_format", "{from}: {message}");
@@ -361,9 +363,9 @@ public class ChatCommands implements SimpleCommand {
         }
 
         Map<String, String> ctx = publicCtx(
-                Message.escapeMiniMessage(server),
-                Message.escapeMiniMessage(playerName),
-                Message.escapeMiniMessage(msg)
+                server,
+                playerName,
+                msg
         );
         String fmt = secString(sec, "format", "{player}: {message}");
         String rendered = Message.renderTemplateString(fmt, ctx);

@@ -29,42 +29,49 @@ public class Util {
         return server.getCommandManager().executeAsync(player, command);
     }
 
-    public static void registerCommand(String command, String alias, SimpleCommand CommandClass) {
+    public static synchronized void registerCommand(String command, String alias, SimpleCommand CommandClass) {
         if (command == null || command.isBlank() || CommandClass == null) {
             return;
         }
 
-        unregisterCommand(command);
-        if (alias != null && !alias.isBlank()) {
-            unregisterCommand(alias);
+        String primary = command.trim();
+        String secondary = alias == null ? "" : alias.trim();
+        for (RegisteredCommand existing : REGISTERED.values()) {
+            if (sameCommand(primary, existing.primary())
+                    || sameCommand(primary, existing.alias())
+                    || (!secondary.isBlank() && (sameCommand(secondary, existing.primary())
+                    || sameCommand(secondary, existing.alias())))) {
+                throw new IllegalStateException(
+                        "Command collision for '" + primary + "' with " + existing.className()
+                );
+            }
         }
 
         CommandManager commandManager = server.getCommandManager();
-        var builder = commandManager.metaBuilder(command)
+        var builder = commandManager.metaBuilder(primary)
                 .plugin(Tensa.pluginContainer);
-        if (alias != null && !alias.isBlank()) {
-            builder = builder.aliases(alias);
+        if (!secondary.isBlank()) {
+            builder = builder.aliases(secondary);
         }
         CommandMeta commandMeta = builder.build();
         commandManager.register(commandMeta, CommandClass);
         String className = CommandClass.getClass().getName();
         String module = inferModuleFromClass(className);
         // Track in registry (deduplicate by primary name)
-        REGISTERED.put(command, new RegisteredCommand(command, alias, className, module, CommandClass));
+        REGISTERED.put(primary, new RegisteredCommand(primary, secondary, className, module, CommandClass));
     }
     
-    public static void unregisterCommand(String string) {
+    public static synchronized void unregisterCommand(String string) {
         if (string == null || string.isBlank()) {
             return;
         }
 
         CommandManager commandManager = server.getCommandManager();
         var registeredCommands = REGISTERED.values().stream()
-                .filter(command -> string.equals(command.primary()) || string.equals(command.alias()))
+                .filter(command -> sameCommand(string, command.primary()) || sameCommand(string, command.alias()))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         if (registeredCommands.isEmpty()) {
-            commandManager.unregister(string);
             return;
         }
 
@@ -77,8 +84,12 @@ public class Util {
         }
     }
 
-    public static ArrayList<RegisteredCommand> getRegisteredCommands() {
+    public static synchronized ArrayList<RegisteredCommand> getRegisteredCommands() {
         return new ArrayList<>(REGISTERED.values());
+    }
+
+    private static boolean sameCommand(String left, String right) {
+        return left != null && right != null && !left.isBlank() && left.equalsIgnoreCase(right);
     }
 
     private static String inferModuleFromClass(String className) {

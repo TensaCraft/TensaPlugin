@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-final class DiscordWebhookClient {
+final class DiscordWebhookClient implements DiscordWebhookDelivery {
     private final DiscordSettings settings;
     private final HttpClient httpClient;
     private final Gson gson = new Gson();
@@ -26,11 +26,13 @@ final class DiscordWebhookClient {
                 .build();
     }
 
-    boolean configured(DiscordRoute route) {
+    @Override
+    public boolean configured(DiscordRoute route) {
         return webhookUri(route).isPresent();
     }
 
-    CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
+    @Override
+    public CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("content", content);
         if (username != null && !username.isBlank()) {
@@ -42,7 +44,8 @@ final class DiscordWebhookClient {
         return sendPayload(route, payload);
     }
 
-    CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+    @Override
+    public CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("title", embed.title());
         body.put("description", embed.description());
@@ -64,7 +67,7 @@ final class DiscordWebhookClient {
                             .thenCompose(response -> response.statusCode() >= 200 && response.statusCode() < 300
                                     ? CompletableFuture.<Void>completedFuture(null)
                                     : CompletableFuture.<Void>failedFuture(
-                                            new IllegalStateException("Discord webhook returned HTTP " + response.statusCode())
+                                            new RejectedResponseException(response.statusCode())
                                     ));
                 })
                 .orElseGet(() -> CompletableFuture.failedFuture(new IllegalStateException("Discord webhook is not configured")));
@@ -74,5 +77,11 @@ final class DiscordWebhookClient {
         return route == DiscordRoute.EVENTS
                 ? settings.credentials().eventsWebhookUri()
                 : settings.credentials().webhookUri();
+    }
+
+    static final class RejectedResponseException extends IllegalStateException {
+        RejectedResponseException(int statusCode) {
+            super("Discord webhook returned HTTP " + statusCode);
+        }
     }
 }

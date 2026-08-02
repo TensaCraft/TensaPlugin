@@ -36,15 +36,18 @@ public class RconManagerCommand implements SimpleCommand {
 		String server = args[0];
 
         if (args.length == 1 && "reload".equals(server) && hasPermission(invocation, "reload")) {
-            try {
-                RconManagerConfig.get().reloadCfg();
-                // Trigger module reload to reinitialize everything properly
-                ua.co.tensa.modules.rcon.manager.RconManagerModule.ENTRY.reload();
-                Message.sendLang(sender, Lang.rcon_manager_reload);
-            } catch (Exception e) {
+            RconManagerModule.supplyAsync(() -> {
+                if (RconManagerModule.ENTRY.tryReload()) {
+                    Message.sendLang(sender, Lang.rcon_manager_reload);
+                } else {
+                    Message.sendLang(sender, Lang.unknown_error);
+                }
+                return null;
+            }).exceptionally(error -> {
                 Message.sendLang(sender, Lang.unknown_error);
-                Message.rcon("RELOAD FAILED", e.getMessage());
-            }
+                Message.rcon("RELOAD FAILED", error.getClass().getSimpleName());
+                return null;
+            });
             return;
         }
 
@@ -107,6 +110,9 @@ public class RconManagerCommand implements SimpleCommand {
             RconManagerModule.supplyAsync(() -> {
                 tryExecuteRconCommand(command, sender, server);
                 return null;
+            }).exceptionally(error -> {
+                Message.privateMessage(sender, "<yellow>RCON command queue is busy. Try again later.</yellow>");
+                return null;
             });
 		} else {
 			Message.sendLang(sender, Lang.no_perms);
@@ -127,6 +133,9 @@ public class RconManagerCommand implements SimpleCommand {
             for (String serverName : allowedServers) {
                 tryExecuteRconCommand(command, sender, serverName);
             }
+            return null;
+        }).exceptionally(error -> {
+            Message.privateMessage(sender, "<yellow>RCON command queue is busy. Try again later.</yellow>");
             return null;
         });
 	}

@@ -15,7 +15,7 @@ import ua.co.tensa.config.model.YamlBackedFile;
 public abstract class AbstractModule implements ModuleEntry {
     private final String id;
     private final String title;
-    private boolean enabled;
+    private volatile boolean enabled;
     private final java.util.List<Object> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final java.util.List<ScheduledTask> tasks = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final java.util.List<String> placeholders = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -32,7 +32,7 @@ public abstract class AbstractModule implements ModuleEntry {
     @Override
     public final String title() { return title; }
 
-    protected final void doEnable(boolean logStatus) {
+    protected final synchronized void doEnable(boolean logStatus) {
         if (enabled) return;
         try {
             onEnable();
@@ -56,7 +56,7 @@ public abstract class AbstractModule implements ModuleEntry {
     @Override
     public final void enable() { doEnable(true); }
 
-    protected final void doDisable(boolean logStatus) {
+    protected final synchronized void doDisable(boolean logStatus) {
         if (!enabled) return;
         try {
             onDisable();
@@ -90,7 +90,7 @@ public abstract class AbstractModule implements ModuleEntry {
     }
 
     @Override
-    public boolean tryReload() {
+    public synchronized boolean tryReload() {
         if (!isEnabled()) {
             enable();
             return isEnabled();

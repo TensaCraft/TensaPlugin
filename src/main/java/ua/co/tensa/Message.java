@@ -142,7 +142,16 @@ public class Message {
     // Utility: escape a string so MiniMessage does not interpret it as tags
     public static String escapeMiniMessage(String s) {
         if (s == null) return null;
-        return s.replace("\\", "\\\\").replace("<", "\\<");
+        return s.replace("\\", "\\\\")
+                .replace("<", "\\<");
+    }
+
+    /** Escape an untrusted value placed inside a quoted MiniMessage tag argument. */
+    public static String escapeMiniMessageArgument(String value) {
+        if (value == null) return null;
+        return value.replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"");
     }
 
     private static void sendMessageWithPrefix(String prefixStr, String message) {

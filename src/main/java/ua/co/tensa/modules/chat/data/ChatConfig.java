@@ -12,8 +12,10 @@ import java.util.Map;
  * transport settings are stored in discord.yml.
  */
 public class ChatConfig extends ConfigBase {
-    private static final String PRIVATE_TO_FORMAT = "<hover:show_text:'<gray>Натисніть, щоб відповісти</gray>'><click:suggest_command:'/pm {from} '><#55ff55>{from}</#55ff55></click></hover> <aqua>→</aqua> <#55ff55>Вам</#55ff55><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Відповісти з цим текстом</gray>'><click:suggest_command:'/pm {from} {message}'>↻</click></hover><gray>]</gray>";
-    private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message}'>↻</click></hover><gray>]</gray>";
+    private static final String PRIVATE_TO_FORMAT = "<hover:show_text:'<gray>Натисніть, щоб відповісти</gray>'><click:suggest_command:'/pm {from} '><#55ff55>{from}</#55ff55></click></hover> <aqua>→</aqua> <#55ff55>Вам</#55ff55><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message_payload}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Відповісти з цим текстом</gray>'><click:suggest_command:'/pm {from} {message_payload}'>↻</click></hover><gray>]</gray>";
+    private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message_payload}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message_payload}'>↻</click></hover><gray>]</gray>";
+    private static final String LEGACY_PRIVATE_TO_FORMAT = PRIVATE_TO_FORMAT.replace("{message_payload}", "{message}");
+    private static final String LEGACY_PRIVATE_FROM_FORMAT = PRIVATE_FROM_FORMAT.replace("{message_payload}", "{message}");
 
     @CfgKey(value = "global", comment = "Global chat channel configuration")
     public Map<String, Object> global = defaults(
@@ -78,4 +80,26 @@ public class ChatConfig extends ConfigBase {
     private static Object[] entry(String k, Object v) { return new Object[]{k, v}; }
 
     public ChatConfig() { super("chats.yml"); }
+
+    @Override
+    public synchronized void reloadCfg() {
+        super.reloadCfg();
+        boolean changed = false;
+        for (String section : java.util.List.of("private", "reply")) {
+            changed |= migrateKnownDefault(section + ".to_format", LEGACY_PRIVATE_TO_FORMAT, PRIVATE_TO_FORMAT);
+            changed |= migrateKnownDefault(section + ".from_format", LEGACY_PRIVATE_FROM_FORMAT, PRIVATE_FROM_FORMAT);
+        }
+        if (changed) {
+            save();
+            super.reloadCfg();
+        }
+    }
+
+    private boolean migrateKnownDefault(String path, String legacyValue, String currentValue) {
+        if (!legacyValue.equals(getString(path, ""))) {
+            return false;
+        }
+        setNodeValue(node(path), currentValue);
+        return true;
+    }
 }

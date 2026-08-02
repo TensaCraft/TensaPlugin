@@ -11,10 +11,14 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public final class UserDataService implements AutoCloseable {
+    private static final int MAX_PENDING_OPERATIONS = 2_048;
     private final UserDataStore store;
     private final CoreStorageService ownedStorage;
     private final ExecutorService executor;
@@ -23,14 +27,21 @@ public final class UserDataService implements AutoCloseable {
         this.store = store;
         this.ownedStorage = ownedStorage;
         this.store.initialize();
-        this.executor = Executors.newFixedThreadPool(
-                Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors())),
+        int workers = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors()));
+        this.executor = new ThreadPoolExecutor(
+                workers,
+                workers,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(MAX_PENDING_OPERATIONS),
                 runnable -> {
                     Thread thread = new Thread(runnable);
                     thread.setName("tensa-user-data-" + thread.threadId());
                     thread.setDaemon(true);
                     return thread;
-                });
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     public static UserDataService local(Path databaseFile, String tablePrefix) {
@@ -47,7 +58,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<UserRecordResult> recordLoginAsync(UserLoginData data) {
-        return CompletableFuture.supplyAsync(() -> recordLogin(data), executor);
+        return supplyAsync(() -> recordLogin(data));
     }
 
     public void recordDisconnect(UUID uuid, long timestamp, String server) {
@@ -55,7 +66,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Void> recordDisconnectAsync(UUID uuid, long timestamp, String server) {
-        return CompletableFuture.runAsync(() -> recordDisconnect(uuid, timestamp, server), executor);
+        return runAsync(() -> recordDisconnect(uuid, timestamp, server));
     }
 
     public Optional<UserProfile> findUser(String usernameOrUuid) {
@@ -78,7 +89,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Map<String, String>> getAllMetaAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getAllMeta(uuid), executor);
+        return supplyAsync(() -> getAllMeta(uuid));
     }
 
     public Optional<String> getMeta(UUID uuid, String key) {
@@ -90,11 +101,11 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Optional<String>> getMetaAsync(UUID uuid, String key) {
-        return CompletableFuture.supplyAsync(() -> getMeta(uuid, key), executor);
+        return supplyAsync(() -> getMeta(uuid, key));
     }
 
     public CompletableFuture<Optional<String>> getMetaAsync(UUID uuid, String namespace, String key) {
-        return CompletableFuture.supplyAsync(() -> getMeta(uuid, namespace, key), executor);
+        return supplyAsync(() -> getMeta(uuid, namespace, key));
     }
 
     public void setMeta(UUID uuid, String key, String value) {
@@ -110,15 +121,15 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Void> setMetaAsync(UUID uuid, String key, String value) {
-        return CompletableFuture.runAsync(() -> setMeta(uuid, key, value), executor);
+        return runAsync(() -> setMeta(uuid, key, value));
     }
 
     public CompletableFuture<Void> setMetaAsync(UUID uuid, String key, String value, String valueType) {
-        return CompletableFuture.runAsync(() -> setMeta(uuid, key, value, valueType), executor);
+        return runAsync(() -> setMeta(uuid, key, value, valueType));
     }
 
     public CompletableFuture<Void> setMetaAsync(UUID uuid, String namespace, String key, String value, String valueType) {
-        return CompletableFuture.runAsync(() -> setMeta(uuid, namespace, key, value, valueType), executor);
+        return runAsync(() -> setMeta(uuid, namespace, key, value, valueType));
     }
 
     public void deleteMeta(UUID uuid, String key) {
@@ -130,11 +141,11 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Void> deleteMetaAsync(UUID uuid, String key) {
-        return CompletableFuture.runAsync(() -> deleteMeta(uuid, key), executor);
+        return runAsync(() -> deleteMeta(uuid, key));
     }
 
     public CompletableFuture<Void> deleteMetaAsync(UUID uuid, String namespace, String key) {
-        return CompletableFuture.runAsync(() -> deleteMeta(uuid, namespace, key), executor);
+        return runAsync(() -> deleteMeta(uuid, namespace, key));
     }
 
     public Map<String, String> getMetaNamespace(UUID uuid, String namespace) {
@@ -149,7 +160,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Map<String, String>> getMetaNamespaceAsync(UUID uuid, String namespace) {
-        return CompletableFuture.supplyAsync(() -> getMetaNamespace(uuid, namespace), executor);
+        return supplyAsync(() -> getMetaNamespace(uuid, namespace));
     }
 
     public long getPlayTime(UUID uuid) {
@@ -157,7 +168,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Long> getPlayTimeAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getPlayTime(uuid), executor);
+        return supplyAsync(() -> getPlayTime(uuid));
     }
 
     public long getLivePlayTime(UUID uuid) {
@@ -171,13 +182,13 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<Long> getLivePlayTimeAsync(UUID uuid) {
-        return CompletableFuture.supplyAsync(() -> getLivePlayTime(uuid), executor);
+        return supplyAsync(() -> getLivePlayTime(uuid));
     }
 
     public CompletableFuture<Long> getLivePlayTimeByNameAsync(String usernameOrUuid) {
-        return CompletableFuture.supplyAsync(() -> findUser(usernameOrUuid)
+        return supplyAsync(() -> findUser(usernameOrUuid)
                 .map(profile -> calculateLivePlayTime(profile, System.currentTimeMillis()))
-                .orElse(0L), executor);
+                .orElse(0L));
     }
 
     public void addPlayTime(UUID uuid, long seconds) {
@@ -189,7 +200,7 @@ public final class UserDataService implements AutoCloseable {
     }
 
     public CompletableFuture<List<UserProfile>> topByPlayTimeAsync(int limit) {
-        return CompletableFuture.supplyAsync(() -> topByPlayTime(limit), executor);
+        return supplyAsync(() -> topByPlayTime(limit));
     }
 
     @Override
@@ -222,6 +233,26 @@ public final class UserDataService implements AutoCloseable {
                 .protocolVersion(String.valueOf(player.getProtocolVersion()))
                 .server(server)
                 .build();
+    }
+
+    private <T> CompletableFuture<T> supplyAsync(Supplier<T> operation) {
+        try {
+            return CompletableFuture.supplyAsync(operation, executor);
+        } catch (RejectedExecutionException rejected) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("User data operation queue is full", rejected)
+            );
+        }
+    }
+
+    private CompletableFuture<Void> runAsync(Runnable operation) {
+        try {
+            return CompletableFuture.runAsync(operation, executor);
+        } catch (RejectedExecutionException rejected) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("User data operation queue is full", rejected)
+            );
+        }
     }
 
     private String scopedMetaKey(String namespace, String key) {

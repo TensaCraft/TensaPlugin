@@ -93,6 +93,18 @@ public final class UserMetaService implements AutoCloseable {
                 .thenAccept(ignored -> sessionCache.computeIfAbsent(uuid, u -> new ConcurrentHashMap<>()));
     }
 
+    public void forget(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
+        sessionCache.remove(uuid);
+        persistentCache.remove(uuid);
+        CompletableFuture<Map<String, String>> pending = pendingLoads.remove(uuid);
+        if (pending != null) {
+            pending.cancel(false);
+        }
+    }
+
     @Override
     public void close() {
         sessionCache.clear();

@@ -35,7 +35,7 @@ public class RconFramingHandler extends ByteToMessageCodec<ByteBuf> {
 		int length = in.order(ByteOrder.LITTLE_ENDIAN).readInt();
 
 		// DoS Protection: Validate packet size
-		if (length < 0 || length > MAX_PACKET_SIZE) {
+		if (length < 10 || length > MAX_PACKET_SIZE) {
 			ua.co.tensa.Message.warn("RCON received invalid packet size: " + length + " from " + ctx.channel().remoteAddress());
 			ctx.close();
 			return;

@@ -32,6 +32,8 @@ public final class AtomicLinkStore {
     }
 
     private static final int FORMAT_VERSION = 1;
+    private static final long MAX_STORE_BYTES = 16L * 1024L * 1024L;
+    private static final int MAX_LINKS = 100_000;
 
     private final Path file;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -53,6 +55,9 @@ public final class AtomicLinkStore {
             playerByDiscord = Map.of();
             return;
         }
+        if (Files.size(file) > MAX_STORE_BYTES) {
+            throw new IOException("Discord link store exceeds the safe size limit");
+        }
         StoredData data;
         try {
             data = gson.fromJson(Files.readString(file, StandardCharsets.UTF_8), StoredData.class);
@@ -61,6 +66,9 @@ public final class AtomicLinkStore {
         }
         if (data == null || data.version != FORMAT_VERSION || data.links == null) {
             throw new IOException("Discord link store has an unsupported format");
+        }
+        if (data.links.size() > MAX_LINKS) {
+            throw new IOException("Discord link store contains too many account bindings");
         }
 
         LinkedHashMap<UUID, LinkedAccount> nextByPlayer = new LinkedHashMap<>();

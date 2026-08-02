@@ -118,15 +118,18 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         Guild configuredGuild = connectedJda.getGuildById(settings.guildId());
         TextChannel configuredChannel = connectedJda.getTextChannelById(settings.channelId());
         TextChannel configuredEventsChannel = connectedJda.getTextChannelById(settings.eventsChannelId());
-        if (configuredGuild == null
-                || configuredChannel == null
-                || !configuredChannel.getGuild().getId().equals(settings.guildId())) {
+        if (configuredGuild == null) {
             ready.set(false);
-            Message.warn("Discord gateway connected, but the configured guild/channel is unavailable");
+            Message.warn("Discord gateway connected, but the configured guild is unavailable; linking command cannot be registered");
             return;
         }
         this.guild = configuredGuild;
-        this.channel = configuredChannel;
+        if (configuredChannel != null && configuredChannel.getGuild().getId().equals(settings.guildId())) {
+            this.channel = configuredChannel;
+        } else {
+            this.channel = null;
+            Message.warn("Discord gateway connected, but the configured relay channel is unavailable");
+        }
         if (configuredEventsChannel != null && configuredEventsChannel.getGuild().getId().equals(settings.guildId())) {
             this.eventsChannel = configuredEventsChannel;
         } else {
@@ -151,7 +154,7 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                     Message.info("Discord guild command /" + settings.linkCommandName() + " " + action);
                 });
         readyHandler.run();
-        Message.info("Discord gateway connected for the configured guild/channel");
+        Message.info("Discord gateway connected for the configured guild");
     }
 
     @Override

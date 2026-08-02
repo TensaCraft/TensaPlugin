@@ -13,6 +13,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 final class DiscordLinkService implements AutoCloseable {
     enum ResultType {
@@ -46,6 +48,7 @@ final class DiscordLinkService implements AutoCloseable {
     private final DiscordSettings settings;
     private final ExecutorService executor;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
 
     DiscordLinkService(AtomicLinkStore store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
         this.store = store;
@@ -85,16 +88,44 @@ final class DiscordLinkService implements AutoCloseable {
     }
 
     void reconcileRoles() {
-        submit(() -> {
-            for (LinkedAccount account : store.all()) {
-                try {
-                    await(gateway.assignLinkedRole(account.discordUserId()));
-                } catch (Exception e) {
-                    Message.warn("Discord linked-role reconciliation failed for one account");
-                }
+        if (closed.get() || roleReconciliation.get() != null) {
+            return;
+        }
+        CompletableFuture<Void> promise = new CompletableFuture<>();
+        if (!roleReconciliation.compareAndSet(null, promise)) {
+            return;
+        }
+        try {
+            executor.execute(() -> startRoleReconciliation(promise));
+        } catch (RejectedExecutionException rejected) {
+            roleReconciliation.compareAndSet(promise, null);
+            promise.completeExceptionally(rejected);
+        }
+    }
+
+    private void startRoleReconciliation(CompletableFuture<Void> promise) {
+        AtomicInteger failures = new AtomicInteger();
+        CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
+        for (LinkedAccount account : store.all()) {
+            chain = chain.thenCompose(ignored -> closed.get()
+                    ? CompletableFuture.completedFuture(null)
+                    : gateway.assignLinkedRole(account.discordUserId())
+                            .exceptionally(error -> {
+                                failures.incrementAndGet();
+                                return null;
+                            }));
+        }
+        chain.whenComplete((ignored, error) -> {
+            if (error == null) {
+                promise.complete(null);
+            } else {
+                promise.completeExceptionally(error);
             }
-            return null;
-        }).exceptionally(ignored -> null);
+            roleReconciliation.compareAndSet(promise, null);
+            if (failures.get() > 0) {
+                Message.warn("Discord linked-role reconciliation failed for " + failures.get() + " account(s)");
+            }
+        });
     }
 
     private Result completeBlocking(String code, String discordUserId, String discordUserName) {
@@ -202,6 +233,10 @@ final class DiscordLinkService implements AutoCloseable {
     public void close() {
         if (!closed.compareAndSet(false, true)) {
             return;
+        }
+        CompletableFuture<Void> reconciliation = roleReconciliation.getAndSet(null);
+        if (reconciliation != null) {
+            reconciliation.cancel(false);
         }
         executor.shutdown();
         try {

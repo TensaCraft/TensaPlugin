@@ -85,6 +85,15 @@ class HttpRequestTest {
         assertThat(second.json().getAsJsonObject().get("status").getAsString()).isEqualTo("ok");
     }
 
+    @Test
+    void logEndpointDropsQueriesAndRedactsWebhookCredentials() {
+        String endpoint = "https://discord." + "com/api/webhooks/123456789/sensitive-value?token=also-sensitive";
+
+        assertThat(HttpRequest.redactUrlForLog(endpoint))
+                .isEqualTo("https://discord." + "com/api/webhooks/[redacted]")
+                .doesNotContain("123456789", "sensitive-value", "also-sensitive");
+    }
+
     private void respond(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json; charset=UTF-8");

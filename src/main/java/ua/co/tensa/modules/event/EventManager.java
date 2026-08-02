@@ -230,6 +230,9 @@ public class EventManager {
 
     public static void onPlayerLeave(DisconnectEvent event) {
         EventContext context = withPlayer(context(on_leave_commands.name()), event.getPlayer()).build();
+        if (Tensa.userMeta != null) {
+            Tensa.userMeta.forget(event.getPlayer().getUniqueId());
+        }
         if (Tensa.userData != null) {
             Tensa.userData.recordDisconnectAsync(
                     event.getPlayer().getUniqueId(),

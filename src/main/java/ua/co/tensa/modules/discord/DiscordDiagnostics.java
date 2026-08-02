@@ -23,14 +23,16 @@ final class DiscordDiagnostics {
         String message = cause == null || cause.getMessage() == null ? "no details" : cause.getMessage();
         String sanitized = WEBHOOK.matcher(message).replaceAll("[REDACTED_WEBHOOK]");
         sanitized = BOT_TOKEN.matcher(sanitized).replaceAll("[REDACTED_TOKEN]");
-        sanitized = sanitized.replace('\r', ' ').replace('\n', ' ').trim();
+        sanitized = sanitized.replace('\r', ' ').replace('\n', ' ')
+                .replace("<", "\\<")
+                .trim();
         if (sanitized.length() > MAX_LENGTH) {
             sanitized = sanitized.substring(0, MAX_LENGTH) + "...";
         }
         return type + ": " + sanitized;
     }
 
-    private static Throwable unwrap(Throwable error) {
+    static Throwable unwrap(Throwable error) {
         Throwable current = error;
         while ((current instanceof CompletionException || current instanceof ExecutionException)
                 && current.getCause() != null) {

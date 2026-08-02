@@ -26,12 +26,15 @@ public final class UserMetaCommand implements SimpleCommand {
     @Override
     public void execute(Invocation invocation) {
         CommandSource sender = invocation.source();
-        String[] args = invocation.arguments();
         if (!sender.hasPermission("tensa.meta")) {
             Message.sendLang(sender, Lang.no_perms);
             return;
         }
+        String[] args = invocation.arguments().clone();
+        schedule(() -> executeOffEventLoop(sender, args));
+    }
 
+    private void executeOffEventLoop(CommandSource sender, String[] args) {
         if (args.length == 0) {
             Message.sendLang(sender, Lang.meta_usage);
             return;
@@ -195,9 +198,15 @@ public final class UserMetaCommand implements SimpleCommand {
     }
 
     private UUID resolveSuggestionTarget(CommandSource source, String value) {
-        UUID resolved = resolveUser(value);
-        if (resolved != null) {
-            return resolved;
+        if (value != null && !value.isBlank()) {
+            Optional<Player> online = Tensa.server.getPlayer(value);
+            if (online.isPresent()) {
+                return online.get().getUniqueId();
+            }
+            try {
+                return UUID.fromString(value.trim());
+            } catch (IllegalArgumentException ignored) {
+            }
         }
         return source instanceof Player player ? player.getUniqueId() : null;
     }

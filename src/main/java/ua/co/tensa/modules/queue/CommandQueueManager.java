@@ -68,7 +68,7 @@ public final class CommandQueueManager implements AutoCloseable {
         entries.put(id, entry);
         if (config.logDispatch) {
             Message.info("Queue -> queued #" + entry.id() + " for " + entry.displayTarget()
-                    + " delay=" + entry.delaySeconds() + "s command=" + entry.preview());
+                    + " delay=" + entry.delaySeconds() + "s");
         }
         return entry;
     }
@@ -219,7 +219,7 @@ public final class CommandQueueManager implements AutoCloseable {
             return;
         }
         if (config.logDispatch) {
-            Message.info("Queue -> dispatching #" + entry.id() + " for " + player.getUsername() + " via " + trigger + ": " + command);
+            Message.info("Queue -> dispatching #" + entry.id() + " for " + player.getUsername() + " via " + trigger);
         }
         String finalCommand = command;
         Util.executeCommand(finalCommand).whenComplete((success, throwable) -> {
@@ -228,7 +228,7 @@ public final class CommandQueueManager implements AutoCloseable {
                 return;
             }
             if (config.logDispatch) {
-                Message.info("Queue -> executed #" + entry.id() + " for " + player.getUsername() + " accepted=" + success + ": " + finalCommand);
+                Message.info("Queue -> executed #" + entry.id() + " for " + player.getUsername() + " accepted=" + success);
             }
         });
     }

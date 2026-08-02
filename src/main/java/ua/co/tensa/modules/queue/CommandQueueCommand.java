@@ -4,6 +4,7 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
+import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.modules.queue.data.CommandQueueConfig;
 
@@ -29,13 +30,19 @@ public final class CommandQueueCommand implements SimpleCommand {
     @Override
     public void execute(Invocation invocation) {
         CommandSource source = invocation.source();
-        String[] args = invocation.arguments();
-        String commandName = invocation.alias() == null || invocation.alias().isBlank() ? "tqueue" : invocation.alias();
-
         if (!source.hasPermission("tensa.queue")) {
             Message.sendLang(source, Lang.no_perms);
             return;
         }
+        String[] args = invocation.arguments().clone();
+        String alias = invocation.alias();
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, () -> executeOffEventLoop(source, args, alias))
+                .schedule();
+    }
+
+    private void executeOffEventLoop(CommandSource source, String[] args, String alias) {
+        String commandName = alias == null || alias.isBlank() ? "tqueue" : alias;
 
         if (args.length == 0) {
             sendUsage(source, commandName);

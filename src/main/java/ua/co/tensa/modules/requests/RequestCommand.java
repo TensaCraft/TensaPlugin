@@ -31,7 +31,7 @@ public class RequestCommand implements SimpleCommand {
             }
             runCommand(config, args, sender);
         } catch (Exception e) {
-            Message.error("Requests: execution error - " + e.getMessage());
+            Message.error("Requests: execution error - " + e.getClass().getSimpleName());
         }
     }
 
@@ -65,13 +65,14 @@ public class RequestCommand implements SimpleCommand {
     ) {
         Throwable cause = unwrap(throwable);
         if (cause != null) {
-            Message.error("Requests: HTTP " + method + " failed for " + url + " - " + cause.getMessage());
+            Message.error("Requests: HTTP " + method + " failed for " + HttpRequest.redactUrlForLog(url)
+                    + " - " + cause.getClass().getSimpleName());
             executeResponseCommands(config, "failure", sender, params, Collections.emptyMap());
             return;
         }
 
         if (response == null) {
-            Message.warn("Requests: empty HTTP result from URL: " + url);
+            Message.warn("Requests: empty HTTP result from URL: " + HttpRequest.redactUrlForLog(url));
             executeResponseCommands(config, "failure", sender, params, Collections.emptyMap());
             return;
         }
@@ -82,7 +83,8 @@ public class RequestCommand implements SimpleCommand {
         if (config.getBoolean("debug", false)) {
             StringBuilder dbg = new StringBuilder();
             dbg.append("<gold>—— Request Debug ——\n");
-            dbg.append("<green>URL: <yellow>").append(url).append("\n");
+            dbg.append("<green>URL: <yellow>")
+                    .append(Message.escapeMiniMessage(HttpRequest.redactUrlForLog(url))).append("\n");
             dbg.append("<green>Method: <yellow>").append(method).append("\n");
             dbg.append("<green>Status: <yellow>").append(response.statusCode()).append("\n");
 
@@ -99,7 +101,7 @@ public class RequestCommand implements SimpleCommand {
                 responseParams.forEach((k, v) -> dbg.append("  <gray>")
                         .append(k)
                         .append("<yellow>=</yellow>")
-                        .append(Message.escapeMiniMessage(v == null ? "" : v))
+                        .append(Message.escapeMiniMessage(isSensitiveKey(k) ? mask(v) : (v == null ? "" : v)))
                         .append(" <dark_gray>(%%")
                         .append(k)
                         .append("%%)</dark_gray>\n"));
@@ -124,7 +126,7 @@ public class RequestCommand implements SimpleCommand {
 
         for (String cmd : templates) {
             if (!isPlayer && cmd.contains("%player_name%")) {
-                Message.warn("Requests: skipped player-targeted command in console context: " + cmd);
+                Message.warn("Requests: skipped one player-targeted command in console context");
                 continue;
             }
             filtered.add(cmd);

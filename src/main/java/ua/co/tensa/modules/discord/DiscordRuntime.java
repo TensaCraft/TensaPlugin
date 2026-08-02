@@ -236,6 +236,9 @@ final class DiscordRuntime implements AutoCloseable {
                 throw e;
             } catch (Exception e) {
                 lastFailure = e;
+                if (isAmbiguousDeliveryFailure(e)) {
+                    throw e;
+                }
                 if (attempt < settings.deliveryAttempts()) {
                     if (!gateway.isReady(message.route())) {
                         awaitGatewayReconnect(message.route());
@@ -245,6 +248,13 @@ final class DiscordRuntime implements AutoCloseable {
             }
         }
         throw lastFailure == null ? new IllegalStateException("Discord delivery failed") : lastFailure;
+    }
+
+    private static boolean isAmbiguousDeliveryFailure(Throwable error) {
+        Throwable cause = DiscordDiagnostics.unwrap(error);
+        return cause instanceof java.util.concurrent.TimeoutException
+                || cause instanceof java.net.http.HttpTimeoutException
+                || cause instanceof java.io.IOException;
     }
 
     private void awaitGatewayReconnect(DiscordRoute route) throws InterruptedException {

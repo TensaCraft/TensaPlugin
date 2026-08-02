@@ -10,8 +10,11 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public class Database {
 
@@ -21,14 +24,20 @@ public class Database {
     public boolean enabled = false;
 
     // Dedicated executor for database operations to prevent blocking ForkJoinPool
-    private static final ExecutorService DB_EXECUTOR = Executors.newFixedThreadPool(
-        Math.max(4, Runtime.getRuntime().availableProcessors()),
+    private static final int DB_WORKERS = Math.max(4, Math.min(8, Runtime.getRuntime().availableProcessors()));
+    private static final ExecutorService DB_EXECUTOR = new ThreadPoolExecutor(
+        DB_WORKERS,
+        DB_WORKERS,
+        0L,
+        TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(4_096),
         runnable -> {
             Thread thread = new Thread(runnable);
             thread.setName("tensa-db-" + thread.threadId());
             thread.setDaemon(true);
             return thread;
-        }
+        },
+        new ThreadPoolExecutor.AbortPolicy()
     );
 
     public synchronized boolean connect() {
@@ -284,33 +293,33 @@ public class Database {
     }
 
     public void createTableAsync(String tableName, String columns) {
-        CompletableFuture.supplyAsync(() -> createTable(tableName, columns), DB_EXECUTOR);
+        submit(() -> createTable(tableName, columns));
     }
 
     public void insertAsync(String tableName, String columns, Object... values) {
-        CompletableFuture.supplyAsync(() -> insert(tableName, columns, castValuesToLong(values)), DB_EXECUTOR);
+        submit(() -> insert(tableName, columns, castValuesToLong(values)));
     }
 
     public void updateAsync(String tableName, String set, String where, Object... values) {
-        CompletableFuture.supplyAsync(() -> update(tableName, set, where, castValuesToLong(values)), DB_EXECUTOR);
+        submit(() -> update(tableName, set, where, castValuesToLong(values)));
     }
 
     public CompletableFuture<Boolean> deleteAsync(String tableName, String where, Object... values) {
-        return CompletableFuture.supplyAsync(() -> delete(tableName, where, castValuesToLong(values)), DB_EXECUTOR);
+        return submit(() -> delete(tableName, where, castValuesToLong(values)));
     }
 
     public <T> CompletableFuture<T> selectAsync(String tableName, String columns, String where, ResultSetHandler<T> handler, Object... values) {
         Object[] params = castValuesToLong(values);
-        return CompletableFuture.supplyAsync(() -> executeQuery(constructSelectQuery(tableName, columns, where), params, handler), DB_EXECUTOR);
+        return submit(() -> executeQuery(constructSelectQuery(tableName, columns, where), params, handler));
     }
 
     public <T> CompletableFuture<T> executeQueryAsync(String query, ResultSetHandler<T> handler, Object... parameters) {
         Object[] params = castValuesToLong(parameters);
-        return CompletableFuture.supplyAsync(() -> executeQuery(query, params, handler), DB_EXECUTOR);
+        return submit(() -> executeQuery(query, params, handler));
     }
 
     public CompletableFuture<Boolean> executeUpdateAsync(String query, Object... parameters) {
-        return CompletableFuture.supplyAsync(() -> executeUpdateSync(query, castValuesToLong(parameters)), DB_EXECUTOR);
+        return submit(() -> executeUpdateSync(query, castValuesToLong(parameters)));
     }
 
     public boolean exists(String tableName, String where, Object... values) {
@@ -346,5 +355,15 @@ public class Database {
             }
         }
         return castedValues;
+    }
+
+    private static <T> CompletableFuture<T> submit(Supplier<T> operation) {
+        try {
+            return CompletableFuture.supplyAsync(operation, DB_EXECUTOR);
+        } catch (RejectedExecutionException rejected) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Database operation queue is full", rejected)
+            );
+        }
     }
 }

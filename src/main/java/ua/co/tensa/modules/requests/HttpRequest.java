@@ -18,7 +18,9 @@ import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class HttpRequest {
@@ -34,6 +36,7 @@ public class HttpRequest {
 	private static volatile HttpClient client;
 
 	private static final int MAX_ATTEMPTS = 2;
+	private static final int MAX_PENDING_REQUESTS = 256;
 
 	private final String url;
 	private final String method;
@@ -52,13 +55,19 @@ public class HttpRequest {
 	}
 
 	public CompletableFuture<Result> sendAsync() {
-		return CompletableFuture.supplyAsync(() -> {
-			try {
-				return send();
-			} catch (Exception e) {
-				throw new CompletionException(e);
-			}
-		}, executor());
+		try {
+			return CompletableFuture.supplyAsync(() -> {
+				try {
+					return send();
+				} catch (Exception e) {
+					throw new CompletionException(e);
+				}
+			}, executor());
+		} catch (RejectedExecutionException rejected) {
+			return CompletableFuture.failedFuture(
+					new IllegalStateException("HTTP request queue is full", rejected)
+			);
+		}
 	}
 
 	public Result send() throws Exception {
@@ -72,7 +81,8 @@ public class HttpRequest {
 			} catch (IOException e) {
 				lastError = e;
 				if (attempt < maxAttempts) {
-					Message.warn("HTTP " + type + " retry " + (attempt + 1) + "/" + maxAttempts + " for " + url + " -> " + e.getMessage());
+					Message.warn("HTTP " + type + " retry " + (attempt + 1) + "/" + maxAttempts
+							+ " for " + endpointForLog() + " after " + e.getClass().getSimpleName());
 				}
 			}
 		}
@@ -174,29 +184,23 @@ public class HttpRequest {
 	private void logResponse(int status, JsonElement json, String body) {
 		if (isSuccess(status)) {
 			if (json == null) {
-				Message.warn("HTTP " + getMethod() + " -> Non-JSON response from " + url + " [" + status + "]");
+				Message.warn("HTTP " + getMethod() + " -> Non-JSON response from " + endpointForLog() + " [" + status + "]");
 			} else {
-				Message.info("HTTP " + getMethod() + " -> " + url + " [" + status + "]");
+				Message.info("HTTP " + getMethod() + " -> " + endpointForLog() + " [" + status + "]");
 			}
 			return;
 		}
 
-		Message.error("HTTP " + getMethod() + " -> Failed [" + status + "] " + url + "\nResponse: " + summarizeForLog(json, body));
-	}
-
-	private String summarizeForLog(JsonElement json, String body) {
-		String summary = json == null ? body : json.toString();
-		if (summary == null) {
-			return "";
-		}
-		return summary.length() > 1000 ? summary.substring(0, 1000) + "..." : summary;
+		Message.error("HTTP " + getMethod() + " -> Failed [" + status + "] " + endpointForLog()
+				+ " (response type=" + (json == null ? "text" : "json")
+				+ ", characters=" + body.length() + ")");
 	}
 
 	private void logEmptyResponse(int status) {
 		if (isSuccess(status)) {
-			Message.warn("HTTP " + getMethod() + " -> Empty response from " + url + " [" + status + "]");
+			Message.warn("HTTP " + getMethod() + " -> Empty response from " + endpointForLog() + " [" + status + "]");
 		} else {
-			Message.error("HTTP " + getMethod() + " -> Empty failed response [" + status + "] " + url);
+			Message.error("HTTP " + getMethod() + " -> Empty failed response [" + status + "] " + endpointForLog());
 		}
 	}
 
@@ -236,14 +240,20 @@ public class HttpRequest {
 	private static ExecutorService executor() {
 		synchronized (HTTP_LOCK) {
 			if (httpExecutor == null || httpExecutor.isShutdown() || httpExecutor.isTerminated()) {
-				httpExecutor = Executors.newFixedThreadPool(
-						Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors())),
+				int workers = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
+				httpExecutor = new ThreadPoolExecutor(
+						workers,
+						workers,
+						0L,
+						TimeUnit.MILLISECONDS,
+						new ArrayBlockingQueue<>(MAX_PENDING_REQUESTS),
 						runnable -> {
 							Thread thread = new Thread(runnable);
 							thread.setName("tensa-http-" + thread.threadId());
 							thread.setDaemon(true);
 							return thread;
-						}
+						},
+						new ThreadPoolExecutor.AbortPolicy()
 				);
 				client = null;
 			}
@@ -261,6 +271,25 @@ public class HttpRequest {
 						.build();
 			}
 			return client;
+		}
+	}
+
+	private String endpointForLog() {
+		return redactUrlForLog(url);
+	}
+
+	static String redactUrlForLog(String value) {
+		try {
+			URI uri = URI.create(value);
+			String path = uri.getPath() == null ? "" : uri.getPath();
+			int webhook = path.indexOf("/api/webhooks/");
+			if (webhook >= 0) {
+				path = path.substring(0, webhook) + "/api/webhooks/[redacted]";
+			}
+			int port = uri.getPort();
+			return uri.getScheme() + "://" + uri.getHost() + (port < 0 ? "" : ":" + port) + path;
+		} catch (RuntimeException ignored) {
+			return "[invalid endpoint]";
 		}
 	}
 }

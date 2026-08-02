@@ -9,11 +9,8 @@ import ua.co.tensa.config.Lang;
 
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 
 public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
@@ -23,11 +20,12 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	private static final byte TYPE_LOGIN = 3;
 
 	// Rate limiting: track failed login attempts per IP
-	private static final Map<String, AtomicInteger> failedAttempts = new ConcurrentHashMap<>();
-	private static final Map<String, AtomicLong> lastAttemptTime = new ConcurrentHashMap<>();
 	private static final int MAX_FAILED_ATTEMPTS = 3;
 	private static final long RATE_LIMIT_WINDOW_MS = 5000; // 5 seconds
 	private static final long BLOCK_DURATION_MS = 300000; // 5 minutes
+	private static final RconLoginRateLimiter LOGIN_LIMITER = new RconLoginRateLimiter(
+			RATE_LIMIT_WINDOW_MS, BLOCK_DURATION_MS, MAX_FAILED_ATTEMPTS, 4_096
+	);
 
 	private final String password;
 
@@ -44,7 +42,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	@SuppressWarnings("deprecation")
 	protected void channelRead0(ChannelHandlerContext ctx, ByteBuf buf) {
 		buf = buf.order(ByteOrder.LITTLE_ENDIAN);
-		if (buf.readableBytes() < 8) {
+		if (buf.readableBytes() < 10) {
 			return;
 		}
 
@@ -67,44 +65,24 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	}
 
     private void handleLogin(ChannelHandlerContext ctx, String payload, int requestId) {
-        String remoteAddress = ctx.channel().remoteAddress().toString();
+        String remoteAddress = remoteAddressKey(ctx.channel().remoteAddress());
         long currentTime = System.currentTimeMillis();
-
-        // Check if IP is temporarily blocked
-        AtomicInteger attempts = failedAttempts.get(remoteAddress);
-        AtomicLong lastTime = lastAttemptTime.get(remoteAddress);
-
-        if (attempts != null && lastTime != null) {
-            if (attempts.get() >= MAX_FAILED_ATTEMPTS) {
-                long timeSinceBlock = currentTime - lastTime.get();
-                if (timeSinceBlock < BLOCK_DURATION_MS) {
-                    ua.co.tensa.Message.rcon("LOGIN BLOCKED", remoteAddress + " → Too many failed attempts");
-                    ctx.close();
-                    return;
-                } else {
-                    // Block expired, reset
-                    failedAttempts.remove(remoteAddress);
-                    lastAttemptTime.remove(remoteAddress);
-                }
-            }
+        RconLoginRateLimiter.Decision decision = LOGIN_LIMITER.check(remoteAddress, currentTime);
+        if (decision == RconLoginRateLimiter.Decision.BLOCKED) {
+            ua.co.tensa.Message.rcon("LOGIN BLOCKED", remoteAddress + " → Too many failed attempts");
+            ctx.close();
+            return;
         }
-
-        // Rate limit: max 1 attempt per RATE_LIMIT_WINDOW_MS
-        if (lastTime != null) {
-            long timeSinceLastAttempt = currentTime - lastTime.get();
-            if (timeSinceLastAttempt < RATE_LIMIT_WINDOW_MS) {
-                ua.co.tensa.Message.rcon("RATE LIMITED", remoteAddress + " → Too many requests");
-                ctx.close();
-                return;
-            }
+        if (decision == RconLoginRateLimiter.Decision.RATE_LIMITED) {
+            ua.co.tensa.Message.rcon("RATE LIMITED", remoteAddress + " → Too many requests");
+            ctx.close();
+            return;
         }
-
-        lastAttemptTime.put(remoteAddress, new AtomicLong(currentTime));
 
         if (password.equals(payload)) {
             loggedIn = true;
             // Clear failed attempts on success
-            failedAttempts.remove(remoteAddress);
+            LOGIN_LIMITER.success(remoteAddress);
             // Many RCON clients expect two packets on successful auth:
             // an empty RESPONSE_VALUE followed by AUTH_RESPONSE
             sendResponse(ctx, requestId, TYPE_RESPONSE, "");
@@ -112,9 +90,9 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             loggedIn = false;
             // Increment failed attempts
-            failedAttempts.computeIfAbsent(remoteAddress, k -> new AtomicInteger(0)).incrementAndGet();
+            int failures = LOGIN_LIMITER.failure(remoteAddress, currentTime);
             ua.co.tensa.Message.rcon("AUTH FAILED", remoteAddress + " → Invalid password (attempt " +
-                failedAttempts.get(remoteAddress).get() + "/" + MAX_FAILED_ATTEMPTS + ")");
+                failures + "/" + MAX_FAILED_ATTEMPTS + ")");
 
             // Send both empty RESPONSE_VALUE and AUTH_RESPONSE with failure id (-1)
             sendResponse(ctx, FAILURE, TYPE_RESPONSE, "");
@@ -128,9 +106,10 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 			return;
 		}
 		String ip = ctx.channel().remoteAddress().toString().replace("/", "");
+        String commandLabel = commandLabel(payload);
         // Optional debug logging (configurable to prevent spam)
         if (RconServerModule.isDebugEnabled()) {
-            ua.co.tensa.Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", payload));
+            ua.co.tensa.Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", commandLabel));
         }
 
 		// Only notify players if debug is enabled (to prevent spam)
@@ -138,7 +117,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 			Tensa.server.getAllPlayers().forEach(p -> {
 				if (p.getPermissionValue("tensa.rcon.notify").asBoolean()) {
 	                Message.sendLang(p, ua.co.tensa.config.Lang.rcon_connect_notify,
-	                        "{address}", ip, "{command}", payload);
+                        "{address}", ip, "{command}", commandLabel);
 				}
 			});
 		}
@@ -199,6 +178,23 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
             sendLargeResponse(ctx, requestId, message);
             sendResponse(ctx, requestId, TYPE_RESPONSE, "");
         });
+    }
+
+    private static String commandLabel(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return "[empty]";
+        }
+        String trimmed = payload.trim();
+        int separator = trimmed.indexOf(' ');
+        String name = separator < 0 ? trimmed : trimmed.substring(0, separator);
+        return name.length() > 64 ? name.substring(0, 64) : name;
+    }
+
+    static String remoteAddressKey(SocketAddress address) {
+        if (address instanceof InetSocketAddress inet) {
+            return inet.getAddress() == null ? inet.getHostString() : inet.getAddress().getHostAddress();
+        }
+        return address == null ? "unknown" : address.toString();
     }
 
     private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {

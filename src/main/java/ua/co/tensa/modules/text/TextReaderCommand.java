@@ -24,6 +24,12 @@ public final class TextReaderCommand implements SimpleCommand {
             Message.sendLang(source, Lang.no_perms);
             return;
         }
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, () -> readAndSend(source, filename))
+                .schedule();
+    }
+
+    private void readAndSend(CommandSource source, String filename) {
         try {
             for (String line : TextReaderModule.readTxt(filename).split("\\R", -1)) {
                 if (line.contains("[center]")) {

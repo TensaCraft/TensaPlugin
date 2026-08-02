@@ -63,7 +63,9 @@ public class Modules {
 
     // Snapshot view for info commands or admin tools
     public static java.util.Map<String, ModuleEntry> getEntries() {
-        return java.util.Collections.unmodifiableMap(REGISTRY);
+        synchronized (REGISTRY) {
+            return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(REGISTRY));
+        }
     }
 
     public static ReloadResult reloadModule(String moduleId) {

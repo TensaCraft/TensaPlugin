@@ -3,6 +3,7 @@ package ua.co.tensa.modules.queue;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import ua.co.tensa.Tensa;
 
 public final class CommandQueueListener {
     private final CommandQueueManager manager;
@@ -13,11 +14,17 @@ public final class CommandQueueListener {
 
     @Subscribe
     public void onPostLogin(PostLoginEvent event) {
-        manager.dispatchDueForPlayer(event.getPlayer());
+        dispatchOffEventLoop(event.getPlayer());
     }
 
     @Subscribe
     public void onServerPostConnect(ServerPostConnectEvent event) {
-        manager.dispatchDueForPlayer(event.getPlayer());
+        dispatchOffEventLoop(event.getPlayer());
+    }
+
+    private void dispatchOffEventLoop(com.velocitypowered.api.proxy.Player player) {
+        Tensa.server.getScheduler()
+                .buildTask(Tensa.pluginContainer, () -> manager.dispatchDueForPlayer(player))
+                .schedule();
     }
 }

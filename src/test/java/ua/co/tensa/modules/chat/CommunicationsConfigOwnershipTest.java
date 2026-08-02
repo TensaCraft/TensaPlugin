@@ -37,4 +37,25 @@ class CommunicationsConfigOwnershipTest {
                 "discord_format:"
         );
     }
+
+    @Test
+    void knownPrivateMessageDefaultsAreUpgradedWithoutOverwritingManualFormats() throws Exception {
+        Tensa.pluginPath = tempDir;
+        ChatConfig initial = new ChatConfig();
+        initial.reloadCfg();
+        String legacyTo = initial.getString("private.to_format", "")
+                .replace("{message_payload}", "{message}");
+        initial.getConfig().node("private", "to_format").set(legacyTo);
+        initial.getConfig().node("reply", "to_format").set("<gray>custom {message}</gray>");
+        initial.save();
+
+        ChatConfig reloaded = new ChatConfig();
+        reloaded.reloadCfg();
+
+        assertThat(reloaded.getString("private.to_format", ""))
+                .contains("copy_to_clipboard:'{message_payload}'")
+                .contains("<aqua>{message}</aqua>");
+        assertThat(reloaded.getString("reply.to_format", ""))
+                .isEqualTo("<gray>custom {message}</gray>");
+    }
 }
