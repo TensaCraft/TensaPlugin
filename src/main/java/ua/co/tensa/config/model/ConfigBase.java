@@ -8,6 +8,7 @@ import ua.co.tensa.Message;
  */
 public abstract class ConfigBase extends YamlBackedFile {
     private ConfigBinder binder;
+    private RuntimeException bindingFailure;
 
     private void ensureBinder() {
         if (this.binder == null) {
@@ -31,6 +32,16 @@ public abstract class ConfigBase extends YamlBackedFile {
             return;
         }
 
+        bindingFailure = null;
+        if (strictTypeValidation()) {
+            try {
+                binder.validateTypes(getConfig());
+            } catch (RuntimeException failure) {
+                bindingFailure = failure;
+                return;
+            }
+        }
+
         try {
             boolean changed = binder.writeMissingDefaults(this.yamlFile);
             if (changed) {
@@ -38,17 +49,27 @@ public abstract class ConfigBase extends YamlBackedFile {
             }
         } catch (Exception e) {
             Message.warn("Failed to write defaults for model " + getClass().getSimpleName() + ": " + e.getMessage());
+            if (strictTypeValidation()) {
+                bindingFailure = new IllegalStateException("Failed to prepare config defaults", e);
+                return;
+            }
         }
 
         try {
             binder.loadFromYaml(getConfig());
         } catch (Exception e) {
             Message.warn("Failed to load model values for " + getClass().getSimpleName() + ": " + e.getMessage());
+            if (strictTypeValidation()) {
+                bindingFailure = new IllegalStateException("Failed to bind config values", e);
+            }
         }
     }
 
     public synchronized void reloadCfg() {
         super.reload();
+        if (bindingFailure != null) {
+            throw bindingFailure;
+        }
     }
 
     /** Backwards-compatible name used by callers. */
@@ -59,5 +80,10 @@ public abstract class ConfigBase extends YamlBackedFile {
     /** Hook for subclasses to skip writing specific defaults. */
     protected boolean shouldWriteDefault(String basePath, Object defaultValue, CommentedConfigurationNode yaml) {
         return true;
+    }
+
+    /** Enables exact YAML scalar/container type validation before defaults are written. */
+    protected boolean strictTypeValidation() {
+        return false;
     }
 }

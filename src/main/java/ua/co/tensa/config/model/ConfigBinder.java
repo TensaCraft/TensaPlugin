@@ -169,6 +169,50 @@ final class ConfigBinder {
         }
     }
 
+    void validateTypes(CommentedConfigurationNode cfg) {
+        List<String> failures = new ArrayList<>();
+        for (Field field : fields) {
+            String path = field.getAnnotation(CfgKey.class).value();
+            CommentedConfigurationNode node = node(cfg, path);
+            Object raw = node.raw();
+            if (node.virtual() || raw == null) {
+                continue;
+            }
+
+            Class<?> type = field.getType();
+            boolean valid;
+            String expected;
+            if (type == String.class) {
+                valid = raw instanceof String;
+                expected = "string";
+            } else if (type == boolean.class || type == Boolean.class) {
+                valid = raw instanceof Boolean;
+                expected = "boolean";
+            } else if (type == int.class || type == Integer.class
+                    || type == long.class || type == Long.class
+                    || type == double.class || type == Double.class) {
+                valid = raw instanceof Number;
+                expected = "number";
+            } else if (List.class.isAssignableFrom(type)) {
+                valid = raw instanceof List<?>;
+                expected = "list";
+            } else if (Map.class.isAssignableFrom(type)) {
+                valid = raw instanceof Map<?, ?>;
+                expected = "mapping";
+            } else {
+                continue;
+            }
+
+            if (!valid) {
+                failures.add(path + " must be " + expected + " (found "
+                        + raw.getClass().getSimpleName() + ")");
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("Invalid config value types: " + String.join("; ", failures));
+        }
+    }
+
     private Map<String, Object> readSection(CommentedConfigurationNode section) {
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
         for (Map.Entry<Object, ? extends CommentedConfigurationNode> entry : section.childrenMap().entrySet()) {

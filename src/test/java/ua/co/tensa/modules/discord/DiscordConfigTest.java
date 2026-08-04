@@ -98,4 +98,21 @@ class DiscordConfigTest {
                 .isInstanceOf(DiscordConfigurationException.class)
                 .hasMessageContaining("max_links");
     }
+
+    @Test
+    void rejectsWrongScalarTypesInsteadOfSilentlyUsingDefaults() throws Exception {
+        Tensa.pluginPath = tempDir;
+        Files.writeString(tempDir.resolve("discord.yml"), """
+                config_version: 2
+                bot:
+                  enabled: definitely
+                """);
+
+        DiscordConfig config = new DiscordConfig();
+
+        assertThatThrownBy(config::reloadCfg)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bot.enabled")
+                .hasMessageContaining("boolean");
+    }
 }

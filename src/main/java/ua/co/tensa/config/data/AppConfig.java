@@ -17,6 +17,7 @@ import java.util.Set;
  * YAML structure is unchanged; this model provides typed accessors.
  */
 public class AppConfig extends ConfigBase {
+    private static final Set<String> LEGACY_COMMUNICATION_MODULES = Set.of("chat-manager", "chat", "discord");
 
     // General
     @CfgKey(value = "language", comment = "Default language file under /langs")
@@ -101,14 +102,38 @@ public class AppConfig extends ConfigBase {
     @Override
     public synchronized void reloadCfg() {
         super.reloadCfg();
-        removeUnsupportedModuleKeys();
+        Map<String, Object> supportedDefaults = discoverModuleDefaults();
+        boolean migrated = migrateLegacyCommunicationsFlag();
+        boolean changed = migrated;
+        changed |= addMissingSupportedModuleKeys(supportedDefaults);
+        changed |= removeUnsupportedModuleKeys(supportedDefaults.keySet());
+        if (changed) {
+            save();
+        }
     }
 
-    private void removeUnsupportedModuleKeys() {
-        if (modules == null || modules.isEmpty()) {
-            return;
+    private boolean migrateLegacyCommunicationsFlag() {
+        if (modules == null || modules.containsKey("communications")) {
+            return false;
         }
-        Set<String> supported = discoverModuleDefaults().keySet();
+        boolean hasLegacyFlag = LEGACY_COMMUNICATION_MODULES.stream().anyMatch(modules::containsKey);
+        if (!hasLegacyFlag) {
+            return false;
+        }
+        boolean enabled = LEGACY_COMMUNICATION_MODULES.stream()
+                .filter(modules::containsKey)
+                .map(modules::get)
+                .anyMatch(AppConfig::booleanValue);
+        modules.put("communications", enabled);
+        setNodeValue(node("modules.communications"), enabled);
+        ua.co.tensa.Message.info("Migrated legacy chat/Discord module flags to modules.communications");
+        return true;
+    }
+
+    private boolean removeUnsupportedModuleKeys(Set<String> supported) {
+        if (modules == null || modules.isEmpty() || supported.isEmpty()) {
+            return false;
+        }
         Set<String> removed = new LinkedHashSet<>();
         for (String key : new ArrayList<>(modules.keySet())) {
             if (supported.contains(key)) {
@@ -120,22 +145,60 @@ public class AppConfig extends ConfigBase {
         }
         if (!removed.isEmpty()) {
             ua.co.tensa.Message.warn("Removed unsupported module config keys: " + String.join(", ", removed));
-            save();
         }
+        return !removed.isEmpty();
+    }
+
+    private boolean addMissingSupportedModuleKeys(Map<String, Object> supportedDefaults) {
+        boolean changed = false;
+        for (Map.Entry<String, Object> entry : supportedDefaults.entrySet()) {
+            if (modules.containsKey(entry.getKey())) {
+                continue;
+            }
+            modules.put(entry.getKey(), entry.getValue());
+            setNodeValue(node("modules." + entry.getKey()), entry.getValue());
+            changed = true;
+        }
+        return changed;
+    }
+
+    @Override
+    protected boolean shouldWriteDefault(String basePath, Object defaultValue,
+                                         org.spongepowered.configurate.CommentedConfigurationNode yaml) {
+        if (!"modules".equals(basePath)
+                || !yaml.node("modules", "communications").virtual()) {
+            return true;
+        }
+        for (String legacy : LEGACY_COMMUNICATION_MODULES) {
+            if (!yaml.node("modules", legacy).virtual()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value instanceof String string && Boolean.parseBoolean(string);
     }
 
     private Map<String, Object> discoverModuleDefaults() {
         LinkedHashMap<String, Object> defaults = new LinkedHashMap<>();
         try {
             java.util.ServiceLoader<ModuleProvider> loader = java.util.ServiceLoader.load(ModuleProvider.class, AppConfig.class.getClassLoader());
-            for (ModuleProvider p : loader) {
-                String id = p.id();
-                boolean enabled = true;
-                TensaModule ann = p.getClass().getAnnotation(TensaModule.class);
-                if (ann != null) enabled = ann.defaultEnabled();
-                defaults.put(id, enabled);
+            for (java.util.ServiceLoader.Provider<ModuleProvider> provider : loader.stream().toList()) {
+                Class<? extends ModuleProvider> type = provider.type();
+                TensaModule annotation = type.getAnnotation(TensaModule.class);
+                if (annotation == null) {
+                    ua.co.tensa.Message.warn("Module provider has no @TensaModule metadata: " + type.getName());
+                    continue;
+                }
+                defaults.put(annotation.id(), annotation.defaultEnabled());
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable failure) {
+            ua.co.tensa.Message.warn("Module default discovery failed: " + failure.getClass().getSimpleName());
         }
         return defaults;
     }

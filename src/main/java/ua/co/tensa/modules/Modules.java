@@ -121,7 +121,7 @@ public class Modules {
         Util.registerCommand("tpl", "tplugins", new PluginsCommand());
         Util.registerCommand("psend", "tpsend", new PlayerSendCommand());
         Util.registerCommand("tparse", "tph", new PlaceholderParseCommand());
-        Util.registerCommand("tinfo", "", new TensaInfoCommand());
+        Util.registerCommand("tensainfo", "tinfo", new TensaInfoCommand());
     }
 
     private static java.util.List<String> synchronizeModules(boolean reloadEnabled) {

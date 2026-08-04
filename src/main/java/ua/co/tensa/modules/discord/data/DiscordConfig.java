@@ -160,7 +160,7 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "linking.code_length", comment = "Length of generated one-time link codes")
     public int linkCodeLength = 8;
 
-    @CfgKey(value = "linking.executor_queue_capacity", comment = "Bound for account-linking disk and Discord role operations")
+    @CfgKey(value = "linking.executor_queue_capacity", comment = "Bound for account-linking storage and Discord role operations")
     public int linkExecutorCapacity = 32;
 
     @CfgKey(value = "linking.post_link_queue_capacity", comment = "Bound for announcement and nickname work after a durable link")
@@ -199,6 +199,11 @@ public final class DiscordConfig extends ConfigBase {
 
     public DiscordSettings settings(Map<String, String> environment) {
         return DiscordSettings.from(this, environment);
+    }
+
+    @Override
+    protected boolean strictTypeValidation() {
+        return true;
     }
 
     @Override

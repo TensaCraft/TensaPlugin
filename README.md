@@ -42,12 +42,15 @@ public class UserMetaConfig extends ConfigModelBase {
 
 Usage:
 - Instantiate once (singleton) and use typed fields: `UserMetaConfig.get().storageType`.
-- Reload configs: `/tensareload` (models auto-refresh their fields).
-- Root config accessors: `Tensa.configManager.isModuleEnabled("chat-manager")`, `getLang()`, database getters, etc.
+- Reload one module with `/tensareload <module-id>` or all enabled modules with
+  `/tensareload all`.
+- Root config accessors: `Tensa.config.isModuleEnabled("communications")`,
+  `getLang()`, database getters, etc.
 
 ## Commands
 - `/tensa`: Help command to display all available commands.
-- `/tensareload`: Reloads the plugin configuration file.
+- `/tensareload <module-id>|all`: Validates and reloads one module or all enabled modules.
+- `/tensainfo communications`: Shows a secret-free communications runtime snapshot (`/tinfo` is an alias).
 - `/tensamodules`: Displays a list of all available modules.
 - `/tpl -v`: Display plugin list.
 - `/psend <player/all> <server>`: Sends the specified player to the specified server.
@@ -72,11 +75,11 @@ servers:
   lobby:
     ip: 0.0.0.0
     port: 25575
-    pass: asdasdadsasadadsdasdasdasdasd
+    pass: "<set-in-private-config>"
   vanilla:
     ip: 0.0.0.0
     port: 25576
-    pass: ksdfkldkldadurjfsdjkjasdksasdasdasds
+    pass: "<set-in-private-config>"
 # List of rcon server command arguments
 tab-complete-list:
   - alert
@@ -92,7 +95,7 @@ Establishes an RCON for Velocity server capable of receiving commands from remot
 # Rcon port
 port: 25570
 # Rcon password
-password: gdashgdashdfasghdfasghdfa
+password: "<set-in-private-config>"
 # The response is colored or not
 colored: true
 ```
@@ -246,8 +249,12 @@ events:
 
 ```
 
-### ChatManager:
-Provides the ability to manage chat messages.
+### Communications:
+Owns Minecraft chat channels, Discord linking, relay, guards, announcements and
+delivery as one reloadable runtime. `chats.yml` contains Minecraft channel
+formats; `discord.yml` contains Discord and shared relay settings. See
+[`docs/COMMUNICATIONS_V2_MIGRATION.md`](docs/COMMUNICATIONS_V2_MIGRATION.md)
+before upgrading an existing installation.
 ```yaml
 # Chat Manager 
 # Placeholders: {player}, {server}, {message}

@@ -89,6 +89,11 @@ public class ChatConfig extends ConfigBase {
     public ChatConfig() { super("chats.yml"); }
 
     @Override
+    protected boolean strictTypeValidation() {
+        return true;
+    }
+
+    @Override
     public synchronized void reloadCfg() {
         super.reloadCfg();
         boolean changed = false;
