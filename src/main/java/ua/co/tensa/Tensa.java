@@ -17,7 +17,7 @@ import ua.co.tensa.core.meta.UserMetaService;
 import ua.co.tensa.core.storage.CoreStorageService;
 import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.modules.Modules;
-import ua.co.tensa.modules.discord.CommunicationsConfigMigration;
+import ua.co.tensa.modules.discord.CommunicationsConfigBootstrap;
 import ua.co.tensa.modules.event.EventManager;
 import ua.co.tensa.modules.event.EventsListener;
 import ua.co.tensa.modules.event.data.EventsConfig;
@@ -59,12 +59,12 @@ public class Tensa {
 
     public static void loadPlugin() {
         try {
-            CommunicationsConfigMigration.Result migration = CommunicationsConfigMigration.migrate(pluginPath);
-            if (migration.changed()) {
-                Message.info("Migrated legacy chat and Discord settings to the Communications module");
+            CommunicationsConfigBootstrap.Result bootstrap = new CommunicationsConfigBootstrap().prepare(pluginPath);
+            if (bootstrap.reset()) {
+                Message.info("Archived legacy Communications configuration and created clean config version 2");
             }
         } catch (Exception exception) {
-            throw new IllegalStateException("Communications configuration migration failed safely", exception);
+            throw new IllegalStateException("Communications configuration bootstrap failed safely", exception);
         }
         config = new Config();
         initialiseDatabase();

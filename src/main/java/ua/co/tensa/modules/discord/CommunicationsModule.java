@@ -77,9 +77,6 @@ public final class CommunicationsModule extends AbstractModule {
         DiscordSettings discordSettings = discordConfig.enabled
                 ? discordConfig.settings(System.getenv())
                 : null;
-        if (discordSettings != null) {
-            validateLinkStore(discordSettings);
-        }
         return new Prepared(chatConfig.adapter(), discordConfig.adapter(), chatConfig.enabled, discordSettings);
     }
 
@@ -118,11 +115,11 @@ public final class CommunicationsModule extends AbstractModule {
             DiscordSettings settings,
             AtomicReference<DiscordRuntime> discordReference
     ) {
-        AtomicLinkStore store = new AtomicLinkStore(Tensa.pluginPath, settings.linkStorePath());
+        DiscordLinkRepository store = new JdbcDiscordLinkRepository(Tensa.storage, settings.maxLinks());
         try {
-            store.load();
+            store.initialize();
         } catch (IOException exception) {
-            throw new IllegalStateException("Discord link store could not be loaded safely", exception);
+            throw new IllegalStateException("Discord link repository could not be initialized safely", exception);
         }
 
         JdaDiscordGateway gateway = new JdaDiscordGateway(settings);
@@ -252,15 +249,6 @@ public final class CommunicationsModule extends AbstractModule {
         validateMiniMessage(config.getString("proxy_chat.discord_format", ""), "discord.yml proxy_chat.discord_format");
         validateMiniMessage(config.getString("proxy_chat.cooldown_message", ""), "discord.yml proxy_chat.cooldown_message");
         validateMiniMessage(config.getString("proxy_chat.duplicate_message", ""), "discord.yml proxy_chat.duplicate_message");
-    }
-
-    private static void validateLinkStore(DiscordSettings settings) {
-        AtomicLinkStore store = new AtomicLinkStore(Tensa.pluginPath, settings.linkStorePath());
-        try {
-            store.load();
-        } catch (IOException exception) {
-            throw new DiscordConfigurationException("Discord link store could not be validated safely");
-        }
     }
 
     private static boolean booleanValue(Object value, boolean fallback) {

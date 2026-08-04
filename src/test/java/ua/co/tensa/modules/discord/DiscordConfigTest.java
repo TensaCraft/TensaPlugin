@@ -25,7 +25,21 @@ class DiscordConfigTest {
         config.reloadCfg();
 
         String yaml = Files.readString(tempDir.resolve("discord.yml"), StandardCharsets.UTF_8);
-        assertThat(yaml).contains("guild_id:", "channel_id:", "link_command_name:");
+        assertThat(yaml).contains(
+                "config_version: 2",
+                "discord_ids:",
+                "guild_id:",
+                "main_channel_id:",
+                "relay:",
+                "announcements:",
+                "achievements:",
+                "linking:",
+                "proxy_chat:",
+                "delivery:",
+                "limits:",
+                "gateway:"
+        );
+        assertThat(yaml).doesNotContain("\nchannel_id:", "\nlinked_role_id:", "\nlink_command_name:", "store_file:");
         assertThat(yaml).contains("https://mc-heads.net/avatar/{player}/128");
         assertThat(yaml).doesNotContain("token:", "webhook:", "TENSA_DISCORD_BOT_TOKEN=");
     }
@@ -63,7 +77,7 @@ class DiscordConfigTest {
     }
 
     @Test
-    void rejectsUnsafeStorePathAndInvalidDiscordIds() {
+    void rejectsInvalidDiscordIdsAndLinkBounds() {
         Tensa.pluginPath = tempDir;
         DiscordConfig config = new DiscordConfig();
         config.botToken = "test-token";
@@ -75,9 +89,9 @@ class DiscordConfigTest {
                 .hasMessageContaining("guild_id");
 
         config.guildId = "12345678901234567";
-        config.linkStoreFile = "../outside.json";
+        config.maxLinks = 0;
         assertThatThrownBy(() -> config.settings(Map.of()))
                 .isInstanceOf(DiscordConfigurationException.class)
-                .hasMessageContaining("store_file");
+                .hasMessageContaining("max_links");
     }
 }

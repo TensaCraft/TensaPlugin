@@ -4,6 +4,7 @@ import org.spongepowered.configurate.CommentedConfigurationNode;
 import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
 import ua.co.tensa.modules.discord.DiscordSettings;
+import ua.co.tensa.modules.discord.CommunicationsConfigBootstrap;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -11,6 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 public final class DiscordConfig extends ConfigBase {
+    @CfgKey(value = "config_version", comment = "Communications Discord configuration schema version")
+    public int configVersion = CommunicationsConfigBootstrap.CONFIG_VERSION;
+
     @CfgKey(value = "enabled", comment = "Enable the Discord bot, linking, relay and announcements inside Communications")
     public boolean enabled = false;
 
@@ -35,52 +39,52 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "bot.token", comment = "Secret. Prefer TENSA_DISCORD_BOT_TOKEN; this key is never generated automatically")
     public String botToken = "";
 
-    @CfgKey(value = "webhook.url", comment = "Secret. Prefer TENSA_DISCORD_WEBHOOK_URL; this key is never generated automatically")
+    @CfgKey(value = "webhook.chat_url", comment = "Secret. Prefer TENSA_DISCORD_WEBHOOK_URL; this key is never generated automatically")
     public String webhookUrl = "";
 
-    @CfgKey(value = "announcements.route.webhook_url", comment = "Secret. Prefer TENSA_DISCORD_EVENTS_WEBHOOK_URL; this key is never generated automatically")
+    @CfgKey(value = "webhook.announcements_url", comment = "Secret. Prefer TENSA_DISCORD_EVENTS_WEBHOOK_URL; this key is never generated automatically")
     public String eventsWebhookUrl = "";
 
-    @CfgKey(value = "guild_id", comment = "Single Discord guild used by relay and account linking")
+    @CfgKey(value = "discord_ids.guild_id", comment = "Single Discord guild used by relay and account linking")
     public String guildId = "";
 
-    @CfgKey(value = "channel_id", comment = "Single Discord text channel used by the global chat relay")
+    @CfgKey(value = "discord_ids.main_channel_id", comment = "Single Discord text channel used by the global chat relay")
     public String channelId = "";
 
-    @CfgKey(value = "announcements.route.channel_id", comment = "Optional Discord channel for events; blank uses channel_id")
+    @CfgKey(value = "discord_ids.announcements_channel_id", comment = "Optional Discord channel for events; blank uses main_channel_id")
     public String eventsChannelId = "";
 
-    @CfgKey(value = "linked_role_id", comment = "Optional role granted to linked Discord accounts")
+    @CfgKey(value = "discord_ids.linked_role_id", comment = "Optional role granted to linked Discord accounts")
     public String linkedRoleId = "";
 
-    @CfgKey(value = "link_command_name", comment = "Guild-scoped Discord slash command name")
+    @CfgKey(value = "linking.command_name", comment = "Guild-scoped Discord slash command name")
     public String linkCommandName = "link";
 
-    @CfgKey(value = "relay.minecraft_to_discord", comment = "Relay successful global proxy-chat messages to Discord")
+    @CfgKey(value = "relay.minecraft_to_discord.enabled", comment = "Relay successful global proxy-chat messages to Discord")
     public boolean minecraftToDiscord = true;
 
-    @CfgKey(value = "relay.discord_to_minecraft", comment = "Relay messages from the configured Discord channel to global proxy chat")
+    @CfgKey(value = "relay.discord_to_minecraft.enabled", comment = "Relay messages from the configured Discord channel to global proxy chat")
     public boolean discordToMinecraft = true;
 
-    @CfgKey(value = "relay.minecraft_to_discord_format", comment = "Plain Discord message template")
+    @CfgKey(value = "relay.minecraft_to_discord.format", comment = "Plain Discord message template")
     public String minecraftToDiscordFormat = "{message}";
 
-    @CfgKey(value = "relay.avatar_url_template", comment = "HTTPS avatar URL supporting {uuid} and {player}")
+    @CfgKey(value = "relay.minecraft_to_discord.avatar_url_template", comment = "HTTPS avatar URL supporting {uuid} and {player}")
     public String avatarUrlTemplate = "https://mc-heads.net/avatar/{player}/128";
 
-    @CfgKey(value = "announcements.join", comment = "Send player join messages to Discord")
+    @CfgKey(value = "announcements.join.enabled", comment = "Send player join messages to Discord")
     public boolean joinMessages = false;
 
-    @CfgKey(value = "announcements.quit", comment = "Send player quit messages to Discord")
+    @CfgKey(value = "announcements.quit.enabled", comment = "Send player quit messages to Discord")
     public boolean quitMessages = false;
 
-    @CfgKey(value = "announcements.server_switch", comment = "Send proxy server-switch messages to Discord")
+    @CfgKey(value = "announcements.server_switch.enabled", comment = "Send proxy server-switch messages to Discord")
     public boolean serverSwitchMessages = false;
 
     @CfgKey(value = "announcements.backend_status.enabled", comment = "Send backend unavailability and recovery messages to Discord")
     public boolean backendStatusMessages = false;
 
-    @CfgKey(value = "announcements.advancements", comment = "Accept advancement events from the configured backend bridge")
+    @CfgKey(value = "achievements.enabled", comment = "Accept advancement events from the configured backend bridge")
     public boolean advancementMessages = false;
 
     @CfgKey(value = "announcements.servers.include", comment = "Backend names eligible for events; empty selects every registered backend")
@@ -92,22 +96,22 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "announcements.servers.labels", comment = "Player-facing labels keyed by Velocity backend name")
     public Map<String, Object> serverLabels = new LinkedHashMap<>();
 
-    @CfgKey(value = "announcements.join_format", comment = "Plain Discord join template")
+    @CfgKey(value = "announcements.join.format", comment = "Plain Discord join template")
     public String joinFormat = "🟢 {player} приєднався до «{server}».";
 
-    @CfgKey(value = "announcements.quit_format", comment = "Plain Discord quit template")
+    @CfgKey(value = "announcements.quit.format", comment = "Plain Discord quit template")
     public String quitFormat = "⚪ {player} вийшов із «{server}».";
 
-    @CfgKey(value = "announcements.server_switch_format", comment = "Plain Discord server-switch template")
+    @CfgKey(value = "announcements.server_switch.format", comment = "Plain Discord server-switch template")
     public String serverSwitchFormat = "🔄 {player}: «{from}» → «{to}».";
 
-    @CfgKey(value = "announcements.backend_unavailable_format", comment = "Plain Discord backend-unavailable template")
+    @CfgKey(value = "announcements.backend_status.unavailable_format", comment = "Plain Discord backend-unavailable template")
     public String backendUnavailableFormat = "🔴 «{server}» тимчасово недоступний.";
 
-    @CfgKey(value = "announcements.backend_recovered_format", comment = "Plain Discord backend-recovery template")
+    @CfgKey(value = "announcements.backend_status.recovered_format", comment = "Plain Discord backend-recovery template")
     public String backendRecoveredFormat = "🟢 «{server}» знову доступний.";
 
-    @CfgKey(value = "announcements.advancement_format", comment = "Plain Discord advancement template")
+    @CfgKey(value = "achievements.format", comment = "Plain Discord advancement template")
     public String advancementFormat = "🏆 {player} отримав досягнення «{advancement}» на «{server}».";
 
     @CfgKey(value = "announcements.backend_status.poll_interval_seconds", comment = "Interval between asynchronous backend health probes")
@@ -125,10 +129,10 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "announcements.backend_status.max_monitored_servers", comment = "Bound on monitored backend state")
     public int maxMonitoredServers = 128;
 
-    @CfgKey(value = "announcements.backend_bridge.channel", comment = "Velocity plugin-message channel used by TensaProxy advancement events")
+    @CfgKey(value = "achievements.backend_bridge.channel", comment = "Velocity plugin-message channel used by TensaProxy advancement events")
     public String backendEventChannel = "tensa:discord_events";
 
-    @CfgKey(value = "announcements.advancement_dedup_seconds", comment = "Window suppressing duplicate backend advancement packets")
+    @CfgKey(value = "achievements.dedup_seconds", comment = "Window suppressing duplicate backend advancement packets")
     public int advancementDedupSeconds = 10;
 
     @CfgKey(value = "limits.max_minecraft_message_length", comment = "Maximum Discord message length relayed into Minecraft")
@@ -155,9 +159,6 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "gateway.max_reconnect_delay_seconds", comment = "Maximum JDA gateway reconnect delay")
     public int reconnectMaxDelaySeconds = 120;
 
-    @CfgKey(value = "linking.store_file", comment = "Atomic local JSON store, relative to the plugin directory")
-    public String linkStoreFile = "discord/links.json";
-
     @CfgKey(value = "linking.code_ttl_seconds", comment = "Lifetime of a one-time link code")
     public int linkCodeTtlSeconds = 600;
 
@@ -166,6 +167,9 @@ public final class DiscordConfig extends ConfigBase {
 
     @CfgKey(value = "linking.executor_queue_capacity", comment = "Bound for account-linking disk and Discord role operations")
     public int linkExecutorCapacity = 32;
+
+    @CfgKey(value = "limits.max_links", comment = "Maximum Discord account links loaded into the bounded runtime index")
+    public int maxLinks = 100_000;
 
     public DiscordConfig() {
         super("discord.yml");
@@ -183,12 +187,12 @@ public final class DiscordConfig extends ConfigBase {
             setNodeValue(node("bot.token"), null);
             removedGeneratedSecret = true;
         }
-        if ((webhookUrl == null || webhookUrl.isBlank()) && contains("webhook.url")) {
-            setNodeValue(node("webhook.url"), null);
+        if ((webhookUrl == null || webhookUrl.isBlank()) && contains("webhook.chat_url")) {
+            setNodeValue(node("webhook.chat_url"), null);
             removedGeneratedSecret = true;
         }
-        if ((eventsWebhookUrl == null || eventsWebhookUrl.isBlank()) && contains("announcements.route.webhook_url")) {
-            setNodeValue(node("announcements.route.webhook_url"), null);
+        if ((eventsWebhookUrl == null || eventsWebhookUrl.isBlank()) && contains("webhook.announcements_url")) {
+            setNodeValue(node("webhook.announcements_url"), null);
             removedGeneratedSecret = true;
         }
         if (removedGeneratedSecret) {
@@ -198,9 +202,6 @@ public final class DiscordConfig extends ConfigBase {
             if (node("webhook").childrenMap().isEmpty()) {
                 setNodeValue(node("webhook"), null);
             }
-            if (node("announcements.route").childrenMap().isEmpty()) {
-                setNodeValue(node("announcements.route"), null);
-            }
             save();
         }
     }
@@ -208,8 +209,8 @@ public final class DiscordConfig extends ConfigBase {
     @Override
     protected boolean shouldWriteDefault(String basePath, Object defaultValue, CommentedConfigurationNode yaml) {
         return !"bot.token".equals(basePath)
-                && !"webhook.url".equals(basePath)
-                && !"announcements.route.webhook_url".equals(basePath);
+                && !"webhook.chat_url".equals(basePath)
+                && !"webhook.announcements_url".equals(basePath);
     }
 
     private static Map<String, Object> defaults(Object... values) {

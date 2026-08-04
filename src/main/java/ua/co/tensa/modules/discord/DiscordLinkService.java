@@ -42,7 +42,7 @@ final class DiscordLinkService implements AutoCloseable {
         }
     }
 
-    private final AtomicLinkStore store;
+    private final DiscordLinkRepository store;
     private final LinkCodeRegistry codes;
     private final DiscordGateway gateway;
     private final DiscordSettings settings;
@@ -50,7 +50,7 @@ final class DiscordLinkService implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
 
-    DiscordLinkService(AtomicLinkStore store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
+    DiscordLinkService(DiscordLinkRepository store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
         this.store = store;
         this.codes = codes;
         this.gateway = gateway;
@@ -146,12 +146,12 @@ final class DiscordLinkService implements AutoCloseable {
                 Instant.now()
         );
         try {
-            AtomicLinkStore.LinkOutcome outcome = store.link(account);
-            if (outcome == AtomicLinkStore.LinkOutcome.ALREADY_LINKED
-                    || outcome == AtomicLinkStore.LinkOutcome.PLAYER_LINKED_ELSEWHERE) {
+            DiscordLinkRepository.LinkOutcome outcome = store.link(account);
+            if (outcome == DiscordLinkRepository.LinkOutcome.ALREADY_LINKED
+                    || outcome == DiscordLinkRepository.LinkOutcome.PLAYER_LINKED_ELSEWHERE) {
                 return Result.of(ResultType.PLAYER_ALREADY_LINKED);
             }
-            if (outcome == AtomicLinkStore.LinkOutcome.DISCORD_LINKED_ELSEWHERE) {
+            if (outcome == DiscordLinkRepository.LinkOutcome.DISCORD_LINKED_ELSEWHERE) {
                 return Result.of(ResultType.DISCORD_ALREADY_LINKED);
             }
             try {

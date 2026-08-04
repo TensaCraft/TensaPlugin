@@ -2,6 +2,7 @@ package ua.co.tensa.modules.chat.data;
 
 import ua.co.tensa.config.model.ConfigBase;
 import ua.co.tensa.config.model.ann.CfgKey;
+import ua.co.tensa.modules.discord.CommunicationsConfigBootstrap;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -12,6 +13,9 @@ import java.util.Map;
  * transport settings are stored in discord.yml.
  */
 public class ChatConfig extends ConfigBase {
+    @CfgKey(value = "config_version", comment = "Communications chat configuration schema version")
+    public int configVersion = CommunicationsConfigBootstrap.CONFIG_VERSION;
+
     private static final String PRIVATE_TO_FORMAT = "<hover:show_text:'<gray>Натисніть, щоб відповісти</gray>'><click:suggest_command:'/pm {from} '><#55ff55>{from}</#55ff55></click></hover> <aqua>→</aqua> <#55ff55>Вам</#55ff55><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message_payload}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Відповісти з цим текстом</gray>'><click:suggest_command:'/pm {from} {message_payload}'>↻</click></hover><gray>]</gray>";
     private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message_payload}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message_payload}'>↻</click></hover><gray>]</gray>";
     private static final String LEGACY_PRIVATE_TO_FORMAT = PRIVATE_TO_FORMAT.replace("{message_payload}", "{message}");

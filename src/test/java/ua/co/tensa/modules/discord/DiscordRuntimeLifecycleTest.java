@@ -21,8 +21,8 @@ class DiscordRuntimeLifecycleTest {
     @Test
     void startsRelaysOnlyMinecraftGlobalMessagesAndClosesAllWorkers() throws Exception {
         DiscordSettings settings = DiscordTestSettings.create(tempDir, config -> config.joinMessages = true);
-        AtomicLinkStore store = new AtomicLinkStore(tempDir, settings.linkStorePath());
-        store.load();
+        DiscordLinkRepository store = new InMemoryDiscordLinkRepository();
+        store.initialize();
         FakeGateway gateway = new FakeGateway();
         DiscordLinkService links = new DiscordLinkService(
                 store,
