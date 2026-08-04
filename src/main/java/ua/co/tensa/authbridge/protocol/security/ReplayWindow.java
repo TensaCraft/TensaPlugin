@@ -22,6 +22,14 @@ public final class ReplayWindow {
     }
 
     public synchronized ReplayDecision checkAndRecord(AuthFrame frame, long nowEpochMillis) {
+        return checkAndRecord(frame, nowEpochMillis, true);
+    }
+
+    synchronized ReplayDecision checkAndRecord(
+            AuthFrame frame,
+            long nowEpochMillis,
+            boolean requireIncreasingSequence
+    ) {
         purgeExpired(nowEpochMillis);
 
         String nonce = Base64.getEncoder().withoutPadding().encodeToString(frame.nonce());
@@ -34,7 +42,9 @@ public final class ReplayWindow {
         if (nonceExpirations.containsKey(nonce)) {
             return ReplayDecision.DUPLICATE_NONCE;
         }
-        if (sequence != null && frame.sequence() <= sequence) {
+        if (sequence != null && (requireIncreasingSequence
+                ? frame.sequence() <= sequence
+                : frame.sequence() < sequence)) {
             return ReplayDecision.STALE_SEQUENCE;
         }
         if (messageExpirations.size() >= capacity

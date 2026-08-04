@@ -1,6 +1,5 @@
 package ua.co.tensa.modules.authbridge;
 
-import com.google.common.collect.Multimap;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
@@ -18,12 +17,8 @@ import xyz.kyngs.librelogin.api.event.events.LimboServerChooseEvent;
 import xyz.kyngs.librelogin.api.event.events.LobbyServerChooseEvent;
 import xyz.kyngs.librelogin.api.event.events.PremiumLoginSwitchEvent;
 import xyz.kyngs.librelogin.api.event.events.WrongPasswordEvent;
-import xyz.kyngs.librelogin.api.server.ServerHandler;
 
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -80,142 +75,38 @@ class LibreLoginAuthSourceTest {
     }
 
     @Test
-    void keepsCurrentRegisteredServerForSameBackendAliasesInBothDirections() {
+    void neverInterceptsLibreLoginServerChoiceEvents() {
         FakeEventProvider events = new FakeEventProvider();
         LibreLoginAuthSource source = new LibreLoginAuthSource(
-                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
-                true,
-                List.of("aero-auth", "aeronautics"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero")
+                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events)
         );
-        RegisteredServer aeroAuth = registeredServer("aero-auth");
-        RegisteredServer aeronautics = registeredServer("aeronautics");
-
-        source.subscribeStateChanges(ignored -> {
-        });
-
-        assertThat(events.fireLobbyServerChoose(player(aeroAuth), aeronautics))
-                .isSameAs(aeroAuth);
-        assertThat(events.fireLimboServerChoose(player(aeronautics), aeroAuth))
-                .isSameAs(aeronautics);
-
-        source.close();
-        assertThat(events.unsubscribedExactConsumers).hasValue(5);
-    }
-
-    @Test
-    void keepsCurrentServerWhenDefaultSelectionIsNullAndAllCandidatesShareBackendId() {
-        FakeEventProvider events = new FakeEventProvider();
-        RegisteredServer aeroAuth = registeredServer("aero-auth");
-        RegisteredServer aeronautics = registeredServer("aeronautics");
-        LibreLoginAuthSource source = new LibreLoginAuthSource(
-                plugin(
-                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
-                        events,
-                        List.of(aeroAuth, aeronautics),
-                        List.of(aeroAuth, aeronautics)
-                ),
-                true,
-                List.of("aero-auth", "aeronautics"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero")
-        );
-        source.subscribeStateChanges(ignored -> {
-        });
-
-        assertThat(events.fireLobbyServerChoose(player(), null)).isNull();
-        assertThat(events.fireLobbyServerChoose(player(aeroAuth), null))
-                .isSameAs(aeroAuth);
-        assertThat(events.fireLimboServerChoose(player(aeronautics), null))
-                .isSameAs(aeronautics);
-    }
-
-    @Test
-    void nullDefaultSelectionFailsClosedForMixedUnknownAndEmptyCandidates() {
-        RegisteredServer aeroAuth = registeredServer("aero-auth");
-        RegisteredServer aeronautics = registeredServer("aeronautics");
-        RegisteredServer lobby = registeredServer("lobby");
-        RegisteredServer untrusted = registeredServer("untrusted");
-        FakeEventProvider mixedEvents = new FakeEventProvider();
-        LibreLoginAuthSource mixedSource = new LibreLoginAuthSource(
-                plugin(
-                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
-                        mixedEvents,
-                        List.of(aeronautics, lobby),
-                        List.of(aeroAuth, untrusted)
-                ),
-                true,
-                List.of("aero-auth", "aeronautics", "lobby"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero", "lobby", "lobby")
-        );
-        mixedSource.subscribeStateChanges(ignored -> {
-        });
-
-        assertThat(mixedEvents.fireLobbyServerChoose(player(aeroAuth), null)).isNull();
-        assertThat(mixedEvents.fireLimboServerChoose(player(aeronautics), null)).isNull();
-
-        FakeEventProvider emptyEvents = new FakeEventProvider();
-        LibreLoginAuthSource emptySource = new LibreLoginAuthSource(
-                plugin(
-                        authorization(new AtomicBoolean(true), new AtomicBoolean()),
-                        emptyEvents,
-                        List.of(),
-                        List.of()
-                ),
-                true,
-                List.of("aero-auth", "aeronautics"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero")
-        );
-        emptySource.subscribeStateChanges(ignored -> {
-        });
-
-        assertThat(emptyEvents.fireLobbyServerChoose(player(aeroAuth), null)).isNull();
-        assertThat(emptyEvents.fireLimboServerChoose(player(aeronautics), null)).isNull();
-    }
-
-    @Test
-    void leavesInitialUntrustedAndDifferentBackendRoutingUnchanged() {
-        FakeEventProvider events = new FakeEventProvider();
-        LibreLoginAuthSource source = new LibreLoginAuthSource(
-                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
-                true,
-                List.of("aero-auth", "aeronautics", "lobby"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero", "lobby", "lobby")
-        );
-        RegisteredServer aeroAuth = registeredServer("aero-auth");
-        RegisteredServer aeronautics = registeredServer("aeronautics");
-        RegisteredServer lobby = registeredServer("lobby");
-        RegisteredServer untrusted = registeredServer("untrusted");
-        source.subscribeStateChanges(ignored -> {
-        });
-
-        assertThat(events.fireLobbyServerChoose(player(), aeronautics))
-                .isSameAs(aeronautics);
-        assertThat(events.fireLobbyServerChoose(player(untrusted), aeronautics))
-                .isSameAs(aeronautics);
-        assertThat(events.fireLimboServerChoose(player(aeroAuth), untrusted))
-                .isSameAs(untrusted);
-        assertThat(events.fireLimboServerChoose(player(aeroAuth), lobby))
-                .isSameAs(lobby);
-        assertThat(events.fireLobbyServerChoose(playerWithCurrentServerFailure(), aeronautics))
-                .isSameAs(aeronautics);
-    }
-
-    @Test
-    void disabledAliasReconnectSuppressionLeavesLibreLoginRoutingUnchanged() {
-        FakeEventProvider events = new FakeEventProvider();
-        LibreLoginAuthSource source = new LibreLoginAuthSource(
-                plugin(authorization(new AtomicBoolean(true), new AtomicBoolean()), events),
-                false,
-                List.of("aero-auth", "aeronautics"),
-                Map.of("aero-auth", "aero", "aeronautics", "aero")
-        );
-
-        source.subscribeStateChanges(ignored -> {
-        });
+        source.subscribeStateChanges(ignored -> { });
 
         assertThat(events.hasServerChoiceSubscriptions()).isFalse();
         source.close();
         assertThat(events.unsubscribedExactConsumers).hasValue(3);
+    }
+
+    @Test
+    void offlineAccountRoutingToAuthServerIsNeverSuppressedBySharedProtocolIdentity() {
+        FakeEventProvider events = new FakeEventProvider();
+        AtomicBoolean authorized = new AtomicBoolean(false);
+        LibreLoginAuthSource source = new LibreLoginAuthSource(
+                plugin(authorization(authorized, new AtomicBoolean()), events)
+        );
+        RegisteredServer auth = registeredServer("aero-auth");
+        RegisteredServer gameplay = registeredServer("aeronautics");
+        source.subscribeStateChanges(ignored -> { });
+
+        assertThat(events.fireLimboServerChoose(player(gameplay), auth))
+                .as("an offline account must leave the frozen gameplay backend for LibreLogin auth")
+                .isSameAs(auth);
+
+        authorized.set(true);
+        assertThat(events.fireLobbyServerChoose(player(auth), gameplay))
+                .as("an authenticated account must leave auth for the gameplay backend")
+                .isSameAs(gameplay);
+        source.close();
     }
 
     @SuppressWarnings("unchecked")
@@ -235,41 +126,10 @@ class LibreLoginAuthSourceTest {
             AuthorizationProvider<Player> authorization,
             FakeEventProvider events
     ) {
-        return plugin(authorization, events, List.of(), List.of());
-    }
-
-    @SuppressWarnings("unchecked")
-    private LibreLoginPlugin<Player, RegisteredServer> plugin(
-            AuthorizationProvider<Player> authorization,
-            FakeEventProvider events,
-            Collection<RegisteredServer> lobbyServers,
-            Collection<RegisteredServer> limboServers
-    ) {
-        ServerHandler<Player, RegisteredServer> serverHandler =
-                serverHandler(lobbyServers, limboServers);
         return proxy(LibreLoginPlugin.class, (method, args) -> switch (method.getName()) {
             case "getAuthorizationProvider" -> authorization;
             case "getEventProvider" -> events;
             case "getEventTypes" -> events.getTypes();
-            case "getServerHandler" -> serverHandler;
-            default -> defaultValue(method.getReturnType());
-        });
-    }
-
-    @SuppressWarnings("unchecked")
-    private ServerHandler<Player, RegisteredServer> serverHandler(
-            Collection<RegisteredServer> lobbyServers,
-            Collection<RegisteredServer> limboServers
-    ) {
-        Multimap<String, RegisteredServer> lobbyServerMap = proxy(
-                Multimap.class,
-                (method, args) -> method.getName().equals("values")
-                        ? lobbyServers
-                        : defaultValue(method.getReturnType())
-        );
-        return proxy(ServerHandler.class, (method, args) -> switch (method.getName()) {
-            case "getLobbyServers" -> lobbyServerMap;
-            case "getLimboServers" -> limboServers;
             default -> defaultValue(method.getReturnType());
         });
     }
@@ -299,16 +159,6 @@ class LibreLoginAuthSourceTest {
         ServerInfo info = new ServerInfo(name, new InetSocketAddress("127.0.0.1", 25565));
         return proxy(RegisteredServer.class, (method, args) -> switch (method.getName()) {
             case "getServerInfo" -> info;
-            default -> defaultValue(method.getReturnType());
-        });
-    }
-
-    private Player playerWithCurrentServerFailure() {
-        UUID uuid = UUID.randomUUID();
-        return proxy(Player.class, (method, args) -> switch (method.getName()) {
-            case "getUniqueId" -> uuid;
-            case "getUsername" -> "Steve";
-            case "getCurrentServer" -> throw new IllegalStateException("current server unavailable");
             default -> defaultValue(method.getReturnType());
         });
     }
@@ -442,7 +292,9 @@ class LibreLoginAuthSourceTest {
                         default -> defaultValue(method.getReturnType());
                     }
             );
-            lobbyServerChoose.accept(event);
+            if (lobbyServerChoose != null) {
+                lobbyServerChoose.accept(event);
+            }
             return selected.get();
         }
 
@@ -465,7 +317,9 @@ class LibreLoginAuthSourceTest {
                         default -> defaultValue(method.getReturnType());
                     }
             );
-            limboServerChoose.accept(event);
+            if (limboServerChoose != null) {
+                limboServerChoose.accept(event);
+            }
             return selected.get();
         }
     }

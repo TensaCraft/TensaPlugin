@@ -29,12 +29,6 @@ public final class AuthBridgeConfig extends ConfigBase {
     )
     public Map<String, Object> sourceBindings = new LinkedHashMap<>();
 
-    @CfgKey(
-            value = "suppress_same_backend_alias_reconnect",
-            comment = "Keep the current allowed Velocity alias when LibreLogin selects another alias bound to the same backend ID"
-    )
-    public boolean suppressSameBackendAliasReconnect = true;
-
     @CfgKey(value = "maximum_frame_ttl_seconds", comment = "Maximum lifetime of signed bridge frames")
     public int maximumFrameTtlSeconds = 15;
 

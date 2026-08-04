@@ -69,12 +69,7 @@ public final class LibreLoginAuthBridgeModule {
         AuthenticationStateSource source = null;
         AuthBridgeRuntime created = null;
         try {
-            source = LibreLoginAuthSource.open(
-                    Tensa.server,
-                    config.suppressSameBackendAliasReconnect,
-                    config.allowFrom,
-                    sourceBindings
-            );
+            source = LibreLoginAuthSource.open(Tensa.server);
             BridgeScheduler scheduler = new BridgeScheduler() {
                 @Override
                 public void execute(Runnable task) {

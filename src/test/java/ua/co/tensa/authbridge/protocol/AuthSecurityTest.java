@@ -94,6 +94,42 @@ class AuthSecurityTest {
         }
     }
 
+    @Test
+    void acceptsFreshChallengeRetryButRejectsItsExactReplay() {
+        try (var authenticator = new HmacSha256Authenticator(CanonicalAuthFrameFixture.key(), codec)) {
+            long now = CanonicalAuthFrameFixture.ISSUED_AT;
+            AuthFrame first = authenticator.sign(challenge(
+                    UUID.randomUUID(),
+                    CanonicalAuthFrameFixture.bytes(24, 210),
+                    now,
+                    now + 10_000
+            ));
+            AuthFrame retry = authenticator.sign(new AuthFrame(
+                    first.majorVersion(),
+                    first.minorVersion(),
+                    first.messageType(),
+                    UUID.randomUUID(),
+                    first.playerId(),
+                    first.sessionId(),
+                    first.sequence(),
+                    first.issuedAtEpochMillis(),
+                    first.expiresAtEpochMillis(),
+                    CanonicalAuthFrameFixture.bytes(24, 220),
+                    first.challenge(),
+                    first.backendId(),
+                    first.authState(),
+                    first.reason(),
+                    new byte[0]
+            ));
+            AuthFrameVerifier verifier = verifier(authenticator);
+
+            assertThat(verifier.verifyChallenge(first, now).accepted()).isTrue();
+            assertThat(verifier.verifyChallenge(retry, now).accepted()).isTrue();
+            assertThat(verifier.verifyChallenge(retry, now).failure())
+                    .isEqualTo(VerificationFailure.REPLAYED_MESSAGE);
+        }
+    }
+
     private AuthFrame challenge(UUID messageId, byte[] nonce, long issuedAt, long expiresAt) {
         return CanonicalAuthFrameFixture.unsignedChallenge(messageId, nonce, issuedAt, expiresAt);
     }

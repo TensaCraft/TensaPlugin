@@ -39,34 +39,24 @@ allow_from:
 source_bindings:
   aero-auth: aero
   aeronautics: aero
-suppress_same_backend_alias_reconnect: true
 heartbeat_interval_seconds: 10
 authorization_lease_seconds: 30
 ```
 
-`suppress_same_backend_alias_reconnect` defaults to `true`. When enabled, the
-bridge subscribes to LibreLogin `LobbyServerChooseEvent` and
-`LimboServerChooseEvent`. If a player is already connected to one allowed
-Velocity alias and LibreLogin selects a different allowed alias whose
-`source_bindings` value is identical, the bridge replaces the selection with
-the player's current `RegisteredServer`. This avoids a second connection to the
-same physical backend and its `multiplayer.disconnect.duplicate_login`
-disconnect.
+The auth bridge never subscribes to or mutates LibreLogin lobby/limbo server
+selection events. `source_bindings` identifies which cryptographic backend is
+allowed to speak for each Velocity route; two routes sharing one backend ID are
+not interchangeable routing destinations. LibreLogin remains the sole owner of
+moving an unauthenticated player to auth and an authenticated player back to
+gameplay. This is essential for offline accounts: keeping a gameplay connection
+when LibreLogin selected auth leaves the backend gate locked and appears as a
+frozen player.
 
-LibreLogin fires both server-choice events before applying its configured
-default, so `event.getServer()` may be `null`. In that case the bridge checks
-the corresponding live candidate collection:
-`getLobbyServers().values()` for lobby events and `getLimboServers()` for limbo
-events. It keeps the current server only when the collection is non-empty and
-every candidate is an allowed alias bound to the current server's backend ID.
-For a non-null event selection, only that selected server is compared.
-
-The suppression is fail-closed: it does nothing when the current server is
-absent (including initial routing), either alias is outside `allow_from`, either
-binding is absent, the aliases map to different backend IDs, or the event
-cannot be inspected safely. A null selection with an empty, mixed, or unknown
-candidate collection is also left untouched. Disabling the option leaves
-LibreLogin routing untouched.
+The obsolete `suppress_same_backend_alias_reconnect` key is ignored when it is
+present in an older config and should be removed. Duplicate-login prevention
+must be solved by assigning distinct actual backend endpoints or by LibreLogin's
+own routing configuration, never by overriding an explicit authentication
+route.
 
 The backend creates the session UUID and 32-byte challenge. A valid challenge
 uses sequence `0`, state `PENDING`, and an empty reason. Velocity replies with
@@ -99,6 +89,13 @@ not recorded as published and remains eligible for a later retry. A new backend
 challenge resets the publication state and receives an immediate response,
 which preserves reconnect and backend-restart resynchronization.
 
+An unanswered backend challenge may be retried with the same player, session,
+and challenge binding but a fresh message ID, nonce, time window, and signature.
+Velocity accepts that retry idempotently and advances its response sequence;
+an exact packet replay is still rejected. This covers both initial login and
+authorization-lease renewal without allowing a dropped packet to leave the
+player frozen until timeout.
+
 When `log_transitions` is enabled, the first successful state publication for a
 challenge and later successful state changes are logged. Unchanged heartbeat
 renewals and resync frames are intentionally not logged.
@@ -107,8 +104,7 @@ LibreLogin 0.24.0 exposes no logout/revoke or 2FA-transition event. The bridge
 subscribes to `authenticated`, `wrongPassword`, and `premiumLoginSwitch` for
 low-latency reconciliation where possible, while the heartbeat remains the
 required authority for revoke and 2FA transitions. Module reload closes and
-unsubscribes all state and server-choice API handlers before opening and
-scanning the new runtime.
+unsubscribes all state API handlers before opening and scanning the new runtime.
 
 ## Binary Layout
 

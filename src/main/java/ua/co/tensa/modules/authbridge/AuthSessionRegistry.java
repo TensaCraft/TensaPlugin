@@ -179,6 +179,14 @@ final class AuthSessionRegistry {
                 byte[] challenge
         ) {
             Binding previous = binding;
+            if (previous != null
+                    && previous.connection() == connection
+                    && previous.sourceServer().equals(sourceServer)
+                    && previous.backendId().equals(backendId)
+                    && previous.sessionId().equals(sessionId)
+                    && Arrays.equals(previous.challenge(), challenge)) {
+                return new BindResult(snapshot(), previous);
+            }
             binding = new Binding(
                     player.getUniqueId(),
                     connection,

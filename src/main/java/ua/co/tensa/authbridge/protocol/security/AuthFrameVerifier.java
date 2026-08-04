@@ -27,6 +27,18 @@ public final class AuthFrameVerifier {
     }
 
     public VerificationResult verify(AuthFrame frame, long nowEpochMillis) {
+        return verify(frame, nowEpochMillis, true);
+    }
+
+    public VerificationResult verifyChallenge(AuthFrame frame, long nowEpochMillis) {
+        return verify(frame, nowEpochMillis, false);
+    }
+
+    private VerificationResult verify(
+            AuthFrame frame,
+            long nowEpochMillis,
+            boolean requireIncreasingSequence
+    ) {
         Objects.requireNonNull(frame, "frame");
         if (!authenticator.verify(frame)) {
             return VerificationResult.rejected(VerificationFailure.INVALID_SIGNATURE);
@@ -48,7 +60,11 @@ public final class AuthFrameVerifier {
             return VerificationResult.rejected(VerificationFailure.INVALID_TIME_WINDOW);
         }
 
-        return switch (replayWindow.checkAndRecord(frame, nowEpochMillis)) {
+        return switch (replayWindow.checkAndRecord(
+                frame,
+                nowEpochMillis,
+                requireIncreasingSequence
+        )) {
             case ACCEPTED -> VerificationResult.acceptedResult();
             case DUPLICATE_MESSAGE -> VerificationResult.rejected(VerificationFailure.REPLAYED_MESSAGE);
             case DUPLICATE_NONCE -> VerificationResult.rejected(VerificationFailure.REPLAYED_NONCE);

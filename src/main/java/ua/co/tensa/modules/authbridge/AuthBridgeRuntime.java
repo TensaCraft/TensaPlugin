@@ -179,7 +179,8 @@ final class AuthBridgeRuntime implements AutoCloseable {
         try {
             AuthFrame challenge = codec.decode(event.getData());
             validateChallengeSource(connection, sourceServer, expectedBackendId, challenge);
-            var verification = verifiers.get(expectedBackendId).verify(challenge, clock.millis());
+            var verification = verifiers.get(expectedBackendId)
+                    .verifyChallenge(challenge, clock.millis());
             if (!verification.accepted()) {
                 throw new AuthProtocolException(
                         "Challenge verification failed: " + verification.failure().name().toLowerCase(Locale.ROOT)

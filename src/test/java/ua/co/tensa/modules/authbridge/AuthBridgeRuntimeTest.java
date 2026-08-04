@@ -88,6 +88,24 @@ class AuthBridgeRuntimeTest {
         harness.runtime.onPluginMessage(pluginMessage(harness.connection, harness.player, payload));
         assertThat(harness.payloads).hasSize(1);
 
+        AuthFrame retriedChallenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                challenge.sessionId(),
+                BACKEND_ID,
+                bytes(ProtocolConstants.NONCE_BYTES, 12),
+                challenge.challenge()
+        );
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(retriedChallenge)
+        ));
+        AuthFrame retriedResponse = codec.decode(harness.payloads.getLast());
+        assertThat(harness.payloads).hasSize(2);
+        assertThat(retriedResponse.sessionId()).isEqualTo(challenge.sessionId());
+        assertThat(retriedResponse.sequence()).isEqualTo(2L);
+
         AuthFrame restartedBackendChallenge = challenge(
                 harness.playerId,
                 UUID.randomUUID(),
@@ -102,7 +120,7 @@ class AuthBridgeRuntimeTest {
                 signAndEncode(restartedBackendChallenge)
         ));
         AuthFrame restartedBackendResponse = codec.decode(harness.payloads.getLast());
-        assertThat(harness.payloads).hasSize(2);
+        assertThat(harness.payloads).hasSize(3);
         assertThat(restartedBackendResponse.sessionId())
                 .isEqualTo(restartedBackendChallenge.sessionId());
         assertThat(restartedBackendResponse.sequence()).isEqualTo(1L);
@@ -351,6 +369,78 @@ class AuthBridgeRuntimeTest {
     }
 
     @Test
+    void transfersOnePlayerBetweenAliasesWithoutKeepingTheOldFrozenBinding() {
+        List<String> allowedServers = List.of("aero-auth", "aeronautics");
+        Map<String, String> sourceBindings = Map.of(
+                "aero-auth", "aero",
+                "aeronautics", "aero"
+        );
+        Harness harness = harness("aero-auth", allowedServers, sourceBindings);
+        harness.runtime.start();
+        harness.scheduler.runAll();
+
+        AuthFrame authChallenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "aero",
+                bytes(ProtocolConstants.NONCE_BYTES, 120),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 150)
+        );
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(authChallenge)
+        ));
+        assertThat(codec.decode(harness.payloads.getLast()).authState())
+                .isEqualTo(AuthState.PENDING);
+
+        List<byte[]> gameplayPayloads = new ArrayList<>();
+        ServerConnection gameplay = connection("aeronautics", harness.player, gameplayPayloads);
+        harness.currentConnection.set(gameplay);
+        harness.source.state = AuthState.AUTHORIZED;
+        AuthFrame gameplayChallenge = challenge(
+                harness.playerId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "aero",
+                bytes(ProtocolConstants.NONCE_BYTES, 121),
+                bytes(ProtocolConstants.CHALLENGE_BYTES, 151)
+        );
+
+        harness.runtime.onPluginMessage(pluginMessage(
+                gameplay,
+                harness.player,
+                signAndEncode(gameplayChallenge)
+        ));
+        AuthFrame transferred = codec.decode(gameplayPayloads.getLast());
+        assertThat(transferred.authState()).isEqualTo(AuthState.AUTHORIZED);
+        assertThat(transferred.sessionId()).isEqualTo(gameplayChallenge.sessionId());
+        assertThat(transferred.sequence()).isEqualTo(1L);
+
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge(
+                        harness.playerId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "aero",
+                        bytes(ProtocolConstants.NONCE_BYTES, 122),
+                        bytes(ProtocolConstants.CHALLENGE_BYTES, 152)
+                ))
+        ));
+        harness.scheduler.runHeartbeat();
+
+        assertThat(harness.payloads).hasSize(1);
+        assertThat(gameplayPayloads).hasSize(2);
+        AuthFrame heartbeat = codec.decode(gameplayPayloads.getLast());
+        assertThat(heartbeat.sessionId()).isEqualTo(gameplayChallenge.sessionId());
+        assertThat(heartbeat.sequence()).isEqualTo(2L);
+        harness.runtime.close();
+    }
+
+    @Test
     void disallowedBackendCannotQueryOrReceiveStateAndCloseCleansUp() {
         Harness harness = harness("other");
         harness.runtime.beginSession(harness.player);
@@ -471,6 +561,7 @@ class AuthBridgeRuntimeTest {
                 playerId,
                 player,
                 connection,
+                connectionRef,
                 payloads,
                 transitionLogs,
                 channels,
@@ -590,6 +681,7 @@ class AuthBridgeRuntimeTest {
             UUID playerId,
             Player player,
             ServerConnection connection,
+            AtomicReference<ServerConnection> currentConnection,
             List<byte[]> payloads,
             List<String> transitionLogs,
             RecordingChannelRegistrar channels,
