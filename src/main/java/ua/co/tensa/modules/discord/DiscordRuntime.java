@@ -183,13 +183,18 @@ final class DiscordRuntime implements AutoCloseable {
         announce(settings.backendRecoveredEmbed(), java.util.Map.of("server", serverValue(serverName)));
     }
 
-    void announceAdvancement(String playerName, String serverName, String advancement) {
+    void announceAdvancement(
+            String playerName,
+            String serverName,
+            String advancement,
+            String description
+    ) {
         if (settings.advancementMessages()) {
             announce(settings.advancementEmbed(), java.util.Map.of(
                     "player", eventValue(playerName, 80),
                     "server", serverValue(serverName),
                     "advancement", eventValue(advancement, 200),
-                    "description", ""
+                    "description", eventValue(description, 500)
             ));
         }
     }

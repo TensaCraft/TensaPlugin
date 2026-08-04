@@ -7,7 +7,17 @@ public sealed interface DiscordBackendEvent {
             UUID playerUuid,
             String playerName,
             String advancementKey,
-            String title
+            String locale,
+            String title,
+            String description
     ) implements DiscordBackendEvent {
+        public Advancement(
+                UUID playerUuid,
+                String playerName,
+                String advancementKey,
+                String title
+        ) {
+            this(playerUuid, playerName, advancementKey, "", title, "");
+        }
     }
 }

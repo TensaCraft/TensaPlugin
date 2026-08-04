@@ -15,11 +15,14 @@ import java.util.regex.Pattern;
 public final class DiscordBackendEventCodec {
     public static final String DEFAULT_CHANNEL = "tensa:discord_events";
 
-    private static final int MAGIC = 0x54444531;
+    private static final int MAGIC_V1 = 0x54444531;
+    private static final int MAGIC_V2 = 0x54444532;
     private static final int ADVANCEMENT = 1;
-    private static final int MAX_PACKET_BYTES = 2_048;
+    private static final int MAX_V1_PACKET_BYTES = 2_048;
+    private static final int MAX_V2_PACKET_BYTES = 4_096;
     private static final Pattern PLAYER_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
     private static final Pattern ADVANCEMENT_KEY = Pattern.compile("[a-z0-9_.-]+:[a-z0-9_./-]+");
+    private static final Pattern LOCALE = Pattern.compile("[a-z]{2}_[a-z]{2}");
 
     private DiscordBackendEventCodec() {
     }
@@ -34,7 +37,7 @@ public final class DiscordBackendEventCodec {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (DataOutputStream output = new DataOutputStream(bytes)) {
-                output.writeInt(MAGIC);
+                output.writeInt(MAGIC_V1);
                 output.writeByte(ADVANCEMENT);
                 output.writeLong(playerUuid.getMostSignificantBits());
                 output.writeLong(playerUuid.getLeastSignificantBits());
@@ -43,7 +46,50 @@ public final class DiscordBackendEventCodec {
                 writeString(output, cleanTitle(title), 1_024);
             }
             byte[] packet = bytes.toByteArray();
-            if (packet.length > MAX_PACKET_BYTES) {
+            if (packet.length > MAX_V1_PACKET_BYTES) {
+                throw new IllegalArgumentException("Discord backend event exceeds the packet limit");
+            }
+            return packet;
+        } catch (IOException e) {
+            throw new IllegalStateException("Discord backend event could not be encoded", e);
+        }
+    }
+
+    public static byte[] encodeAdvancementV2(
+            UUID playerUuid,
+            String playerName,
+            String advancementKey,
+            String locale,
+            String title,
+            String description
+    ) {
+        String cleanDescription = cleanDescription(description);
+        validateAdvancementV2(
+                playerUuid,
+                playerName,
+                advancementKey,
+                locale,
+                title,
+                cleanDescription
+        );
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (DataOutputStream output = new DataOutputStream(bytes)) {
+                output.writeInt(MAGIC_V2);
+                output.writeByte(ADVANCEMENT);
+                output.writeLong(playerUuid.getMostSignificantBits());
+                output.writeLong(playerUuid.getLeastSignificantBits());
+                writeString(output, playerName, 64);
+                writeString(output, advancementKey, 256);
+                writeString(output, locale, 16);
+                writeString(output, cleanTitle(title), 1_024);
+                output.writeBoolean(!cleanDescription.isBlank());
+                if (!cleanDescription.isBlank()) {
+                    writeString(output, cleanDescription, 2_048);
+                }
+            }
+            byte[] packet = bytes.toByteArray();
+            if (packet.length > MAX_V2_PACKET_BYTES) {
                 throw new IllegalArgumentException("Discord backend event exceeds the packet limit");
             }
             return packet;
@@ -53,24 +99,76 @@ public final class DiscordBackendEventCodec {
     }
 
     public static DiscordBackendEvent decode(byte[] packet) {
-        if (packet == null || packet.length == 0 || packet.length > MAX_PACKET_BYTES) {
+        if (packet == null || packet.length == 0 || packet.length > MAX_V2_PACKET_BYTES) {
             throw new IllegalArgumentException("Invalid Discord backend event packet size");
         }
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(packet))) {
-            if (input.readInt() != MAGIC || input.readUnsignedByte() != ADVANCEMENT) {
+            int magic = input.readInt();
+            if (magic == MAGIC_V1 && packet.length > MAX_V1_PACKET_BYTES) {
+                throw new IllegalArgumentException("Discord backend event exceeds the v1 packet limit");
+            }
+            if ((magic != MAGIC_V1 && magic != MAGIC_V2)
+                    || input.readUnsignedByte() != ADVANCEMENT) {
                 throw new IllegalArgumentException("Unsupported Discord backend event packet");
             }
             UUID playerUuid = new UUID(input.readLong(), input.readLong());
             String playerName = readString(input, 64);
             String advancementKey = readString(input, 256);
+            String locale = magic == MAGIC_V2 ? readString(input, 16) : "";
             String title = cleanTitle(readString(input, 1_024));
+            String description = "";
+            if (magic == MAGIC_V2) {
+                int descriptionFlag = input.readUnsignedByte();
+                if (descriptionFlag > 1) {
+                    throw new IllegalArgumentException("Invalid optional description flag");
+                }
+                if (descriptionFlag == 1) {
+                    description = cleanDescription(readString(input, 2_048));
+                }
+            }
             if (input.available() != 0) {
                 throw new IllegalArgumentException("Discord backend event contains trailing data");
             }
-            validateAdvancement(playerUuid, playerName, advancementKey, title);
-            return new DiscordBackendEvent.Advancement(playerUuid, playerName, advancementKey, title);
+            if (magic == MAGIC_V1) {
+                validateAdvancement(playerUuid, playerName, advancementKey, title);
+            } else {
+                validateAdvancementV2(
+                        playerUuid,
+                        playerName,
+                        advancementKey,
+                        locale,
+                        title,
+                        description
+                );
+            }
+            return new DiscordBackendEvent.Advancement(
+                    playerUuid,
+                    playerName,
+                    advancementKey,
+                    locale,
+                    title,
+                    description
+            );
         } catch (IOException e) {
             throw new IllegalArgumentException("Malformed Discord backend event packet", e);
+        }
+    }
+
+    private static void validateAdvancementV2(
+            UUID playerUuid,
+            String playerName,
+            String advancementKey,
+            String locale,
+            String title,
+            String description
+    ) {
+        validateAdvancement(playerUuid, playerName, advancementKey, title);
+        if (!LOCALE.matcher(locale == null ? "" : locale).matches()) {
+            throw new IllegalArgumentException("Invalid advancement locale");
+        }
+        String cleanDescription = cleanDescription(description);
+        if (cleanDescription.codePointCount(0, cleanDescription.length()) > 500) {
+            throw new IllegalArgumentException("Invalid advancement description");
         }
     }
 
@@ -88,6 +186,10 @@ public final class DiscordBackendEventCodec {
 
     private static String cleanTitle(String title) {
         return DiscordSanitizer.normalize(title == null ? "" : title).trim();
+    }
+
+    private static String cleanDescription(String description) {
+        return DiscordSanitizer.normalize(description == null ? "" : description).trim();
     }
 
     private static void writeString(DataOutputStream output, String value, int maxBytes) throws IOException {

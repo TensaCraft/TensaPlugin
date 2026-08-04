@@ -46,6 +46,80 @@ class DiscordBackendEventCodecTest {
     }
 
     @Test
+    void roundTripsTde2WithAndWithoutAnOptionalDescription() {
+        byte[] described = DiscordBackendEventCodec.encodeAdvancementV2(
+                PLAYER,
+                "Pilot",
+                "minecraft:adventure/kill_a_mob",
+                "uk_ua",
+                "Мисливець на монстрів",
+                "Убийте будь-яку ворожу істоту"
+        );
+        byte[] titleOnly = DiscordBackendEventCodec.encodeAdvancementV2(
+                PLAYER,
+                "Pilot",
+                "examplemod:story/start",
+                "en_us",
+                "A New Beginning",
+                null
+        );
+
+        assertThat(DiscordBackendEventCodec.decode(described)).isEqualTo(
+                new DiscordBackendEvent.Advancement(
+                        PLAYER,
+                        "Pilot",
+                        "minecraft:adventure/kill_a_mob",
+                        "uk_ua",
+                        "Мисливець на монстрів",
+                        "Убийте будь-яку ворожу істоту"
+                )
+        );
+        assertThat(DiscordBackendEventCodec.decode(titleOnly)).isEqualTo(
+                new DiscordBackendEvent.Advancement(
+                        PLAYER,
+                        "Pilot",
+                        "examplemod:story/start",
+                        "en_us",
+                        "A New Beginning",
+                        ""
+                )
+        );
+    }
+
+    @Test
+    void rejectsMalformedTruncatedOversizedAndInvalidUtf8Tde2Packets() {
+        byte[] valid = DiscordBackendEventCodec.encodeAdvancementV2(
+                PLAYER,
+                "Pilot",
+                "minecraft:story/mine_stone",
+                "uk_ua",
+                "X",
+                null
+        );
+        byte[] invalidUtf8 = valid.clone();
+        invalidUtf8[invalidUtf8.length - 2] = (byte) 0xC3;
+
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(
+                Arrays.copyOf(valid, valid.length - 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(
+                Arrays.copyOf(valid, valid.length + 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(new byte[4_097]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(invalidUtf8))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.encodeAdvancementV2(
+                PLAYER,
+                "Pilot",
+                "minecraft:story/mine_stone",
+                "uk-UA",
+                "Stone Age",
+                null
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void advancementDedupIsBoundedAndExpires() {
         RecentEventDeduplicator dedup = new RecentEventDeduplicator(Duration.ofSeconds(10), 2);
         Instant now = Instant.parse("2026-08-02T09:00:00Z");

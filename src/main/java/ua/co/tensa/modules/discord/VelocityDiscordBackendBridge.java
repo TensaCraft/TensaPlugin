@@ -55,7 +55,12 @@ final class VelocityDiscordBackendBridge implements AutoCloseable {
                         + ':' + advancement.playerUuid()
                         + ':' + advancement.advancementKey();
                 if (deduplicator.firstOccurrence(key, Instant.now())) {
-                    runtime.announceAdvancement(connection.getPlayer().getUsername(), serverName, advancement.title());
+                    runtime.announceAdvancement(
+                            connection.getPlayer().getUsername(),
+                            serverName,
+                            advancement.title(),
+                            advancement.description()
+                    );
                 }
             }
         } catch (IllegalArgumentException ignored) {
