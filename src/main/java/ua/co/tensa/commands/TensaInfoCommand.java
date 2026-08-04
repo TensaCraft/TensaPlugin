@@ -8,6 +8,7 @@ import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 
 import java.util.Comparator;
+import java.util.List;
 
 public class TensaInfoCommand implements SimpleCommand {
 
@@ -16,6 +17,12 @@ public class TensaInfoCommand implements SimpleCommand {
         CommandSource source = invocation.source();
         if (!hasPermission(invocation)) {
             Message.sendLang(source, Lang.no_perms);
+            return;
+        }
+
+        if (invocation.arguments().length > 0
+                && "communications".equalsIgnoreCase(invocation.arguments()[0])) {
+            showCommunications(source);
             return;
         }
 
@@ -67,6 +74,34 @@ public class TensaInfoCommand implements SimpleCommand {
     @Override
     public boolean hasPermission(Invocation invocation) {
         return invocation.source().hasPermission("tensa.info");
+    }
+
+    @Override
+    public List<String> suggest(Invocation invocation) {
+        if (!hasPermission(invocation) || invocation.arguments().length > 1) {
+            return List.of();
+        }
+        String prefix = invocation.arguments().length == 0 ? "" : invocation.arguments()[0].toLowerCase(java.util.Locale.ROOT);
+        return "communications".startsWith(prefix) ? List.of("communications") : List.of();
+    }
+
+    private static void showCommunications(CommandSource source) {
+        var snapshot = ua.co.tensa.modules.discord.CommunicationsModule.diagnosticsSnapshot();
+        Message.privateMessage(source, "<gold>Communications</gold> <gray>safe runtime snapshot</gray>");
+        Message.privateMessage(source, "  <yellow>runtime</yellow>=<white>" + snapshot.runtimeState()
+                + "</white> <yellow>jda</yellow>=<white>" + snapshot.jdaState()
+                + "</white> <yellow>slash</yellow>=<white>" + snapshot.slashState() + "</white>");
+        Message.privateMessage(source, "  <yellow>storage</yellow>=<white>" + snapshot.storageBackend()
+                + "</white> <yellow>queues</yellow>=<white>in:" + snapshot.inboundQueueDepth()
+                + ",out:" + snapshot.outboundQueueDepth()
+                + ",post-link:" + snapshot.postLinkQueueDepth() + "</white>");
+        Message.privateMessage(source, "  <yellow>drops</yellow>=<white>" + snapshot.drops()
+                + "</white> <yellow>retries</yellow>=<white>" + snapshot.retries()
+                + "</white> <yellow>delivery_failures</yellow>=<white>" + snapshot.deliveryFailures()
+                + "</white> <yellow>blocked</yellow>=<white>" + snapshot.blockedUsers() + "</white>");
+        Message.privateMessage(source, "  <yellow>reconnects</yellow>=<white>" + snapshot.reconnects()
+                + "</white> <yellow>latency_ms</yellow>=<white>" + snapshot.lastObservedLatencyMillis()
+                + "</white> <yellow>last_failure</yellow>=<white>" + snapshot.lastFailureClass() + "</white>");
     }
 
     private static String capitalizeWords(String input) {

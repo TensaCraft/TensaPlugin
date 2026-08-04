@@ -14,6 +14,11 @@ record DiscordOutboundMessage(
     }
 
     static DiscordOutboundMessage announcement(DiscordEmbedMessage embed) {
-        return new DiscordOutboundMessage(DiscordRoute.EVENTS, "", "", "", "", embed, true);
+        String plain = embed.title() + "\n" + embed.description();
+        return new DiscordOutboundMessage(DiscordRoute.EVENTS, plain, plain, "", "", embed, true);
+    }
+
+    static DiscordOutboundMessage announcementPlain(String content) {
+        return new DiscordOutboundMessage(DiscordRoute.EVENTS, content, content, "", "", null, true);
     }
 }

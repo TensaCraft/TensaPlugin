@@ -27,6 +27,8 @@ class DiscordConfigTest {
         String yaml = Files.readString(tempDir.resolve("discord.yml"), StandardCharsets.UTF_8);
         assertThat(yaml).contains(
                 "config_version: 2",
+                "bot:",
+                "webhook:",
                 "discord_ids:",
                 "guild_id:",
                 "main_channel_id:",
@@ -35,13 +37,15 @@ class DiscordConfigTest {
                 "achievements:",
                 "linking:",
                 "proxy_chat:",
+                "embeds:",
                 "delivery:",
                 "limits:",
-                "gateway:"
+                "gateway:",
+                "diagnostics:"
         );
         assertThat(yaml).doesNotContain("\nchannel_id:", "\nlinked_role_id:", "\nlink_command_name:", "store_file:");
         assertThat(yaml).contains("https://mc-heads.net/avatar/{player}/128");
-        assertThat(yaml).doesNotContain("token:", "webhook:", "TENSA_DISCORD_BOT_TOKEN=");
+        assertThat(yaml).doesNotContain("token:", "chat_url:", "announcements_url:", "TENSA_DISCORD_BOT_TOKEN=");
     }
 
     @Test

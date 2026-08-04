@@ -46,15 +46,27 @@ final class DiscordLinkService implements AutoCloseable {
     private final LinkCodeRegistry codes;
     private final DiscordGateway gateway;
     private final DiscordSettings settings;
+    private final java.util.function.Consumer<LinkedAccount> linkedHandler;
     private final ExecutorService executor;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
 
     DiscordLinkService(DiscordLinkRepository store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
+        this(store, codes, gateway, settings, ignored -> { });
+    }
+
+    DiscordLinkService(
+            DiscordLinkRepository store,
+            LinkCodeRegistry codes,
+            DiscordGateway gateway,
+            DiscordSettings settings,
+            java.util.function.Consumer<LinkedAccount> linkedHandler
+    ) {
         this.store = store;
         this.codes = codes;
         this.gateway = gateway;
         this.settings = settings;
+        this.linkedHandler = java.util.Objects.requireNonNull(linkedHandler, "linkedHandler");
         this.executor = new ThreadPoolExecutor(
                 1,
                 1,
@@ -85,6 +97,14 @@ final class DiscordLinkService implements AutoCloseable {
 
     CompletableFuture<Result> unlink(UUID playerUuid) {
         return submit(() -> unlinkBlocking(playerUuid));
+    }
+
+    boolean isPlayerLinked(UUID playerUuid) {
+        return playerUuid != null && store.findByPlayer(playerUuid).isPresent();
+    }
+
+    boolean isDiscordLinked(String discordUserId) {
+        return discordUserId != null && store.findByDiscord(discordUserId).isPresent();
     }
 
     void reconcileRoles() {
@@ -157,11 +177,17 @@ final class DiscordLinkService implements AutoCloseable {
             try {
                 awaitGatewayReadyForRole();
                 await(gateway.assignLinkedRole(discordUserId));
-                return new Result(ResultType.LINKED, account);
             } catch (Exception roleFailure) {
                 store.unlink(account.playerUuid());
                 return Result.of(ResultType.ROLE_FAILED);
             }
+            try {
+                linkedHandler.accept(account);
+            } catch (RuntimeException postLinkFailure) {
+                Message.warn("communications event=post_link_drop failure="
+                        + DiscordDiagnostics.unwrap(postLinkFailure).getClass().getSimpleName());
+            }
+            return new Result(ResultType.LINKED, account);
         } catch (IOException e) {
             return Result.of(ResultType.FAILED);
         }

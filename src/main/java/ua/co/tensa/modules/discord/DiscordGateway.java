@@ -19,6 +19,19 @@ interface DiscordGateway extends AutoCloseable {
 
     CompletableFuture<Void> removeLinkedRole(String discordUserId);
 
+    default CompletableFuture<Void> updateNickname(String discordUserId, String nickname) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord nickname sync is unavailable"));
+    }
+
+    default CompletableFuture<Void> sendTemporaryReply(
+            String channelId,
+            String messageId,
+            String content,
+            Duration deleteAfter
+    ) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord temporary replies are unavailable"));
+    }
+
     boolean isReady();
 
     default boolean isReady(DiscordRoute route) {
@@ -26,6 +39,18 @@ interface DiscordGateway extends AutoCloseable {
     }
 
     String selfUserId();
+
+    default String runtimeState() {
+        return isReady() ? "ready" : "unavailable";
+    }
+
+    default String slashState() {
+        return isReady() ? "unknown" : "unavailable";
+    }
+
+    default long reconnectCount() {
+        return 0L;
+    }
 
     void close(Duration timeout);
 

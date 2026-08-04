@@ -35,6 +35,7 @@ public final class CommunicationsModule extends AbstractModule {
     private final AtomicRuntimeSlot<Prepared, ActiveRuntime> runtimeSlot =
             new AtomicRuntimeSlot<>(this::activate, this::deactivate);
     private final Map<UUID, UUID> privateReplyTargets = new ConcurrentHashMap<>();
+    private final CommunicationsMetrics metrics = new CommunicationsMetrics();
 
     private CommunicationsModule() {
         super("communications", "Communications");
@@ -42,7 +43,7 @@ public final class CommunicationsModule extends AbstractModule {
 
     @Override
     protected void onEnable() {
-        runtimeSlot.start(prepare());
+        runtimeSlot.start(prepare(true));
     }
 
     @Override
@@ -55,7 +56,7 @@ public final class CommunicationsModule extends AbstractModule {
     protected void onReload() {
         // Preparation performs parsing and all semantic validation while the
         // current runtime is still fully operational.
-        runtimeSlot.replace(prepare());
+        runtimeSlot.replace(prepare(false));
     }
 
     @Override
@@ -63,7 +64,7 @@ public final class CommunicationsModule extends AbstractModule {
         return false;
     }
 
-    private Prepared prepare() {
+    private Prepared prepare(boolean allowDegraded) {
         validateYaml(Tensa.pluginPath.resolve("chats.yml"));
         validateYaml(Tensa.pluginPath.resolve("discord.yml"));
 
@@ -77,7 +78,8 @@ public final class CommunicationsModule extends AbstractModule {
         DiscordSettings discordSettings = discordConfig.enabled
                 ? discordConfig.settings(System.getenv())
                 : null;
-        return new Prepared(chatConfig.adapter(), discordConfig.adapter(), chatConfig.enabled, discordSettings);
+        return new Prepared(
+                chatConfig.adapter(), discordConfig.adapter(), chatConfig.enabled, discordSettings, allowDegraded);
     }
 
     private ActiveRuntime activate(Prepared plan) {
@@ -87,9 +89,9 @@ public final class CommunicationsModule extends AbstractModule {
                 plan.discordConfig(),
                 message -> {
                     DiscordRuntime discord = discordReference.get();
-                    if (discord != null) {
-                        discord.relayMinecraftChat(message);
-                    }
+                    return discord == null
+                            ? ua.co.tensa.modules.chat.ProxyChatRelay.Result.DISABLED
+                            : discord.relayMinecraftChat(message);
                 }
         );
         ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat, privateReplyTargets);
@@ -97,7 +99,17 @@ public final class CommunicationsModule extends AbstractModule {
 
         try {
             if (plan.discordSettings() != null) {
-                startDiscord(active, plan.discordSettings(), discordReference);
+                try {
+                    startDiscord(active, plan.discordSettings(), discordReference);
+                } catch (RuntimeException operationalFailure) {
+                    if (!plan.allowDegraded()) {
+                        throw operationalFailure;
+                    }
+                    metrics.recordFailure(operationalFailure);
+                    Message.warn("communications transition=degraded component=discord failure="
+                            + DiscordDiagnostics.unwrap(operationalFailure).getClass().getSimpleName());
+                    scheduleDiscordRecovery(active, plan.discordSettings(), discordReference);
+                }
             }
             if (plan.chatEnabled()) {
                 registerListener(new ProxyChatListener(proxyChat, chatCommands));
@@ -123,22 +135,41 @@ public final class CommunicationsModule extends AbstractModule {
         }
 
         JdaDiscordGateway gateway = new JdaDiscordGateway(settings);
+        PostLinkEffects postLinkEffects = new PostLinkEffects(
+                gateway,
+                account -> announceLink(settings, account),
+                settings.nicknameSync(),
+                settings.postLinkQueueCapacity(),
+                settings.nicknameSyncAttempts(),
+                settings.nicknameRetryBaseDelay(),
+                metrics
+        );
         DiscordLinkService linkService = new DiscordLinkService(
                 store,
                 new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()),
                 gateway,
-                settings
+                settings,
+                postLinkEffects::submit
         );
         DiscordRuntime discord = new DiscordRuntime(
                 settings,
                 gateway,
                 linkService,
                 new DiscordDelivery(gateway, new DiscordWebhookClient(settings)),
-                active.proxyChat()::publishExternal
+                active.proxyChat()::publishExternal,
+                metrics,
+                postLinkEffects
         );
         active.discordRuntime = discord;
         discordReference.set(discord);
-        discord.start();
+        try {
+            discord.start();
+        } catch (RuntimeException failure) {
+            active.discordRuntime = null;
+            discordReference.compareAndSet(discord, null);
+            discord.close();
+            throw failure;
+        }
 
         DiscordVelocityListener velocityListener = registerListener(new DiscordVelocityListener(discord, settings));
         Tensa.server.getAllPlayers().forEach(velocityListener::prime);
@@ -167,6 +198,7 @@ public final class CommunicationsModule extends AbstractModule {
         if (active == null) {
             return;
         }
+        active.closed = true;
         active.chatCommands().unregister();
         if (active.discordCommandRegistered) {
             unregisterCommands("discord");
@@ -194,6 +226,30 @@ public final class CommunicationsModule extends AbstractModule {
             active.discordRuntime = null;
         }
         active.proxyChat().clear();
+    }
+
+    private void scheduleDiscordRecovery(
+            ActiveRuntime active,
+            DiscordSettings settings,
+            AtomicReference<DiscordRuntime> discordReference
+    ) {
+        long interval = Math.max(5L, Math.min(30L, settings.reconnectMaxDelaySeconds()));
+        active.discordReconnectTask = scheduleRepeating(() -> {
+            synchronized (active) {
+                if (active.closed || active.discordRuntime != null) {
+                    return;
+                }
+                metrics.reconnectAttempted();
+                try {
+                    startDiscord(active, settings, discordReference);
+                    cancelTask(active.discordReconnectTask);
+                    active.discordReconnectTask = null;
+                    Message.info("communications transition=recovered component=discord");
+                } catch (RuntimeException failure) {
+                    metrics.recordFailure(failure);
+                }
+            }
+        }, interval, interval, TimeUnit.SECONDS);
     }
 
     private static void validateYaml(Path path) {
@@ -249,6 +305,48 @@ public final class CommunicationsModule extends AbstractModule {
         validateMiniMessage(config.getString("proxy_chat.discord_format", ""), "discord.yml proxy_chat.discord_format");
         validateMiniMessage(config.getString("proxy_chat.cooldown_message", ""), "discord.yml proxy_chat.cooldown_message");
         validateMiniMessage(config.getString("proxy_chat.duplicate_message", ""), "discord.yml proxy_chat.duplicate_message");
+        validateMiniMessage(
+                config.getString("proxy_chat.require_link_to_relay.minecraft_message", ""),
+                "discord.yml proxy_chat.require_link_to_relay.minecraft_message"
+        );
+        validateMiniMessage(
+                config.getString("linking.link_announcement.format", ""),
+                "discord.yml linking.link_announcement.format"
+        );
+    }
+
+    public static CommunicationsMetrics.Snapshot diagnosticsSnapshot() {
+        ActiveRuntime active = INSTANCE.runtimeSlot.runtime();
+        DiscordRuntime discord = active == null ? null : active.discordRuntime;
+        String backend = Tensa.storage == null ? "unavailable" : Tensa.storage.backendType();
+        if (discord == null) {
+            return INSTANCE.metrics.snapshot(
+                    active == null ? "stopped" : "chat-only",
+                    "unavailable",
+                    "unavailable",
+                    backend,
+                    0, 0, 0, 0
+            );
+        }
+        return discord.diagnostics(backend);
+    }
+
+    private static void announceLink(DiscordSettings settings, LinkedAccount account) {
+        if (!settings.linkAnnouncementEnabled() || Tensa.server == null) {
+            return;
+        }
+        String rendered = Message.renderTemplateString(
+                settings.linkAnnouncementFormat(),
+                Map.of("player", Message.escapeMiniMessage(account.playerName()))
+        );
+        for (com.velocitypowered.api.proxy.Player recipient : Tensa.server.getAllPlayers()) {
+            String server = recipient.getCurrentServer()
+                    .map(connection -> connection.getServerInfo().getName())
+                    .orElse("proxy");
+            if (settings.linkAnnouncementAllows(server)) {
+                Message.send(recipient, rendered);
+            }
+        }
     }
 
     private static boolean booleanValue(Object value, boolean fallback) {
@@ -288,7 +386,8 @@ public final class CommunicationsModule extends AbstractModule {
             YamlAdapter chatConfig,
             YamlAdapter discordConfig,
             boolean chatEnabled,
-            DiscordSettings discordSettings
+            DiscordSettings discordSettings,
+            boolean allowDegraded
     ) {
     }
 
@@ -300,6 +399,8 @@ public final class CommunicationsModule extends AbstractModule {
         private VelocityDiscordBackendBridge backendEventBridge;
         private ChannelIdentifier backendEventChannel;
         private boolean discordCommandRegistered;
+        private com.velocitypowered.api.scheduler.ScheduledTask discordReconnectTask;
+        private boolean closed;
 
         private ActiveRuntime(ProxyChatService proxyChat, ChatCommands chatCommands) {
             this.proxyChat = proxyChat;

@@ -35,6 +35,23 @@ class DiscordDeliveryTest {
         assertThat(gateway.botMessages.get()).isOne();
     }
 
+    @Test
+    void serverAndRateLimitResponsesNeverUseCrossTransportFallback() {
+        FakeGateway gateway = new FakeGateway();
+        DiscordDelivery serverFailure = new DiscordDelivery(
+                gateway,
+                new FailedWebhook(new DiscordWebhookClient.RejectedResponseException(503))
+        );
+
+        assertThatThrownBy(() -> serverFailure.send(message()).join())
+                .hasRootCauseInstanceOf(DiscordWebhookClient.RejectedResponseException.class);
+        assertThat(gateway.botMessages).hasValue(0);
+        assertThat(DiscordDelivery.retryable(new DiscordWebhookClient.RejectedResponseException(503))).isTrue();
+        assertThat(DiscordDelivery.retryable(new DiscordWebhookClient.RejectedResponseException(429))).isTrue();
+        assertThat(DiscordDelivery.retryable(new DiscordWebhookClient.RejectedResponseException(403))).isFalse();
+        assertThat(DiscordDelivery.retryable(new IOException("ambiguous"))).isFalse();
+    }
+
     private static DiscordOutboundMessage message() {
         return DiscordOutboundMessage.chat("webhook", "bot", "player", "");
     }

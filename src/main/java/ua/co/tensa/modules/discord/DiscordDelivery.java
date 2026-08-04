@@ -16,10 +16,13 @@ final class DiscordDelivery {
             if (message.preferWebhook() && webhook.configured(message.route())) {
                 return fallbackOnRejectedResponse(
                         webhook.sendEmbed(message.route(), message.embed()),
-                        () -> gateway.sendBotEmbed(message.route(), message.embed())
+                        () -> gateway.sendBotMessage(message.route(), message.botContent())
                 );
             }
-            return gateway.sendBotEmbed(message.route(), message.embed());
+            return fallbackOnRejectedResponse(
+                    gateway.sendBotEmbed(message.route(), message.embed()),
+                    () -> gateway.sendBotMessage(message.route(), message.botContent())
+            );
         }
         if (message.preferWebhook() && webhook.configured(message.route())) {
             return fallbackOnRejectedResponse(
@@ -43,12 +46,35 @@ final class DiscordDelivery {
                 return CompletableFuture.<Void>completedFuture(null);
             }
             Throwable cause = DiscordDiagnostics.unwrap(error);
-            if (cause instanceof DiscordWebhookClient.RejectedResponseException) {
+            if (invalidForm(cause)) {
                 return fallback.get();
             }
             // Network failures and timeouts are ambiguous: the webhook may
             // already have accepted the request, so a fallback can duplicate it.
             return CompletableFuture.<Void>failedFuture(cause);
         }).thenCompose(java.util.function.Function.identity());
+    }
+
+    static boolean retryable(Throwable error) {
+        Throwable cause = DiscordDiagnostics.unwrap(error);
+        if (cause instanceof DiscordWebhookClient.RejectedResponseException rejected) {
+            return rejected.retryable();
+        }
+        if (cause instanceof net.dv8tion.jda.api.exceptions.RateLimitedException) {
+            return true;
+        }
+        if (cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response) {
+            return response.isServerError();
+        }
+        return cause instanceof IllegalStateException
+                && cause.getMessage() != null
+                && cause.getMessage().startsWith("Discord gateway");
+    }
+
+    private static boolean invalidForm(Throwable cause) {
+        return cause instanceof DiscordWebhookClient.RejectedResponseException rejected
+                && rejected.invalidForm()
+                || cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response
+                && response.getErrorCode() == 50_035;
     }
 }

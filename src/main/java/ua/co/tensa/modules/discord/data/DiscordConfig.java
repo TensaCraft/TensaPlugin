@@ -15,8 +15,11 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "config_version", comment = "Communications Discord configuration schema version")
     public int configVersion = CommunicationsConfigBootstrap.CONFIG_VERSION;
 
-    @CfgKey(value = "enabled", comment = "Enable the Discord bot, linking, relay and announcements inside Communications")
+    @CfgKey(value = "bot.enabled", comment = "Enable the Discord bot, linking, relay and announcements inside Communications")
     public boolean enabled = false;
+
+    @CfgKey(value = "webhook.enabled", comment = "Prefer configured webhooks for chat and announcement delivery")
+    public boolean webhookEnabled = true;
 
     @CfgKey(value = "proxy_chat", comment = "Proxy-wide player chat transport and Discord-to-Minecraft display settings")
     public Map<String, Object> proxyChat = defaults(
@@ -33,7 +36,29 @@ public final class DiscordConfig extends ConfigBase {
             entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>"),
             entry("discord_format", "<dark_gray>[</dark_gray><color:#5865f2>Discord</color><dark_gray>]</dark_gray> <color:#7fd7ff>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>"),
             entry("cooldown_message", "<color:#ffb84d>Зачекайте трохи перед наступним повідомленням.</color>"),
-            entry("duplicate_message", "<color:#ffb84d>Не надсилайте однакові повідомлення поспіль.</color>")
+            entry("duplicate_message", "<color:#ffb84d>Не надсилайте однакові повідомлення поспіль.</color>"),
+            entry("require_link_to_relay", defaults(
+                    entry("enabled", false),
+                    entry("directions", List.of("minecraft_to_discord", "discord_to_minecraft")),
+                    entry("mode", "only"),
+                    entry("channels", List.of("global")),
+                    entry("minecraft_message", "<yellow>Прив'яжіть Discord через <white>/discord link</white>, щоб надіслати це повідомлення у Discord.</yellow>"),
+                    entry("discord_reply", "Прив'яжіть Minecraft-акаунт через /discord link у грі, щоб писати в ігровий чат."),
+                    entry("reply_delete_after_seconds", 10),
+                    entry("feedback_cooldown_seconds", 30)
+            ))
+    );
+
+    @CfgKey(value = "embeds", comment = "Validated Discord embed templates; blank image fields are omitted")
+    public Map<String, Object> embeds = defaults(
+            entry("join", embed(false, "Гравець приєднався", "🟢 {player} приєднався до «{server}».", "#57F287")),
+            entry("quit", embed(false, "Гравець вийшов", "⚪ {player} вийшов із «{server}».", "#95A5A6")),
+            entry("server_switch", embed(false, "Перехід між серверами", "🔄 {player}: «{from}» → «{to}».", "#5865F2")),
+            entry("advancement", embed(false, "Нове досягнення", "🏆 {player} отримав досягнення «{advancement}» на «{server}».", "#FEE75C")),
+            entry("link_success", embed(true, "Прив'язку завершено", "Акаунт успішно прив'язано до {player}.", "#57F287")),
+            entry("link_error", embed(true, "Не вдалося прив'язати акаунт", "{message}", "#ED4245")),
+            entry("backend_unavailable", embed(false, "Сервер недоступний", "🔴 «{server}» тимчасово недоступний.", "#ED4245")),
+            entry("backend_recovered", embed(false, "Сервер знову доступний", "🟢 «{server}» знову доступний.", "#57F287"))
     );
 
     @CfgKey(value = "bot.token", comment = "Secret. Prefer TENSA_DISCORD_BOT_TOKEN; this key is never generated automatically")
@@ -72,18 +97,6 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "relay.minecraft_to_discord.avatar_url_template", comment = "HTTPS avatar URL supporting {uuid} and {player}")
     public String avatarUrlTemplate = "https://mc-heads.net/avatar/{player}/128";
 
-    @CfgKey(value = "announcements.join.enabled", comment = "Send player join messages to Discord")
-    public boolean joinMessages = false;
-
-    @CfgKey(value = "announcements.quit.enabled", comment = "Send player quit messages to Discord")
-    public boolean quitMessages = false;
-
-    @CfgKey(value = "announcements.server_switch.enabled", comment = "Send proxy server-switch messages to Discord")
-    public boolean serverSwitchMessages = false;
-
-    @CfgKey(value = "announcements.backend_status.enabled", comment = "Send backend unavailability and recovery messages to Discord")
-    public boolean backendStatusMessages = false;
-
     @CfgKey(value = "achievements.enabled", comment = "Accept advancement events from the configured backend bridge")
     public boolean advancementMessages = false;
 
@@ -95,24 +108,6 @@ public final class DiscordConfig extends ConfigBase {
 
     @CfgKey(value = "announcements.servers.labels", comment = "Player-facing labels keyed by Velocity backend name")
     public Map<String, Object> serverLabels = new LinkedHashMap<>();
-
-    @CfgKey(value = "announcements.join.format", comment = "Plain Discord join template")
-    public String joinFormat = "🟢 {player} приєднався до «{server}».";
-
-    @CfgKey(value = "announcements.quit.format", comment = "Plain Discord quit template")
-    public String quitFormat = "⚪ {player} вийшов із «{server}».";
-
-    @CfgKey(value = "announcements.server_switch.format", comment = "Plain Discord server-switch template")
-    public String serverSwitchFormat = "🔄 {player}: «{from}» → «{to}».";
-
-    @CfgKey(value = "announcements.backend_status.unavailable_format", comment = "Plain Discord backend-unavailable template")
-    public String backendUnavailableFormat = "🔴 «{server}» тимчасово недоступний.";
-
-    @CfgKey(value = "announcements.backend_status.recovered_format", comment = "Plain Discord backend-recovery template")
-    public String backendRecoveredFormat = "🟢 «{server}» знову доступний.";
-
-    @CfgKey(value = "achievements.format", comment = "Plain Discord advancement template")
-    public String advancementFormat = "🏆 {player} отримав досягнення «{advancement}» на «{server}».";
 
     @CfgKey(value = "announcements.backend_status.poll_interval_seconds", comment = "Interval between asynchronous backend health probes")
     public int backendStatusPollIntervalSeconds = 15;
@@ -168,8 +163,35 @@ public final class DiscordConfig extends ConfigBase {
     @CfgKey(value = "linking.executor_queue_capacity", comment = "Bound for account-linking disk and Discord role operations")
     public int linkExecutorCapacity = 32;
 
+    @CfgKey(value = "linking.post_link_queue_capacity", comment = "Bound for announcement and nickname work after a durable link")
+    public int postLinkQueueCapacity = 32;
+
+    @CfgKey(value = "linking.link_announcement.enabled", comment = "Announce a newly linked Minecraft account to eligible online players")
+    public boolean linkAnnouncementEnabled = false;
+
+    @CfgKey(value = "linking.link_announcement.format", comment = "Single MiniMessage template for a successful account link")
+    public String linkAnnouncementFormat = "<green>{player}</green> <gray>прив'язав Discord-акаунт.</gray>";
+
+    @CfgKey(value = "linking.link_announcement.servers.include", comment = "Recipient backends for link announcements; empty includes all")
+    public List<String> linkAnnouncementIncludedServers = new ArrayList<>();
+
+    @CfgKey(value = "linking.link_announcement.servers.exclude", comment = "Recipient backends excluded from link announcements")
+    public List<String> linkAnnouncementExcludedServers = new ArrayList<>(List.of("auth", "aero-auth"));
+
+    @CfgKey(value = "linking.nickname_sync.mode", comment = "Discord nickname synchronization: disabled or minecraft")
+    public String nicknameSyncMode = "disabled";
+
+    @CfgKey(value = "linking.nickname_sync.attempts", comment = "Attempts for transient Discord nickname failures")
+    public int nicknameSyncAttempts = 3;
+
+    @CfgKey(value = "linking.nickname_sync.retry_base_delay_millis", comment = "Initial delay between transient nickname retries")
+    public int nicknameRetryBaseDelayMillis = 500;
+
     @CfgKey(value = "limits.max_links", comment = "Maximum Discord account links loaded into the bounded runtime index")
     public int maxLinks = 100_000;
+
+    @CfgKey(value = "diagnostics.transition_logs", comment = "Log state transitions and failures without message content or identifiers")
+    public boolean diagnosticTransitionLogs = true;
 
     public DiscordConfig() {
         super("discord.yml");
@@ -225,5 +247,17 @@ public final class DiscordConfig extends ConfigBase {
 
     private static Object[] entry(String key, Object value) {
         return new Object[]{key, value};
+    }
+
+    private static Map<String, Object> embed(boolean enabled, String title, String description, String color) {
+        return defaults(
+                entry("enabled", enabled),
+                entry("title", title),
+                entry("description", description),
+                entry("color", color),
+                entry("thumbnail_url", ""),
+                entry("footer", ""),
+                entry("image_url", "")
+        );
     }
 }

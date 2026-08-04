@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 public final class ProxyChatService {
     private record PlayerState(long sentAt, long duplicateAt, String duplicateKey) {
@@ -31,21 +30,22 @@ public final class ProxyChatService {
             String format,
             String discordFormat,
             String cooldownMessage,
-            String duplicateMessage
+            String duplicateMessage,
+            String linkRequiredMessage
     ) {
     }
 
     private final Clock clock;
     private final YamlAdapter chatConfig;
     private final YamlAdapter discordConfig;
-    private final Consumer<ProxyChatMessage> outbound;
+    private final ProxyChatRelay outbound;
     private final ConcurrentHashMap<UUID, PlayerState> playerStates = new ConcurrentHashMap<>();
     private volatile Settings settings;
 
     public ProxyChatService(
             YamlAdapter chatConfig,
             YamlAdapter discordConfig,
-            Consumer<ProxyChatMessage> outbound
+            ProxyChatRelay outbound
     ) {
         this(Clock.systemUTC(), chatConfig, discordConfig, outbound);
     }
@@ -54,12 +54,12 @@ public final class ProxyChatService {
             Clock clock,
             YamlAdapter chatConfig,
             YamlAdapter discordConfig,
-            Consumer<ProxyChatMessage> outbound
+            ProxyChatRelay outbound
     ) {
         this.clock = clock;
         this.chatConfig = java.util.Objects.requireNonNull(chatConfig, "chatConfig");
         this.discordConfig = java.util.Objects.requireNonNull(discordConfig, "discordConfig");
-        this.outbound = outbound == null ? ignored -> { } : outbound;
+        this.outbound = outbound == null ? ignored -> ProxyChatRelay.Result.DISABLED : outbound;
         reload();
     }
 
@@ -103,7 +103,11 @@ public final class ProxyChatService {
                 config.getString("proxy_chat.format", "<white>{player}: {message}</white>"),
                 config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>"),
                 config.getString("proxy_chat.cooldown_message", "<yellow>Зачекайте перед наступним повідомленням.</yellow>"),
-                config.getString("proxy_chat.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>")
+                config.getString("proxy_chat.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>"),
+                config.getString(
+                        "proxy_chat.require_link_to_relay.minecraft_message",
+                        "<yellow>Прив'яжіть Discord через /discord link.</yellow>"
+                )
         );
         playerStates.clear();
     }
@@ -172,7 +176,10 @@ public final class ProxyChatService {
         );
         broadcast(payload, current.format(), current);
         try {
-            outbound.accept(payload);
+            ProxyChatRelay.Result relayResult = outbound.publish(payload);
+            if (relayResult == ProxyChatRelay.Result.LINK_REQUIRED) {
+                Message.privateMessage(player, current.linkRequiredMessage());
+            }
         } catch (RuntimeException exception) {
             Message.warn("Chat relay rejected a message: " + exception.getMessage());
         }

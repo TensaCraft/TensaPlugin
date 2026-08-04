@@ -22,8 +22,12 @@ import ua.co.tensa.Message;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway {
@@ -33,6 +37,11 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private final AtomicBoolean slashCommandReady = new AtomicBoolean();
     private final AtomicBoolean acceptingEvents = new AtomicBoolean();
     private final AtomicLong lastInteractionWarning = new AtomicLong();
+    private final AtomicLong reconnects = new AtomicLong();
+    private final AtomicInteger pendingReplyDeletions = new AtomicInteger();
+    private final AtomicReference<String> runtimeState = new AtomicReference<>("new");
+    private final AtomicReference<String> slashState = new AtomicReference<>("unavailable");
+    private final ScheduledThreadPoolExecutor replyDeletionScheduler;
     private volatile JDA jda;
     private volatile Guild guild;
     private volatile TextChannel channel;
@@ -45,6 +54,11 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     JdaDiscordGateway(DiscordSettings settings) {
         this.settings = settings;
         this.slashCommandRegistrar = new DiscordSlashCommandRegistrar(settings.linkCommandName());
+        this.replyDeletionScheduler = new ScheduledThreadPoolExecutor(
+                1,
+                runnable -> Thread.ofPlatform().name("tensa-discord-reply-delete").daemon(true).unstarted(runnable)
+        );
+        this.replyDeletionScheduler.setRemoveOnCancelPolicy(true);
     }
 
     @Override
@@ -67,6 +81,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         this.readyHandler = readyHandler;
         this.botLease = lease;
         acceptingEvents.set(true);
+        runtimeState.set("connecting");
+        slashState.set("registering");
         try {
             jda = JDABuilder.createLight(
                             settings.credentials().botToken(),
@@ -103,11 +119,13 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
 
     @Override
     public void onSessionResume(SessionResumeEvent event) {
+        reconnects.incrementAndGet();
         activate(event.getJDA());
     }
 
     @Override
     public void onSessionRecreate(SessionRecreateEvent event) {
+        reconnects.incrementAndGet();
         activate(event.getJDA());
     }
 
@@ -120,6 +138,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         TextChannel configuredEventsChannel = connectedJda.getTextChannelById(settings.eventsChannelId());
         if (configuredGuild == null) {
             ready.set(false);
+            runtimeState.set("degraded");
+            slashState.set("unavailable");
             Message.warn("Discord gateway connected, but the configured guild is unavailable; linking command cannot be registered");
             return;
         }
@@ -138,6 +158,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         ready.set(true);
         slashCommandReady.set(false);
+        runtimeState.set("ready");
+        slashState.set("registering");
         slashCommandRegistrar.ensureRegistered(new JdaGuildCommands(configuredGuild))
                 .whenComplete((result, error) -> {
                     if (!isCurrentConnection(connectedJda)) {
@@ -145,11 +167,13 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                     }
                     if (error != null) {
                         slashCommandReady.set(false);
+                        slashState.set("failed");
                         Message.warn("Discord guild command /" + settings.linkCommandName()
                                 + " is unavailable: " + DiscordDiagnostics.describe(error));
                         return;
                     }
                     slashCommandReady.set(true);
+                    slashState.set("ready");
                     String action = result.changed() ? "registered and verified" : "verified";
                     Message.info("Discord guild command /" + settings.linkCommandName() + " " + action);
                 });
@@ -179,7 +203,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                 authorName,
                 event.getMessage().getContentDisplay(),
                 event.getAuthor().isBot(),
-                event.isWebhookMessage()
+                event.isWebhookMessage(),
+                event.getMessageId()
         ));
     }
 
@@ -240,6 +265,54 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     }
 
     @Override
+    public CompletableFuture<Void> updateNickname(String discordUserId, String nickname) {
+        Guild configuredGuild = guild;
+        if (!ready.get() || configuredGuild == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
+        }
+        String safeNickname = DiscordSanitizer.truncate(DiscordSanitizer.normalize(nickname), 32).trim();
+        if (safeNickname.isBlank()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Discord nickname is empty"));
+        }
+        return configuredGuild.retrieveMemberById(discordUserId)
+                .submit()
+                .thenCompose(member -> configuredGuild.modifyNickname(member, safeNickname).submit());
+    }
+
+    @Override
+    public CompletableFuture<Void> sendTemporaryReply(
+            String channelId,
+            String messageId,
+            String content,
+            Duration deleteAfter
+    ) {
+        TextChannel target = channel;
+        if (!ready.get() || target == null || !target.getId().equals(channelId)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Discord relay channel is not ready"));
+        }
+        var action = target.sendMessage(content).setAllowedMentions(List.of());
+        if (messageId != null && !messageId.isBlank()) {
+            action = action.setMessageReference(messageId).failOnInvalidReply(false);
+        }
+        return action.submit().thenAccept(reply -> {
+            if (pendingReplyDeletions.incrementAndGet() > settings.eventStateCapacity()) {
+                pendingReplyDeletions.decrementAndGet();
+                reply.delete().queue(null, ignored -> { });
+                return;
+            }
+            replyDeletionScheduler.schedule(() -> {
+                try {
+                    if (acceptingEvents.get()) {
+                        reply.delete().queue(null, ignored -> { });
+                    }
+                } finally {
+                    pendingReplyDeletions.decrementAndGet();
+                }
+            }, Math.max(1L, deleteAfter.toMillis()), TimeUnit.MILLISECONDS);
+        });
+    }
+
+    @Override
     public boolean isReady() {
         return ready.get();
     }
@@ -256,8 +329,25 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     }
 
     @Override
+    public String runtimeState() {
+        return runtimeState.get();
+    }
+
+    @Override
+    public String slashState() {
+        return slashState.get();
+    }
+
+    @Override
+    public long reconnectCount() {
+        return reconnects.get();
+    }
+
+    @Override
     public synchronized void close(Duration timeout) {
         acceptingEvents.set(false);
+        runtimeState.set("closed");
+        slashState.set("closed");
         deactivate();
         JDA current = jda;
         jda = null;
@@ -268,6 +358,7 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         inboundHandler = ignored -> { };
         readyHandler = () -> { };
+        replyDeletionScheduler.shutdownNow();
         DiscordBotLease lease = botLease;
         botLease = null;
         try {
@@ -313,6 +404,10 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private void deactivate() {
         ready.set(false);
         slashCommandReady.set(false);
+        if (acceptingEvents.get()) {
+            runtimeState.set("reconnecting");
+            slashState.set("unavailable");
+        }
         guild = null;
         channel = null;
         eventsChannel = null;
@@ -375,11 +470,20 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     }
 
     private static MessageEmbed toMessageEmbed(DiscordEmbedMessage embed) {
-        return new EmbedBuilder()
+        EmbedBuilder builder = new EmbedBuilder()
                 .setTitle(embed.title())
                 .setDescription(embed.description())
                 .setColor(embed.color())
-                .setTimestamp(embed.timestamp())
-                .build();
+                .setTimestamp(embed.timestamp());
+        if (!embed.thumbnailUrl().isBlank()) {
+            builder.setThumbnail(embed.thumbnailUrl());
+        }
+        if (!embed.footer().isBlank()) {
+            builder.setFooter(embed.footer());
+        }
+        if (!embed.imageUrl().isBlank()) {
+            builder.setImage(embed.imageUrl());
+        }
+        return builder.build();
     }
 }

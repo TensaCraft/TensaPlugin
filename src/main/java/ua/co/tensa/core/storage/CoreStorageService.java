@@ -71,6 +71,11 @@ public final class CoreStorageService implements AutoCloseable {
         return tablePrefix;
     }
 
+    /** Safe diagnostic label; never includes a JDBC URL, host, user, or secret. */
+    public String backendType() {
+        return closeable == null ? "external-jdbc" : "local-h2";
+    }
+
     public String table(String logicalName) {
         String name = validateIdentifier(logicalName);
         return tablePrefix + name;

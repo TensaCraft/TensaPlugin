@@ -51,6 +51,15 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
         body.put("description", embed.description());
         body.put("color", embed.color());
         body.put("timestamp", embed.timestamp().toString());
+        if (!embed.thumbnailUrl().isBlank()) {
+            body.put("thumbnail", Map.of("url", embed.thumbnailUrl()));
+        }
+        if (!embed.footer().isBlank()) {
+            body.put("footer", Map.of("text", embed.footer()));
+        }
+        if (!embed.imageUrl().isBlank()) {
+            body.put("image", Map.of("url", embed.imageUrl()));
+        }
         return sendPayload(route, new LinkedHashMap<>(Map.of("embeds", List.of(body))));
     }
 
@@ -80,8 +89,19 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
     }
 
     static final class RejectedResponseException extends IllegalStateException {
+        private final int statusCode;
+
         RejectedResponseException(int statusCode) {
             super("Discord webhook returned HTTP " + statusCode);
+            this.statusCode = statusCode;
+        }
+
+        boolean invalidForm() {
+            return statusCode == 400;
+        }
+
+        boolean retryable() {
+            return statusCode == 429 || statusCode >= 500;
         }
     }
 }
