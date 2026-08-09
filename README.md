@@ -252,7 +252,9 @@ events:
 ### Communications:
 Owns Minecraft chat channels, Discord linking, relay, guards, announcements and
 delivery as one reloadable runtime. `chats.yml` contains Minecraft channel
-formats; `discord.yml` contains Discord and shared relay settings. See
+formats; `discord.yml` contains Discord and shared relay settings. Both live in
+the `communications/` module directory. `/tensainfo communications` exposes a
+secret-safe lifecycle, queue, scheduler, resource and URL-component snapshot. See
 [`docs/COMMUNICATIONS_V2_MIGRATION.md`](docs/COMMUNICATIONS_V2_MIGRATION.md)
 before upgrading an existing installation.
 ```yaml

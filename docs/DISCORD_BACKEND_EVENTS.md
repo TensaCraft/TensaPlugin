@@ -7,7 +7,8 @@ publish a typed plugin message after the backend has accepted the advancement.
 ## Channel and trust boundary
 
 - Default channel: `tensa:discord_events`
-- Configure it with `announcements.backend_bridge.channel` in `discord.yml`.
+- Configure it with `announcements.backend_bridge.channel` in
+  `communications/discord.yml`.
 - The proxy accepts packets only when Velocity identifies the source as a
   `ServerConnection`.
 - The backend name is taken from that connection. It is not accepted from the

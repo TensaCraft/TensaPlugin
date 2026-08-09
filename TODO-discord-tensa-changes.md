@@ -1,6 +1,6 @@
 # Communications v2 implementation checklist
 
-Status date: 2026-08-04. This replaces the obsolete value-preserving migration
+Status date: 2026-08-09. This replaces the obsolete value-preserving migration
 proposal. The approved v2 contract is a verified archive followed by clean
 defaults and user relinking.
 
@@ -31,6 +31,43 @@ defaults and user relinking.
   `<prefix>discord_links`, with bounded two-way index and specific conflicts.
 - [x] Add bounded once-only post-link announcement and best-effort nickname
   synchronization without link rollback.
+- [x] Restore Minecraft→Discord chat formatting to webhook-based delivery
+  (with player avatar + in-game name display) as the preferred path.
+- [x] Investigate why chat formatting is sometimes bypassed (example `pm`):
+  - validate `to_format`/`from_format` parsing and null/default substitution for all
+    chat types (`pm`, `global`, etc.);
+  - fix relay path so format is always applied to every chat route using `chats.yml`
+    definitions and not only legacy/system-only chat handlers;
+  - add regression test for a command-style/private (`pm`) chat and raw-text
+    passthrough prevention.
+- [x] Investigate why URLs are not clickable in chat:
+  - trace message rendering path in plugin-only relay flow;
+  - verify no stripping/escaping of link-like tokens occurs before send;
+  - check whether plugin changes message style components affecting `Component` URL click actions;
+  - add diagnostics to distinguish plugin formatting issues from upstream modpack chat behavior.
+- [x] Add `proxy_chat.webhook.auto_create` with safe runtime checks for
+  `MANAGE_WEBHOOKS` and fallback rules when auto-create is unavailable.
+- [x] Add webhook provisioning flow: create/fetch webhook on startup or first use,
+  rotate ID/token binding in storage and recover from revoked/invalidated tokens.
+- [x] Add minimal Discord webhook config contract and remove non-essential/system
+  tuning fields from public `discord.yml`; keep only operationally needed options.
+- [x] Move all Communications module configuration files into a module subdirectory
+  (mirroring other modules), and update loader/lookup paths accordingly so module
+  defaults/examples/docs are co-located with module-owned assets.
+- [x] Investigate size/regression in runtime resource usage:
+  - capture startup vs live heap baselines;
+  - audit cache/map growth (`links`, achievements, locale cache, message queues);
+  - check for listener/task retention and stale scheduled jobs;
+  - add guarded object caps/TTL and close leaking channels/services;
+  - add periodic resource-usage telemetry with alert thresholds.
+- [x] Add dedicated modular scheduler service:
+  - support job definitions with condition predicates (online, channel, link status,
+    command/route availability, cooldown checks);
+  - support per-job delay, interval, retry count, max attempts, backoff, timeout,
+    jitter and dead-letter behavior;
+  - support pause/resume, cancellation, idempotent dedupe keys and scoped queues;
+  - expose admin-configured runtime defaults + per-command overrides;
+  - reuse scheduler for Discord link tasks, announcements, cleanup and recovery jobs.
 - [x] Move shared relay ownership to `discord.yml` `proxy_chat`; leave only
   Minecraft channel definitions in `chats.yml`.
 - [x] Add bidirectional link guard (`only|except`), local Minecraft delivery,
@@ -55,7 +92,7 @@ defaults and user relinking.
 
 ## Final gates
 
-- [x] TensaPlugin Java 25: clean test (151/151), dependency analysis without
+- [x] TensaPlugin Java 25: clean test (168/168), dependency analysis without
   problems and clean package.
 - [x] TensaProxy Java 21 toolchain: clean test build (45/45).
 - [x] Secret scan of the final diff and implementation commit range.
