@@ -1,7 +1,6 @@
 package ua.co.tensa.modules.discord;
 
 import com.velocitypowered.api.proxy.messages.ChannelIdentifier;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
@@ -11,7 +10,7 @@ import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 import ua.co.tensa.modules.runtime.ModuleScheduler;
-import ua.co.tensa.modules.runtime.SchedulerModule;
+import ua.co.tensa.modules.runtime.RuntimeSchedulerFactory;
 import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.chat.ProxyChatListener;
 import ua.co.tensa.modules.chat.ProxyChatService;
@@ -98,7 +97,7 @@ public final class CommunicationsModule extends AbstractModule {
         );
         ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat, privateReplyTargets);
         ActiveRuntime active = new ActiveRuntime(
-                proxyChat, chatCommands, SchedulerModule.create("tensa-communications"));
+                proxyChat, chatCommands, RuntimeSchedulerFactory.create("tensa-communications"));
 
         try {
             if (plan.discordSettings() != null) {
@@ -492,7 +491,7 @@ public final class CommunicationsModule extends AbstractModule {
             throw new DiscordConfigurationException(key + " is longer than 4096 characters");
         }
         try {
-            MiniMessage.miniMessage().deserialize(text);
+            Message.convert(text);
         } catch (RuntimeException exception) {
             throw new DiscordConfigurationException(key + " contains invalid MiniMessage markup");
         }

@@ -89,6 +89,24 @@ class ModuleSchedulerTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void intervalRangeChoosesAValidDelayForEveryOccurrence() throws Exception {
+        AtomicInteger runs = new AtomicInteger();
+        CountDownLatch completed = new CountDownLatch(3);
+        try (ModuleScheduler scheduler = new ModuleScheduler("range", defaults())) {
+            scheduler.schedule(ModuleScheduler.job("ranged", () -> {
+                        runs.incrementAndGet();
+                        completed.countDown();
+                    })
+                    .delay(Duration.ZERO, Duration.ofMillis(5))
+                    .interval(Duration.ofMillis(5), Duration.ofMillis(15))
+                    .build());
+
+            assertThat(completed.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(runs.get()).isGreaterThanOrEqualTo(3);
+        }
+    }
+
     private static ModuleScheduler.Defaults defaults() {
         return new ModuleScheduler.Defaults(
                 16, 2, 16, Duration.ofSeconds(1), 2,

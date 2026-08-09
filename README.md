@@ -56,10 +56,15 @@ Usage:
 - `/psend <player/all> <server>`: Sends the specified player to the specified server.
 
 ## Modules
-### Task Scheduler:
-Required infrastructure module (`scheduler`) with a fixed bounded policy. Each
-runtime module owns its own jobs and mutable scheduler state; there are no public
-scheduler tuning keys.
+### Command Scheduler:
+The `scheduler` module runs named Velocity console-command schedules from
+`scheduler/config.yml`. It supports fixed or random intervals and four execution
+modes: `all`, `random`, `shuffle`, and `round_robin`. Reload only this module with
+`/tensareload scheduler`; the candidate file is completely validated before the
+active jobs are replaced. See [`docs/COMMAND_SCHEDULER.md`](docs/COMMAND_SCHEDULER.md).
+
+Internal reconnect/retry jobs use a separate lifecycle scheduler and do not
+depend on whether the public command scheduler module is enabled.
 
 ### PlayerTime:
 Tracks the total playing time of each player on the server, providing the ability to view the time played by a specific player or the entire server.
@@ -265,5 +270,8 @@ secret-safe lifecycle, chat-transport, queue, scheduler, resource and URL-compon
 before upgrading an existing installation.
 Console invocations of every chat route render only their trusted MiniMessage
 payload. Player public/private messages keep the configured route wrappers.
+Minecraft text now passes through one `TextPipeline`: contextual placeholders,
+legacy colors, MiniMessage, safe template values and clickable player URLs have
+one ordering and one escaping policy instead of route-specific parsers.
 Minecraft-to-Discord chat always uses the configured or automatically managed
 global webhook so its per-message Minecraft name and avatar are preserved.

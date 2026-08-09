@@ -1,10 +1,10 @@
-package ua.co.tensa.modules.runtime;
+package ua.co.tensa.modules.scheduler;
 
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.ModuleProvider;
 import ua.co.tensa.modules.TensaModule;
 
-@TensaModule(id = "scheduler", title = "Task Scheduler")
+@TensaModule(id = "scheduler", title = "Command Scheduler")
 public final class SchedulerProvider implements ModuleProvider {
     @Override
     public String id() {

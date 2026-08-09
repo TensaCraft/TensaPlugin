@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import ua.co.tensa.modules.runtime.ModuleScheduler;
-import ua.co.tensa.modules.runtime.SchedulerModule;
+import ua.co.tensa.modules.runtime.RuntimeSchedulerFactory;
 
 final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway {
     private final DiscordSettings settings;
@@ -56,7 +56,7 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private volatile Runnable readyHandler = () -> { };
 
     JdaDiscordGateway(DiscordSettings settings) {
-        this(settings, new ModuleScheduler("tensa-discord", SchedulerModule.defaults()), true);
+        this(settings, RuntimeSchedulerFactory.create("tensa-discord"), true);
     }
 
     JdaDiscordGateway(DiscordSettings settings, ModuleScheduler scheduler) {

@@ -21,9 +21,9 @@ scheduled tasks belong to exactly one active runtime.
 
 The follow-up chat/resource audit made player chat strictly webhook-delivered,
 eliminated command-route formatting bypasses and chat moderation, emits real URL
-click components, and exposes the fixed scheduling policy as the required
-`scheduler` module. Operational communications files now live under
-`communications/`.
+click components, and separates internal lifecycle scheduling from the optional
+configurable `scheduler` command module. Operational communications files now
+live under `communications/`.
 
 The authentication investigation confirmed two causes consistent with offline
 players becoming frozen after transfers: route aliases were incorrectly treated
@@ -46,10 +46,12 @@ flowchart LR
     CM --> DR["Discord runtime"]
     DR --> GW["single leased JDA gateway/listener"]
     DR --> PIPE["bounded delivery pipelines"]
-    DR --> SCH["scheduler module policy / owned bounded runtime"]
+    DR --> IRS["internal owned bounded runtime scheduler"]
     DR --> WH["managed webhook provisioning"]
     DR --> REPO["DiscordLinkRepository"]
     REPO --> CORE["CoreStorageService: MariaDB/MySQL or local H2"]
+    SCY["scheduler/config.yml"] --> SCM["command scheduler module"]
+    SCM --> VC["Velocity console commands"]
     GW --> SLASH["guild-scoped /link reconciliation"]
 ```
 
@@ -70,11 +72,11 @@ is instance-owned and closed during replacement.
 | High | Existing `lang/uk.yml` did not gain new bundled keys. | Runtime localization merges only missing bundled keys and preserves manual values. The real `discord_link_code` template and its MiniMessage `COPY_TO_CLIPBOARD` action are tested; the click payload is exactly the raw code. |
 | High | Relay guard and chat moderation were outside the plugin's responsibility and bloated Discord configuration. | Link-required relay blocking, reply deletion/cooldowns, duplicate suppression, repeated-character filtering and their state/tasks were removed. Channel access belongs to Discord roles and Minecraft permissions. `discord.yml` owns the relay direction, logical channel list and presentation; `chats.yml` owns Minecraft channel routes and formats without Discord keys. |
 | High | `/pm` was absent from the default private aliases, malformed nested YAML could stringify as `{}`, and console commands inherited player wrappers. | The known old alias set migrates to `pm,msg,tell,w` without replacing manual aliases. Nested route types are validated before activation. Every route uses the same typed resolver: players receive configured public or private wrappers, while console invocations send only the trusted MiniMessage payload, including explicit-target `/r`. |
-| High | Plain HTTP/HTTPS text had no Adventure click action, so the client could not open it even though the text was preserved. | The renderer detects bounded HTTP/HTTPS tokens after sanitization and inserts `OPEN_URL` plus hover actions while keeping all other user input literal. `/tensainfo communications` reports the number of URL actions produced; if that counter increases but clicks still fail, the remaining behavior is upstream client/modpack handling. |
+| High | Plain HTTP/HTTPS text had no Adventure click action, so the client could not open it even though the text was preserved. | `TextPipeline` detects bounded HTTP/HTTPS tokens after sanitization and inserts `OPEN_URL` plus hover actions while keeping all other user input literal. `/tensainfo communications` reports the number of URL actions produced; if that counter increases but clicks still fail, the remaining behavior is upstream client/modpack handling. |
 | High | Minecraft-to-Discord identity formatting depended on a manually configured webhook and silently fell back to bot identity when it was absent or revoked. | Chat is webhook-only. The configured global webhook is used automatically; otherwise one bot-owned `ServerChat` webhook is recovered or created idempotently. Every message overrides username/avatar with the Minecraft identity. HTTP 400/401/404, timeout and 5xx never cross-fallback to bot chat; revoked credentials trigger coalesced recovery. `/tensainfo communications` reports only `explicit`, `managed`, `recovering` or `unavailable`. |
 | High | Persisting a generated webhook URL would have stored a live secret, while storing only an ID could not detect token rotation. | `<prefix>discord_webhook_bindings` stores route, webhook ID and a SHA-256 token fingerprint only. The token/URL exists only in the active runtime, is never rendered by `toString` or logs, and is re-fetched from Discord after startup/reconnect. |
 | High | Root-level communications files did not follow module ownership and could diverge from newly generated defaults. | Existing schema-v2 root files are backed up, hash-verified and atomically relocated byte-for-byte to `communications/`. Destination-wins handling archives and removes obsolete root copies. Schema reset/future-version guarantees remain unchanged. |
-| High | Reconnect, status polling, webhook recovery and cleanup had separate scheduling/executor behavior. | The visible required `scheduler` module defines an immutable bounded policy. Each consumer owns its own `ModuleScheduler` instance and mutable jobs, avoiding cross-module state. It owns reconnect, status, webhook recovery, announcements, telemetry and link-code cleanup. |
+| High | Reconnect, status polling, webhook recovery and cleanup had separate scheduling/executor behavior, while the public `scheduler` id misleadingly exposed only that infrastructure and had no command configuration. | Internal consumers now create lifecycle-owned `ModuleScheduler` instances through a non-module factory. The optional `scheduler` module independently owns validated recurring console-command tasks in `scheduler/config.yml`; disabling or reloading it cannot affect Communications. Fixed/random intervals and all/random/shuffle/round-robin modes remain bounded and reload without duplicate jobs. |
 | High | Expired link codes were removed only when queried or reissued, allowing stale entries to accumulate across many disconnected players. | The registry has a hard capacity, purges expiry on issue and receives a lifecycle-owned periodic cleanup. Link indexes, queues, event state and scheduler work are all bounded. |
 | Medium | Public `discord.yml` exposed implementation tuning that normal operators should not need. | `limits`, `delivery`, `gateway`, `scheduler`, `backend_status`, link timing, avatar URL, webhook creation/name and moderation keys were removed from schema and parser. Existing v2 files prune these known obsolete keys idempotently; fixed conservative bounds remain in code. |
 | Medium | There was no live evidence for heap regression or retained Communications state. | Runtime-only telemetry records startup-to-live heap delta, heap percentage, chat/reply/link state, scheduler jobs/queue/rejections, transport state and queue depths. Heap warnings are transition-only with recovery hysteresis, avoiding periodic log spam. |
@@ -84,7 +86,7 @@ is instance-owned and closed during replacement.
 | Critical | Auth route suppression treated two Velocity routes sharing a backend ID as the same route. Offline-auth players could remain attached to a gameplay backend while its gate stayed locked. | The alias-route mutation was removed. LibreLogin owns auth/gameplay routing. A signed backend ID is cryptographic identity, not route identity; exact physical endpoint aliases require a distinct auth endpoint. |
 | High | A dropped initial or lease-renewal challenge left a backend player locked until timeout. | TensaProxy retries unanswered challenges at a bounded interval no faster than five seconds. Session/challenge identity is retained, while each retry has a fresh message ID, nonce, timestamps and signature. Any valid bound `AUTH_STATE` stops retries; exact replay remains rejected. |
 | High | Blocking I/O and unbounded executors/queues existed in event or command paths. | Core user/storage operations, Discord work, command queue, text reader, HTTP and RCON work use plugin schedulers or bounded executors with explicit rejection. Socket, HTTP, JDA shutdown and executor waits have finite bounds. |
-| Medium | Message formatting and logs could expose injection or sensitive request details. | Visible MiniMessage text and quoted tag payloads use separate escaping. Allowed mentions are disabled. Logs contain transitions, safe failure classes and counters, never message bodies, tokens, webhook URLs, Discord IDs, signatures or keys. |
+| Medium | Minecraft text had separate Message, chat and placeholder parsers, so ordering and escaping differed by route and valid click tags could be diagnosed only at a shallow renderer seam. | `TextPipeline` is now the single component boundary for contextual placeholders, curly/percent interpolation, legacy colors, MiniMessage, operator payloads and safe player-chat insertion. Player input is inserted as a Component, URL actions are explicit, and quoted tag arguments use a separate encoder. Discord Markdown continues to use its destination sanitizer but shares the same raw interpolation engine. Logs contain transitions, safe failure classes and counters, never message bodies, tokens, webhook URLs, Discord IDs, signatures or keys. |
 | Medium | `/tensainfo communications` existed only behind the shorter `/tinfo` primary command. | `/tensainfo` is now primary and `/tinfo` remains its compatibility alias; both are reserved against chat-command collisions. The snapshot contains only state, backend type, queue/counter metrics, latency and a safe failure class. |
 | Medium | NeoForge `sourcesJar` consumed the generated language catalog without a Gradle task dependency, so clean builds could fail based on task order. | `sourcesJar` now explicitly depends on catalog generation, matching `processResources`; the full clean multi-project build is deterministic. |
 
@@ -169,7 +171,8 @@ Final local gates:
 - Focused tests cover schema reset/archive failure/future rejection, H2 schema
   and conflicts, restart persistence, non-import of JSON, role reconciliation,
   strict webhook-only delivery, webhook binding/provisioning/revocation, route
-  formatting and nested type rejection, URL components, scheduler module/runtime
+  formatting and nested type rejection, the unified placeholder/text pipeline,
+  URL components, command scheduler config/random modes/range/reload lifecycle, internal scheduler runtime
   lifecycle, server-icon fallback, resource thresholds, embeds, metrics, five runtime replacements, auth transfer/retry/replay,
   MiniMessage clipboard behavior, and strict TDE1/TDE2 codecs/localization.
 - Artifact hashes are recorded in the implementation handoff.

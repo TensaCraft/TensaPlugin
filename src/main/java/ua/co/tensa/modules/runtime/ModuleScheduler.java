@@ -72,7 +72,8 @@ public final class ModuleScheduler implements AutoCloseable {
             if (!spec.dedupeKey().isBlank()) {
                 dedupeKeys.put(spec.dedupeKey(), spec.key());
             }
-            scheduleTriggerLocked(state, state.spec.initialDelay());
+            scheduleTriggerLocked(state, randomDuration(
+                    state.spec.initialDelay(), state.spec.maximumInitialDelay()));
         }
         return state;
     }
@@ -207,7 +208,8 @@ public final class ModuleScheduler implements AutoCloseable {
             if (state.spec.interval().isZero()) {
                 removeLocked(state);
             } else {
-                scheduleTriggerLocked(state, state.spec.interval());
+                scheduleTriggerLocked(state, randomDuration(
+                        state.spec.interval(), state.spec.maximumInterval()));
             }
         }
         if (deadLetterConsumer != null) {
@@ -236,7 +238,8 @@ public final class ModuleScheduler implements AutoCloseable {
         if (state.spec.interval().isZero()) {
             removeLocked(state);
         } else {
-            scheduleTriggerLocked(state, state.spec.interval());
+            scheduleTriggerLocked(state, randomDuration(
+                    state.spec.interval(), state.spec.maximumInterval()));
         }
     }
 
@@ -268,6 +271,18 @@ public final class ModuleScheduler implements AutoCloseable {
         double factor = 1.0 + java.util.concurrent.ThreadLocalRandom.current()
                 .nextDouble(-spec.jitter(), spec.jitter());
         return Duration.ofMillis(Math.max(0L, Math.round(capped * factor)));
+    }
+
+    private Duration randomDuration(Duration minimum, Duration maximum) {
+        if (minimum.equals(maximum)) {
+            return minimum;
+        }
+        long minimumNanos = minimum.toNanos();
+        long maximumNanos = maximum.toNanos();
+        long exclusiveMaximum = maximumNanos == Long.MAX_VALUE ? Long.MAX_VALUE : maximumNanos + 1L;
+        long selected = java.util.concurrent.ThreadLocalRandom.current()
+                .nextLong(minimumNanos, exclusiveMaximum);
+        return Duration.ofNanos(selected);
     }
 
     private void ensureOpen() {
@@ -328,7 +343,9 @@ public final class ModuleScheduler implements AutoCloseable {
         private String dedupeKey = "";
         private BooleanSupplier condition = () -> true;
         private Duration initialDelay = Duration.ZERO;
+        private Duration maximumInitialDelay = Duration.ZERO;
         private Duration interval = Duration.ZERO;
+        private Duration maximumInterval = Duration.ZERO;
         private Duration timeout;
         private int maxAttempts;
         private Duration backoff;
@@ -347,8 +364,26 @@ public final class ModuleScheduler implements AutoCloseable {
         public Builder scope(String value) { scope = value == null ? "" : value; return this; }
         public Builder dedupe(String value) { dedupeKey = value == null ? "" : value; return this; }
         public Builder condition(BooleanSupplier value) { condition = Objects.requireNonNull(value); return this; }
-        public Builder delay(Duration value) { initialDelay = nonNegative(value, "delay"); return this; }
-        public Builder interval(Duration value) { interval = nonNegative(value, "interval"); return this; }
+        public Builder delay(Duration value) {
+            initialDelay = nonNegative(value, "delay");
+            maximumInitialDelay = initialDelay;
+            return this;
+        }
+        public Builder delay(Duration minimum, Duration maximum) {
+            initialDelay = nonNegative(minimum, "minimum delay");
+            maximumInitialDelay = orderedMaximum(initialDelay, maximum, "maximum delay");
+            return this;
+        }
+        public Builder interval(Duration value) {
+            interval = nonNegative(value, "interval");
+            maximumInterval = interval;
+            return this;
+        }
+        public Builder interval(Duration minimum, Duration maximum) {
+            interval = nonNegative(minimum, "minimum interval");
+            maximumInterval = orderedMaximum(interval, maximum, "maximum interval");
+            return this;
+        }
         public Builder timeout(Duration value) { timeout = positive(value, "timeout"); return this; }
         public Builder attempts(int value) { maxAttempts = value; return this; }
         public Builder backoff(Duration initial, Duration maximum) {
@@ -364,7 +399,8 @@ public final class ModuleScheduler implements AutoCloseable {
                     || backoff != null && maxBackoff.compareTo(backoff) < 0) {
                 throw new IllegalArgumentException("Invalid scheduler job override");
             }
-            return new JobSpec(key, scope, dedupeKey, condition, task, initialDelay, interval,
+            return new JobSpec(key, scope, dedupeKey, condition, task,
+                    initialDelay, maximumInitialDelay, interval, maximumInterval,
                     timeout, maxAttempts, backoff, maxBackoff, jitter, deadLetter);
         }
 
@@ -381,6 +417,14 @@ public final class ModuleScheduler implements AutoCloseable {
             }
             return value;
         }
+
+        private static Duration orderedMaximum(Duration minimum, Duration maximum, String name) {
+            Duration checked = nonNegative(maximum, name);
+            if (checked.compareTo(minimum) < 0) {
+                throw new IllegalArgumentException(name + " must not be less than the minimum");
+            }
+            return checked;
+        }
     }
 
     public record JobSpec(
@@ -390,7 +434,9 @@ public final class ModuleScheduler implements AutoCloseable {
             BooleanSupplier condition,
             CheckedRunnable task,
             Duration initialDelay,
+            Duration maximumInitialDelay,
             Duration interval,
+            Duration maximumInterval,
             Duration timeout,
             int maxAttempts,
             Duration backoff,
@@ -399,7 +445,8 @@ public final class ModuleScheduler implements AutoCloseable {
             Consumer<Throwable> deadLetter
     ) {
         private JobSpec withDefaults(Defaults defaults) {
-            return new JobSpec(key, scope, dedupeKey, condition, task, initialDelay, interval,
+            return new JobSpec(key, scope, dedupeKey, condition, task,
+                    initialDelay, maximumInitialDelay, interval, maximumInterval,
                     timeout == null ? defaults.timeout() : timeout,
                     maxAttempts == 0 ? defaults.maxAttempts() : maxAttempts,
                     backoff == null ? defaults.backoff() : backoff,
