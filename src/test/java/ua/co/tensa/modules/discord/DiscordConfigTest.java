@@ -24,7 +24,7 @@ class DiscordConfigTest {
         DiscordConfig config = new DiscordConfig();
         config.reloadCfg();
 
-        String yaml = Files.readString(tempDir.resolve("discord.yml"), StandardCharsets.UTF_8);
+        String yaml = Files.readString(tempDir.resolve("communications/discord.yml"), StandardCharsets.UTF_8);
         assertThat(yaml).contains(
                 "config_version: 2",
                 "bot:",
@@ -37,12 +37,11 @@ class DiscordConfigTest {
                 "achievements:",
                 "linking:",
                 "proxy_chat:",
+                "webhook:",
                 "embeds:",
-                "delivery:",
-                "limits:",
-                "gateway:",
-                "diagnostics:"
+                "auto_create:"
         );
+        assertThat(yaml).doesNotContain("delivery:", "limits:", "gateway:", "diagnostics:");
         assertThat(yaml).doesNotContain("\nchannel_id:", "\nlinked_role_id:", "\nlink_command_name:", "store_file:");
         assertThat(yaml).contains("https://mc-heads.net/avatar/{player}/128");
         assertThat(yaml).doesNotContain("token:", "chat_url:", "announcements_url:", "TENSA_DISCORD_BOT_TOKEN=");
@@ -100,9 +99,33 @@ class DiscordConfigTest {
     }
 
     @Test
+    void validatesAdvancedSchedulerOverridesWithoutPublishingThemAsDefaults() throws IOException {
+        Tensa.pluginPath = tempDir;
+        DiscordConfig config = new DiscordConfig();
+        config.botToken = "test-token";
+        config.guildId = "12345678901234567";
+        config.channelId = "22345678901234567";
+        config.schedulerMaxJobs = 64;
+        config.schedulerWorkerThreads = 3;
+        config.schedulerJitterPercent = 25;
+
+        assertThat(config.settings(Map.of()).schedulerDefaults())
+                .satisfies(defaults -> {
+                    assertThat(defaults.maxJobs()).isEqualTo(64);
+                    assertThat(defaults.workerThreads()).isEqualTo(3);
+                    assertThat(defaults.jitter()).isEqualTo(0.25);
+                });
+
+        config.reloadCfg();
+        assertThat(Files.readString(tempDir.resolve("communications/discord.yml")))
+                .doesNotContain("scheduler:");
+    }
+
+    @Test
     void rejectsWrongScalarTypesInsteadOfSilentlyUsingDefaults() throws Exception {
         Tensa.pluginPath = tempDir;
-        Files.writeString(tempDir.resolve("discord.yml"), """
+        Files.createDirectories(tempDir.resolve("communications"));
+        Files.writeString(tempDir.resolve("communications/discord.yml"), """
                 config_version: 2
                 bot:
                   enabled: definitely

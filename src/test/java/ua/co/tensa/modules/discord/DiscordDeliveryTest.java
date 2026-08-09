@@ -52,11 +52,30 @@ class DiscordDeliveryTest {
         assertThat(DiscordDelivery.retryable(new IOException("ambiguous"))).isFalse();
     }
 
+    @Test
+    void revokedManagedWebhookIsInvalidatedAndFallsBackOnce() {
+        FakeGateway gateway = new FakeGateway();
+        FailedWebhook webhook = new FailedWebhook(new DiscordWebhookClient.RejectedResponseException(404));
+        DiscordDelivery delivery = new DiscordDelivery(gateway, webhook);
+
+        delivery.send(message()).join();
+
+        assertThat(webhook.invalidations).hasValue(1);
+        assertThat(gateway.botMessages).hasValue(1);
+    }
+
     private static DiscordOutboundMessage message() {
         return DiscordOutboundMessage.chat("webhook", "bot", "player", "");
     }
 
-    private record FailedWebhook(Throwable failure) implements DiscordWebhookDelivery {
+    private static final class FailedWebhook implements DiscordWebhookDelivery {
+        private final Throwable failure;
+        private final AtomicInteger invalidations = new AtomicInteger();
+
+        private FailedWebhook(Throwable failure) {
+            this.failure = failure;
+        }
+
         @Override public boolean configured(DiscordRoute route) { return true; }
         @Override public CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
             return CompletableFuture.failedFuture(failure);
@@ -64,6 +83,7 @@ class DiscordDeliveryTest {
         @Override public CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
             return CompletableFuture.failedFuture(failure);
         }
+        @Override public void invalidate(DiscordRoute route) { invalidations.incrementAndGet(); }
     }
 
     private static final class FakeGateway implements DiscordGateway {

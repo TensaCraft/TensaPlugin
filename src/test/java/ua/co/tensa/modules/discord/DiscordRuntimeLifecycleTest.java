@@ -23,7 +23,7 @@ class DiscordRuntimeLifecycleTest {
     Path tempDir;
 
     @Test
-    void startsRelaysOnlyMinecraftGlobalMessagesAndClosesAllWorkers() throws Exception {
+    void startsRelaysMinecraftLogicalChannelsAndClosesAllWorkers() throws Exception {
         DiscordSettings settings = DiscordTestSettings.create(tempDir, DiscordRuntimeLifecycleTest::enableJoinEmbed);
         DiscordLinkRepository store = new InMemoryDiscordLinkRepository();
         store.initialize();
@@ -46,13 +46,13 @@ class DiscordRuntimeLifecycleTest {
         assertThat(runtime.relayMinecraftChat(message(ProxyChatMessage.Origin.DISCORD, "global")))
                 .isEqualTo(ProxyChatRelay.Result.DISABLED);
         assertThat(runtime.relayMinecraftChat(message(ProxyChatMessage.Origin.MINECRAFT, "staff")))
-                .isEqualTo(ProxyChatRelay.Result.DISABLED);
+                .isEqualTo(ProxyChatRelay.Result.ACCEPTED);
         assertThat(runtime.relayMinecraftChat(message(ProxyChatMessage.Origin.MINECRAFT, "global")))
                 .isEqualTo(ProxyChatRelay.Result.ACCEPTED);
-        awaitCount(gateway.sentMessages, 1);
-        runtime.announceJoin("Pilot", "Aero");
         awaitCount(gateway.sentMessages, 2);
-        assertThat(gateway.routes).containsExactly(DiscordRoute.CHAT, DiscordRoute.EVENTS);
+        runtime.announceJoin("Pilot", "Aero");
+        awaitCount(gateway.sentMessages, 3);
+        assertThat(gateway.routes).containsExactly(DiscordRoute.CHAT, DiscordRoute.CHAT, DiscordRoute.EVENTS);
         assertThat(gateway.embeds)
                 .singleElement()
                 .satisfies(embed -> {

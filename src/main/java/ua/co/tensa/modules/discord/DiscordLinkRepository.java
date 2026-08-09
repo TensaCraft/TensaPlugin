@@ -21,6 +21,10 @@ public interface DiscordLinkRepository {
 
     Collection<LinkedAccount> all();
 
+    default int size() {
+        return all().size();
+    }
+
     LinkOutcome link(LinkedAccount account) throws IOException;
 
     Optional<LinkedAccount> unlink(UUID playerUuid) throws IOException;

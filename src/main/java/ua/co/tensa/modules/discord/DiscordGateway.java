@@ -32,6 +32,14 @@ interface DiscordGateway extends AutoCloseable {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord temporary replies are unavailable"));
     }
 
+    default CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
+            DiscordRoute route,
+            String name,
+            String preferredWebhookId
+    ) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord webhook provisioning is unavailable"));
+    }
+
     boolean isReady();
 
     default boolean isReady(DiscordRoute route) {

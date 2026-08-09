@@ -20,6 +20,8 @@ public class ChatConfig extends ConfigBase {
     private static final String PRIVATE_FROM_FORMAT = "<#55ff55>Ви</#55ff55> <aqua>→</aqua> <hover:show_text:'<gray>Натисніть, щоб продовжити</gray>'><click:suggest_command:'/pm {target} '><#55ff55>{target}</#55ff55></click></hover><aqua>:</aqua> <aqua>{message}</aqua> <gray>[</gray><hover:show_text:'<gray>Скопіювати текст</gray>'><click:copy_to_clipboard:'{message_payload}'>⧉</click></hover><gray>]</gray> <gray>[</gray><hover:show_text:'<gray>Повторно надіслати</gray>'><click:suggest_command:'/pm {target} {message_payload}'>↻</click></hover><gray>]</gray>";
     private static final String LEGACY_PRIVATE_TO_FORMAT = PRIVATE_TO_FORMAT.replace("{message_payload}", "{message}");
     private static final String LEGACY_PRIVATE_FROM_FORMAT = PRIVATE_FROM_FORMAT.replace("{message_payload}", "{message}");
+    private static final String PRIVATE_COMMANDS = "pm,msg,tell,w";
+    private static final String LEGACY_PRIVATE_COMMANDS = "msg,tell,w";
 
     @CfgKey(value = "enabled", comment = "Enable proxy chat interception and chat commands inside Communications")
     public boolean enabled = true;
@@ -59,7 +61,7 @@ public class ChatConfig extends ConfigBase {
     public Map<String, Object> privateChat = defaults(
             entry("enabled", true),
             entry("type", "private"),
-            entry("command", "msg,tell,w"),
+            entry("command", PRIVATE_COMMANDS),
             entry("permission", ""),
             entry("to_format", PRIVATE_TO_FORMAT),
             entry("from_format", PRIVATE_FROM_FORMAT)
@@ -86,7 +88,7 @@ public class ChatConfig extends ConfigBase {
     }
     private static Object[] entry(String k, Object v) { return new Object[]{k, v}; }
 
-    public ChatConfig() { super("chats.yml"); }
+    public ChatConfig() { super(CommunicationsConfigBootstrap.CHATS_FILE); }
 
     @Override
     protected boolean strictTypeValidation() {
@@ -101,6 +103,7 @@ public class ChatConfig extends ConfigBase {
             changed |= migrateKnownDefault(section + ".to_format", LEGACY_PRIVATE_TO_FORMAT, PRIVATE_TO_FORMAT);
             changed |= migrateKnownDefault(section + ".from_format", LEGACY_PRIVATE_FROM_FORMAT, PRIVATE_FROM_FORMAT);
         }
+        changed |= migrateKnownDefault("private.command", LEGACY_PRIVATE_COMMANDS, PRIVATE_COMMANDS);
         if (changed) {
             save();
             super.reloadCfg();

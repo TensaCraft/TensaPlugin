@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import ua.co.tensa.modules.runtime.ModuleScheduler;
 
 final class DiscordRuntime implements AutoCloseable {
     private final DiscordSettings settings;
@@ -26,6 +27,8 @@ final class DiscordRuntime implements AutoCloseable {
     private final DiscordEventRateLimiter eventRateLimiter;
     private final CommunicationsMetrics metrics;
     private final PostLinkEffects postLinkEffects;
+    private final DiscordWebhookProvisioner webhookProvisioner;
+    private final ModuleScheduler scheduler;
     private final BoundedWorkerQueue<DiscordInboundMessage> inboundQueue;
     private final BoundedWorkerQueue<DiscordOutboundMessage> outboundQueue;
     private final AtomicBoolean running = new AtomicBoolean();
@@ -39,7 +42,7 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordLinkService links,
             DiscordDelivery delivery
     ) {
-        this(settings, gateway, links, delivery, (source, author, content) -> { }, new CommunicationsMetrics(), null);
+        this(settings, gateway, links, delivery, (source, author, content) -> { }, new CommunicationsMetrics(), null, null, null);
     }
 
     DiscordRuntime(
@@ -49,7 +52,7 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordDelivery delivery,
             InboundChatPublisher inboundChatPublisher
     ) {
-        this(settings, gateway, links, delivery, inboundChatPublisher, new CommunicationsMetrics(), null);
+        this(settings, gateway, links, delivery, inboundChatPublisher, new CommunicationsMetrics(), null, null, null);
     }
 
     DiscordRuntime(
@@ -61,6 +64,20 @@ final class DiscordRuntime implements AutoCloseable {
             CommunicationsMetrics metrics,
             PostLinkEffects postLinkEffects
     ) {
+        this(settings, gateway, links, delivery, inboundChatPublisher, metrics, postLinkEffects, null, null);
+    }
+
+    DiscordRuntime(
+            DiscordSettings settings,
+            DiscordGateway gateway,
+            DiscordLinkService links,
+            DiscordDelivery delivery,
+            InboundChatPublisher inboundChatPublisher,
+            CommunicationsMetrics metrics,
+            PostLinkEffects postLinkEffects,
+            DiscordWebhookProvisioner webhookProvisioner,
+            ModuleScheduler scheduler
+    ) {
         this.settings = settings;
         this.gateway = gateway;
         this.links = links;
@@ -68,6 +85,8 @@ final class DiscordRuntime implements AutoCloseable {
         this.inboundChatPublisher = inboundChatPublisher;
         this.metrics = java.util.Objects.requireNonNull(metrics, "metrics");
         this.postLinkEffects = postLinkEffects;
+        this.webhookProvisioner = webhookProvisioner;
+        this.scheduler = scheduler;
         this.serverPolicy = new DiscordServerPolicy(settings);
         this.eventRateLimiter = new DiscordEventRateLimiter(settings.eventRatePerMinute());
         this.inboundQueue = new BoundedWorkerQueue<>(
@@ -100,7 +119,12 @@ final class DiscordRuntime implements AutoCloseable {
         inboundQueue.start();
         outboundQueue.start();
         try {
-            gateway.start(this::acceptDiscordMessage, this::completeLinkFromDiscord, links::reconcileRoles);
+            gateway.start(this::acceptDiscordMessage, this::completeLinkFromDiscord, () -> {
+                links.reconcileRoles();
+                if (webhookProvisioner != null) {
+                    webhookProvisioner.refreshAll();
+                }
+            });
         } catch (RuntimeException e) {
             close();
             throw new IllegalStateException("Discord gateway could not be started");
@@ -112,7 +136,6 @@ final class DiscordRuntime implements AutoCloseable {
                 || !settings.minecraftToDiscord()
                 || message == null
                 || message.origin() != ProxyChatMessage.Origin.MINECRAFT
-                || !"global".equalsIgnoreCase(message.channel())
                 || message.playerUuid() == null) {
             return ProxyChatRelay.Result.DISABLED;
         }
@@ -234,6 +257,12 @@ final class DiscordRuntime implements AutoCloseable {
         links.close();
         if (postLinkEffects != null) {
             postLinkEffects.close();
+        }
+        if (webhookProvisioner != null) {
+            webhookProvisioner.close();
+        }
+        if (scheduler != null) {
+            scheduler.cancelScope("discord-announcements");
         }
         gateway.close(Duration.ofSeconds(5));
         synchronized (guardFeedback) {
@@ -369,6 +398,28 @@ final class DiscordRuntime implements AutoCloseable {
     }
 
     private void announce(DiscordEmbedTemplate template, java.util.Map<String, String> values) {
+        if (scheduler == null) {
+            enqueueAnnouncement(template, values);
+            return;
+        }
+        long sequence = announcementSequence.incrementAndGet();
+        try {
+            scheduler.schedule(ModuleScheduler.job("discord-announcement-" + sequence,
+                            () -> enqueueAnnouncement(template, values))
+                    .scope("discord-announcements")
+                    .dedupe("discord-announcement-" + sequence)
+                    .timeout(Duration.ofSeconds(5))
+                    .onDeadLetter(metrics::recordFailure)
+                    .build());
+        } catch (RuntimeException full) {
+            metrics.dropped();
+            metrics.recordFailure(full);
+        }
+    }
+
+    private final AtomicLong announcementSequence = new AtomicLong();
+
+    private void enqueueAnnouncement(DiscordEmbedTemplate template, java.util.Map<String, String> values) {
         if (!template.enabled() || !running.get() || !eventRateLimiter.tryAcquire(Instant.now())) {
             return;
         }
@@ -468,6 +519,24 @@ final class DiscordRuntime implements AutoCloseable {
             if (lastBackpressureWarning.compareAndSet(previous, now)) {
                 Message.warn(warning);
             }
+        }
+    }
+
+    void cleanupExpiredLinkCodes() {
+        links.cleanupExpiredCodes(Instant.now());
+    }
+
+    ResourceState resourceState() {
+        int feedback;
+        synchronized (guardFeedback) {
+            feedback = guardFeedback.size();
+        }
+        return new ResourceState(links.codeCount(), links.linkCount(), feedback);
+    }
+
+    record ResourceState(int linkCodes, int linkIndexEntries, int guardFeedbackEntries) {
+        static ResourceState empty() {
+            return new ResourceState(0, 0, 0);
         }
     }
 

@@ -4,7 +4,6 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
@@ -20,7 +19,9 @@ public class ChatCommands implements SimpleCommand {
     public record ChatRoute(String key, boolean privateRoute, boolean replyRoute) {
     }
 
-    private static final MiniMessage MINI = MiniMessage.miniMessage();
+    record PrivateMessages(ChatMessageRenderer.Result toRecipient, ChatMessageRenderer.Result toSender) {
+    }
+
     private final Map<UUID, UUID> lastPrivateTarget;
     private final Set<String> registeredCommands = new LinkedHashSet<>();
     private final YamlAdapter chatCfg;
@@ -191,18 +192,6 @@ public class ChatCommands implements SimpleCommand {
         return ctx;
     }
 
-    private static void sendMini(CommandSource target, String msg) {
-        target.sendMessage(MINI.deserialize(msg));
-    }
-
-    private static void sendMiniToPlayers(String msg, String perm, boolean seeAll) {
-        for (Player target : Tensa.server.getAllPlayers()) {
-            if (seeAll || perm.isEmpty() || target.hasPermission(perm)) {
-                sendMini(target, msg);
-            }
-        }
-    }
-
     public void register() {
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
@@ -312,30 +301,25 @@ public class ChatCommands implements SimpleCommand {
             return;
         }
 
-        if (console) {
-            sendMini(target, Message.escapeMiniMessage(msg));
-            return;
+        if (!console) {
+            Player player = (Player) sender;
+            lastPrivateTarget.put(player.getUniqueId(), target.getUniqueId());
+            lastPrivateTarget.put(target.getUniqueId(), player.getUniqueId());
         }
 
-        Player player = (Player) sender;
-        lastPrivateTarget.put(player.getUniqueId(), target.getUniqueId());
-        lastPrivateTarget.put(target.getUniqueId(), player.getUniqueId());
-
-        Map<String, String> ctx = privateCtx(
-                server,
-                playerName,
-                target.getUsername(),
-                msg
+        Map<String, String> values = Map.of(
+                "server", server,
+                "from", playerName,
+                "to", target.getUsername(),
+                "target", target.getUsername()
         );
 
-        String toFmt = secString(sec, "to_format", "{from}: {message}");
-        String fromFmt = secString(sec, "from_format", "{to}: {message}");
-
-        String toMsg = Message.renderTemplateString(toFmt, ctx);
-        Message.privateMessage(target, toMsg);
-
-        String fromMsg = Message.renderTemplateString(fromFmt, ctx);
-        Message.privateMessage(sender, fromMsg);
+        PrivateMessages messages = renderPrivateMessages(sec, values, msg);
+        ChatMessageRenderer.Result toMessage = messages.toRecipient();
+        ChatMessageRenderer.Result fromMessage = messages.toSender();
+        proxyChat.recordClickableUrls(toMessage.clickableUrls() + fromMessage.clickableUrls());
+        Message.privateMessage(target, toMessage.component());
+        Message.privateMessage(sender, fromMessage.component());
     }
 
     private void handlePublicChat(
@@ -360,22 +344,21 @@ public class ChatCommands implements SimpleCommand {
         }
 
         if (isConsole(source)) {
-            sendMiniToPlayers(msg, perm, seeAll);
+            ChatMessageRenderer.Result rendered = renderPublicMessage(sec, server, playerName, msg);
+            proxyChat.recordClickableUrls(rendered.clickableUrls());
+            sendMessageToPermittedPlayers(rendered.component(), seeAll ? "" : perm);
             return;
         }
 
-        if ("global".equalsIgnoreCase(sectionKey)) {
-            proxyChat.publishPlayer((Player) source, msg, "global");
+        Player player = (Player) source;
+        if (proxyChat.shouldIntercept(player)) {
+            proxyChat.publishPlayer(player, msg, sectionKey);
             return;
         }
 
-        Map<String, String> ctx = publicCtx(
-                server,
-                playerName,
-                msg
-        );
-        String fmt = secString(sec, "format", "{player}: {message}");
-        String rendered = Message.renderTemplateString(fmt, ctx);
+        ChatMessageRenderer.Result result = renderPublicMessage(sec, server, playerName, msg);
+        proxyChat.recordClickableUrls(result.clickableUrls());
+        net.kyori.adventure.text.Component rendered = result.component();
 
         if (seeAll) {
             sendMessageToPermittedPlayers(rendered, "");
@@ -383,6 +366,30 @@ public class ChatCommands implements SimpleCommand {
         }
 
         sendMessageToPermittedPlayers(rendered, perm);
+    }
+
+    static PrivateMessages renderPrivateMessages(
+            Map<String, Object> section,
+            Map<String, String> values,
+            String message
+    ) {
+        return new PrivateMessages(
+                ChatMessageRenderer.render(secString(section, "to_format", "{from}: {message}"), values, message),
+                ChatMessageRenderer.render(secString(section, "from_format", "{to}: {message}"), values, message)
+        );
+    }
+
+    static ChatMessageRenderer.Result renderPublicMessage(
+            Map<String, Object> section,
+            String server,
+            String player,
+            String message
+    ) {
+        return ChatMessageRenderer.render(
+                secString(section, "format", "{player}: {message}"),
+                Map.of("server", server == null ? "" : server, "player", player == null ? "" : player),
+                message
+        );
     }
 
     @Override
@@ -415,7 +422,7 @@ public class ChatCommands implements SimpleCommand {
         return CompletableFuture.completedFuture(List.of());
     }
 
-    private static void sendMessageToPermittedPlayers(String message, String permission) {
+    private static void sendMessageToPermittedPlayers(net.kyori.adventure.text.Component message, String permission) {
         if (permission == null || permission.isBlank()) {
             Tensa.server.getAllPlayers().forEach(player -> Message.send(player, message));
             Message.send(Tensa.server.getConsoleCommandSource(), message);

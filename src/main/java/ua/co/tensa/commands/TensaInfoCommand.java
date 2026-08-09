@@ -102,6 +102,18 @@ public class TensaInfoCommand implements SimpleCommand {
         Message.privateMessage(source, "  <yellow>reconnects</yellow>=<white>" + snapshot.reconnects()
                 + "</white> <yellow>latency_ms</yellow>=<white>" + snapshot.lastObservedLatencyMillis()
                 + "</white> <yellow>last_failure</yellow>=<white>" + snapshot.lastFailureClass() + "</white>");
+        var resources = snapshot.resources();
+        Message.privateMessage(source, "  <yellow>heap</yellow>=<white>" + resources.heapPercent() + "%"
+                + "</white> <yellow>state</yellow>=<white>chat:" + resources.chatStateEntries()
+                + ",reply:" + resources.privateReplyEntries()
+                + ",codes:" + resources.linkCodes()
+                + ",links:" + resources.linkIndexEntries()
+                + ",guard:" + resources.guardFeedbackEntries() + "</white>");
+        Message.privateMessage(source, "  <yellow>chat_components</yellow>=<white>clickable_urls:"
+                + resources.clickableUrlsRendered() + "</white>");
+        Message.privateMessage(source, "  <yellow>scheduler</yellow>=<white>jobs:" + resources.schedulerJobs()
+                + ",queue:" + resources.schedulerQueueDepth()
+                + ",rejected:" + resources.schedulerRejected() + "</white>");
     }
 
     private static String capitalizeWords(String input) {

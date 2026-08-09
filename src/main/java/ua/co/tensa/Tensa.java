@@ -62,6 +62,8 @@ public class Tensa {
             CommunicationsConfigBootstrap.Result bootstrap = new CommunicationsConfigBootstrap().prepare(pluginPath);
             if (bootstrap.reset()) {
                 Message.info("Archived legacy Communications configuration and created clean config version 2");
+            } else if (bootstrap.relocated()) {
+                Message.info("Relocated Communications configuration into the module directory after verified backup");
             }
         } catch (Exception exception) {
             throw new IllegalStateException("Communications configuration bootstrap failed safely", exception);

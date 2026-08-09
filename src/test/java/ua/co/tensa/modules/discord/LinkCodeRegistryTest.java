@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LinkCodeRegistryTest {
     private static final UUID PLAYER = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -43,5 +44,27 @@ class LinkCodeRegistryTest {
                 .isEqualTo(LinkCodeRegistry.ConsumeStatus.INVALID);
         assertThat(registry.consume("BBBBBB", now.plusSeconds(31)).status())
                 .isEqualTo(LinkCodeRegistry.ConsumeStatus.EXPIRED);
+    }
+
+    @Test
+    void periodicCleanupRemovesExpiredCodesAndCapacityIsBounded() {
+        AtomicInteger sequence = new AtomicInteger();
+        LinkCodeRegistry registry = new LinkCodeRegistry(
+                Duration.ofSeconds(10), 6,
+                () -> String.format("A%05d", sequence.incrementAndGet()),
+                2
+        );
+        Instant now = Instant.parse("2026-08-02T09:00:00Z");
+        registry.issue(PLAYER, "Pilot", now);
+        registry.issue(UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), "Copilot", now);
+
+        assertThat(registry.size()).isEqualTo(2);
+        assertThatThrownBy(() -> registry.issue(
+                UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc"), "Third", now))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("capacity");
+
+        assertThat(registry.purgeExpired(now.plusSeconds(11))).isEqualTo(2);
+        assertThat(registry.size()).isZero();
     }
 }

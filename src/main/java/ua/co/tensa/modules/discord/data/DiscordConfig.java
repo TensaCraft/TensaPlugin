@@ -10,8 +10,39 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class DiscordConfig extends ConfigBase {
+    private static final Set<String> INTERNAL_DEFAULTS = Set.of(
+            "announcements.backend_status.poll_interval_seconds",
+            "announcements.backend_status.ping_timeout_seconds",
+            "announcements.backend_status.debounce_seconds",
+            "announcements.backend_status.confirmations",
+            "announcements.backend_status.max_monitored_servers",
+            "achievements.dedup_seconds",
+            "limits.max_minecraft_message_length",
+            "limits.max_discord_message_length",
+            "limits.queue_capacity",
+            "limits.event_rate_per_minute",
+            "limits.event_state_capacity",
+            "limits.max_links",
+            "delivery.attempts",
+            "delivery.timeout_seconds",
+            "gateway.max_reconnect_delay_seconds",
+            "linking.executor_queue_capacity",
+            "linking.post_link_queue_capacity",
+            "linking.nickname_sync.attempts",
+            "linking.nickname_sync.retry_base_delay_millis",
+            "diagnostics.transition_logs",
+            "scheduler.max_jobs",
+            "scheduler.worker_threads",
+            "scheduler.queue_capacity",
+            "scheduler.timeout_seconds",
+            "scheduler.max_attempts",
+            "scheduler.backoff_millis",
+            "scheduler.max_backoff_seconds",
+            "scheduler.jitter_percent"
+    );
     @CfgKey(value = "config_version", comment = "Communications Discord configuration schema version")
     public int configVersion = CommunicationsConfigBootstrap.CONFIG_VERSION;
 
@@ -20,6 +51,36 @@ public final class DiscordConfig extends ConfigBase {
 
     @CfgKey(value = "webhook.enabled", comment = "Prefer configured webhooks for chat and announcement delivery")
     public boolean webhookEnabled = true;
+
+    @CfgKey(value = "proxy_chat.webhook.auto_create", comment = "Create or recover a managed chat webhook when no valid configured webhook is available")
+    public boolean webhookAutoCreate = false;
+
+    @CfgKey(value = "proxy_chat.webhook.name", comment = "Name of the bot-owned webhook managed in the configured relay channel")
+    public String webhookName = "Tensa Communications";
+
+    @CfgKey(value = "scheduler.max_jobs", comment = "Advanced: maximum lifecycle-owned scheduled jobs")
+    public int schedulerMaxJobs = 512;
+
+    @CfgKey(value = "scheduler.worker_threads", comment = "Advanced: bounded scheduler worker count")
+    public int schedulerWorkerThreads = 2;
+
+    @CfgKey(value = "scheduler.queue_capacity", comment = "Advanced: bounded scheduler worker queue")
+    public int schedulerQueueCapacity = 256;
+
+    @CfgKey(value = "scheduler.timeout_seconds", comment = "Advanced: default job timeout")
+    public int schedulerTimeoutSeconds = 30;
+
+    @CfgKey(value = "scheduler.max_attempts", comment = "Advanced: default maximum job attempts")
+    public int schedulerMaxAttempts = 1;
+
+    @CfgKey(value = "scheduler.backoff_millis", comment = "Advanced: default retry base delay")
+    public int schedulerBackoffMillis = 1_000;
+
+    @CfgKey(value = "scheduler.max_backoff_seconds", comment = "Advanced: default retry delay cap")
+    public int schedulerMaxBackoffSeconds = 30;
+
+    @CfgKey(value = "scheduler.jitter_percent", comment = "Advanced: default retry jitter percent")
+    public int schedulerJitterPercent = 20;
 
     @CfgKey(value = "proxy_chat", comment = "Proxy-wide player chat transport and Discord-to-Minecraft display settings")
     public Map<String, Object> proxyChat = defaults(
@@ -194,7 +255,7 @@ public final class DiscordConfig extends ConfigBase {
     public boolean diagnosticTransitionLogs = true;
 
     public DiscordConfig() {
-        super("discord.yml");
+        super(CommunicationsConfigBootstrap.DISCORD_FILE);
     }
 
     public DiscordSettings settings(Map<String, String> environment) {
@@ -237,7 +298,8 @@ public final class DiscordConfig extends ConfigBase {
     protected boolean shouldWriteDefault(String basePath, Object defaultValue, CommentedConfigurationNode yaml) {
         return !"bot.token".equals(basePath)
                 && !"webhook.chat_url".equals(basePath)
-                && !"webhook.announcements_url".equals(basePath);
+                && !"webhook.announcements_url".equals(basePath)
+                && !INTERNAL_DEFAULTS.contains(basePath);
     }
 
     private static Map<String, Object> defaults(Object... values) {

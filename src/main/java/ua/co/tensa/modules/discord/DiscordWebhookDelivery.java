@@ -8,4 +8,7 @@ interface DiscordWebhookDelivery {
     CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl);
 
     CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed);
+
+    default void invalidate(DiscordRoute route) {
+    }
 }

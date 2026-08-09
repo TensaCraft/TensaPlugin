@@ -14,18 +14,18 @@ final class DiscordDelivery {
     CompletableFuture<Void> send(DiscordOutboundMessage message) {
         if (message.embed() != null) {
             if (message.preferWebhook() && webhook.configured(message.route())) {
-                return fallbackOnRejectedResponse(
+                return fallbackOnRejectedResponse(message.route(),
                         webhook.sendEmbed(message.route(), message.embed()),
                         () -> gateway.sendBotMessage(message.route(), message.botContent())
                 );
             }
-            return fallbackOnRejectedResponse(
+            return fallbackOnRejectedResponse(message.route(),
                     gateway.sendBotEmbed(message.route(), message.embed()),
                     () -> gateway.sendBotMessage(message.route(), message.botContent())
             );
         }
         if (message.preferWebhook() && webhook.configured(message.route())) {
-            return fallbackOnRejectedResponse(
+            return fallbackOnRejectedResponse(message.route(),
                     webhook.send(message.route(), message.webhookContent(), message.webhookUsername(), message.avatarUrl()),
                     () -> gateway.sendBotMessage(message.route(), message.botContent())
             );
@@ -37,7 +37,8 @@ final class DiscordDelivery {
         return !message.preferWebhook() || !webhook.configured(message.route());
     }
 
-    private static CompletableFuture<Void> fallbackOnRejectedResponse(
+    private CompletableFuture<Void> fallbackOnRejectedResponse(
+            DiscordRoute route,
             CompletableFuture<Void> webhookAttempt,
             java.util.function.Supplier<CompletableFuture<Void>> fallback
     ) {
@@ -47,6 +48,10 @@ final class DiscordDelivery {
             }
             Throwable cause = DiscordDiagnostics.unwrap(error);
             if (invalidForm(cause)) {
+                return fallback.get();
+            }
+            if (revokedWebhook(cause)) {
+                webhook.invalidate(route);
                 return fallback.get();
             }
             // Network failures and timeouts are ambiguous: the webhook may
@@ -76,5 +81,10 @@ final class DiscordDelivery {
                 && rejected.invalidForm()
                 || cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response
                 && response.getErrorCode() == 50_035;
+    }
+
+    private static boolean revokedWebhook(Throwable cause) {
+        return cause instanceof DiscordWebhookClient.RejectedResponseException rejected
+                && rejected.revoked();
     }
 }

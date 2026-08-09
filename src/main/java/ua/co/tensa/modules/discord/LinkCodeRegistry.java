@@ -36,23 +36,40 @@ public final class LinkCodeRegistry {
     private final Duration ttl;
     private final int length;
     private final Supplier<String> generator;
+    private final int capacity;
     private final Map<String, PendingLink> byCode = new ConcurrentHashMap<>();
     private final Map<UUID, String> byPlayer = new ConcurrentHashMap<>();
 
     public LinkCodeRegistry(Duration ttl, int length) {
-        this(ttl, length, secureGenerator(length));
+        this(ttl, length, secureGenerator(length), 4_096);
+    }
+
+    public LinkCodeRegistry(Duration ttl, int length, int capacity) {
+        this(ttl, length, secureGenerator(length), capacity);
     }
 
     LinkCodeRegistry(Duration ttl, int length, Supplier<String> generator) {
+        this(ttl, length, generator, 4_096);
+    }
+
+    LinkCodeRegistry(Duration ttl, int length, Supplier<String> generator, int capacity) {
         this.ttl = ttl;
         this.length = length;
         this.generator = generator;
+        if (capacity < 1) {
+            throw new IllegalArgumentException("Link code capacity must be positive");
+        }
+        this.capacity = capacity;
     }
 
     public synchronized String issue(UUID playerUuid, String playerName, Instant now) {
+        purgeExpired(now);
         String previous = byPlayer.remove(playerUuid);
         if (previous != null) {
             byCode.remove(previous);
+        }
+        if (byCode.size() >= capacity) {
+            throw new IllegalStateException("Discord link code capacity is full");
         }
 
         for (int attempt = 0; attempt < 32; attempt++) {
@@ -109,6 +126,22 @@ public final class LinkCodeRegistry {
         if (code != null) {
             byCode.remove(code);
         }
+    }
+
+    public synchronized int purgeExpired(Instant now) {
+        int removed = 0;
+        for (Map.Entry<String, PendingLink> entry : java.util.List.copyOf(byCode.entrySet())) {
+            PendingLink pending = entry.getValue();
+            if (!pending.expiresAt().isAfter(now) && byCode.remove(entry.getKey(), pending)) {
+                byPlayer.remove(pending.playerUuid(), entry.getKey());
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    public int size() {
+        return byCode.size();
     }
 
     private static Supplier<String> secureGenerator(int length) {

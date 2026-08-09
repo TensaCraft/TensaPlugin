@@ -24,6 +24,9 @@ import java.util.List;
  */
 public final class CommunicationsConfigBootstrap {
     public static final int CONFIG_VERSION = 2;
+    public static final String MODULE_DIRECTORY = "communications";
+    public static final String DISCORD_FILE = MODULE_DIRECTORY + "/discord.yml";
+    public static final String CHATS_FILE = MODULE_DIRECTORY + "/chats.yml";
 
     private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter
             .ofPattern("yyyyMMdd-HHmmss'Z'")
@@ -47,21 +50,33 @@ public final class CommunicationsConfigBootstrap {
 
     public Result prepare(Path pluginDirectory) throws IOException {
         Path root = pluginDirectory.toAbsolutePath().normalize();
-        Path discord = root.resolve("discord.yml");
-        Path chats = root.resolve("chats.yml");
+        Path discord = root.resolve(DISCORD_FILE);
+        Path chats = root.resolve(CHATS_FILE);
+        Path rootDiscord = root.resolve("discord.yml");
+        Path rootChats = root.resolve("chats.yml");
         Path links = root.resolve("discord").resolve("links.json");
 
         int discordVersion = version(discord);
         int chatsVersion = version(chats);
+        int rootDiscordVersion = version(rootDiscord);
+        int rootChatsVersion = version(rootChats);
         rejectFutureVersion(discord, discordVersion);
         rejectFutureVersion(chats, chatsVersion);
+        rejectFutureVersion(rootDiscord, rootDiscordVersion);
+        rejectFutureVersion(rootChats, rootChatsVersion);
 
-        boolean reset = existingLegacy(discord, discordVersion) || existingLegacy(chats, chatsVersion);
+        boolean reset = existingLegacy(discord, discordVersion)
+                || existingLegacy(chats, chatsVersion)
+                || !Files.exists(discord) && existingLegacy(rootDiscord, rootDiscordVersion)
+                || !Files.exists(chats) && existingLegacy(rootChats, rootChatsVersion);
+        boolean relocated = Files.exists(rootDiscord) || Files.exists(rootChats);
         List<Path> sources = new ArrayList<>();
         if (reset) {
             addIfPresent(sources, discord);
             addIfPresent(sources, chats);
         }
+        addIfPresent(sources, rootDiscord);
+        addIfPresent(sources, rootChats);
         addIfPresent(sources, links);
 
         List<String> archived = sources.stream()
@@ -76,16 +91,19 @@ public final class CommunicationsConfigBootstrap {
             backupAll(root, backupRoot, sources);
         }
 
-        if (reset || !Files.exists(discord)) {
+        if (reset) {
             writeCleanVersion(discord);
-        }
-        if (reset || !Files.exists(chats)) {
             writeCleanVersion(chats);
+        } else {
+            installOrCreate(rootDiscord, discord);
+            installOrCreate(rootChats, chats);
         }
+        Files.deleteIfExists(rootDiscord);
+        Files.deleteIfExists(rootChats);
         if (Files.exists(links) && backupRoot != null) {
             Files.delete(links);
         }
-        return new Result(reset, archived);
+        return new Result(reset, archived, relocated);
     }
 
     static void copyAndVerify(Path source, Path target) throws IOException {
@@ -162,6 +180,31 @@ public final class CommunicationsConfigBootstrap {
         }
     }
 
+    private static void installOrCreate(Path legacyRoot, Path target) throws IOException {
+        if (Files.exists(target)) {
+            return;
+        }
+        if (!Files.exists(legacyRoot)) {
+            writeCleanVersion(target);
+            return;
+        }
+        Path parent = target.toAbsolutePath().normalize().getParent();
+        Files.createDirectories(parent);
+        Path temp = Files.createTempFile(parent, target.getFileName().toString(), ".move.tmp");
+        try {
+            Files.copy(legacyRoot, temp, StandardCopyOption.REPLACE_EXISTING);
+            if (!MessageDigest.isEqual(sha256(legacyRoot), sha256(temp))) {
+                throw new IOException("Communications config relocation verification failed for "
+                        + legacyRoot.getFileName());
+            }
+            YamlFileIO.load(YamlFileIO.loader(temp));
+            moveIntoPlace(temp, target);
+        } catch (IOException | RuntimeException failure) {
+            Files.deleteIfExists(temp);
+            throw failure;
+        }
+    }
+
     private static void moveIntoPlace(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -188,9 +231,13 @@ public final class CommunicationsConfigBootstrap {
         void copy(Path source, Path target) throws IOException;
     }
 
-    public record Result(boolean reset, List<String> archivedFiles) {
+    public record Result(boolean reset, List<String> archivedFiles, boolean relocated) {
         public Result {
             archivedFiles = List.copyOf(archivedFiles);
+        }
+
+        public Result(boolean reset, List<String> archivedFiles) {
+            this(reset, archivedFiles, false);
         }
     }
 }

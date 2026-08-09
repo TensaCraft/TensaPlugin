@@ -35,10 +35,10 @@ class CommunicationsConfigBootstrapTest {
 
         assertThat(result.reset()).isTrue();
         assertThat(result.archivedFiles()).containsExactlyInAnyOrder("discord.yml", "chats.yml", "discord/links.json");
-        assertThat(load("discord.yml").node("config_version").getInt()).isEqualTo(2);
-        assertThat(load("discord.yml").node("guild_id").virtual()).isTrue();
-        assertThat(load("chats.yml").node("config_version").getInt()).isEqualTo(2);
-        assertThat(load("chats.yml").node("global").virtual()).isTrue();
+        assertThat(load("communications/discord.yml").node("config_version").getInt()).isEqualTo(2);
+        assertThat(load("communications/discord.yml").node("guild_id").virtual()).isTrue();
+        assertThat(load("communications/chats.yml").node("config_version").getInt()).isEqualTo(2);
+        assertThat(load("communications/chats.yml").node("global").virtual()).isTrue();
         assertThat(Files.exists(links)).isFalse();
 
         Path backup = tempDir.resolve("backups").resolve("communications-20260804-123456Z");
@@ -54,13 +54,13 @@ class CommunicationsConfigBootstrapTest {
 
         assertThat(result.reset()).isFalse();
         assertThat(result.archivedFiles()).isEmpty();
-        assertThat(load("discord.yml").node("config_version").getInt()).isEqualTo(2);
-        assertThat(load("chats.yml").node("config_version").getInt()).isEqualTo(2);
+        assertThat(load("communications/discord.yml").node("config_version").getInt()).isEqualTo(2);
+        assertThat(load("communications/chats.yml").node("config_version").getInt()).isEqualTo(2);
         assertThat(Files.exists(tempDir.resolve("backups"))).isFalse();
     }
 
     @Test
-    void leavesSupportedVersionTwoFilesByteForByteUntouched() throws Exception {
+    void relocatesSupportedRootVersionTwoFilesByteForByte() throws Exception {
         String discord = "config_version: 2\nenabled: false\n";
         String chats = "config_version: 2\nenabled: true\n";
         Files.writeString(tempDir.resolve("discord.yml"), discord, StandardCharsets.UTF_8);
@@ -70,8 +70,11 @@ class CommunicationsConfigBootstrapTest {
                 new CommunicationsConfigBootstrap(CLOCK).prepare(tempDir);
 
         assertThat(result.reset()).isFalse();
-        assertThat(Files.readString(tempDir.resolve("discord.yml"))).isEqualTo(discord);
-        assertThat(Files.readString(tempDir.resolve("chats.yml"))).isEqualTo(chats);
+        assertThat(result.relocated()).isTrue();
+        assertThat(Files.readString(tempDir.resolve("communications/discord.yml"))).isEqualTo(discord);
+        assertThat(Files.readString(tempDir.resolve("communications/chats.yml"))).isEqualTo(chats);
+        assertThat(tempDir.resolve("discord.yml")).doesNotExist();
+        assertThat(tempDir.resolve("chats.yml")).doesNotExist();
     }
 
     @Test
@@ -88,6 +91,25 @@ class CommunicationsConfigBootstrapTest {
         assertThat(Files.readString(tempDir.resolve("discord.yml"))).isEqualTo(discord);
         assertThat(Files.readString(tempDir.resolve("chats.yml"))).isEqualTo(chats);
         assertThat(Files.exists(tempDir.resolve("backups"))).isFalse();
+    }
+
+    @Test
+    void existingModuleDirectoryWinsAndObsoleteRootCopyIsArchived() throws Exception {
+        Path directory = tempDir.resolve("communications");
+        Files.createDirectories(directory);
+        String active = "config_version: 2\nenabled: true\n";
+        Files.writeString(directory.resolve("discord.yml"), active, StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("chats.yml"), active, StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("discord.yml"), "config_version: 2\nenabled: false\n", StandardCharsets.UTF_8);
+
+        CommunicationsConfigBootstrap.Result result =
+                new CommunicationsConfigBootstrap(CLOCK).prepare(tempDir);
+
+        assertThat(result.relocated()).isTrue();
+        assertThat(Files.readString(directory.resolve("discord.yml"))).isEqualTo(active);
+        assertThat(tempDir.resolve("discord.yml")).doesNotExist();
+        Path backup = tempDir.resolve("backups/communications-20260804-123456Z/discord.yml");
+        assertThat(backup).exists();
     }
 
     @Test

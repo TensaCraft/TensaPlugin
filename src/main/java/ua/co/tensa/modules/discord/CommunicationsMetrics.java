@@ -14,6 +14,8 @@ public final class CommunicationsMetrics {
     private final LongAdder reconnects = new LongAdder();
     private final AtomicLong lastLatencyNanos = new AtomicLong();
     private final AtomicReference<String> lastFailureClass = new AtomicReference<>("none");
+    private final AtomicReference<CommunicationsResourceSnapshot> resources =
+            new AtomicReference<>(CommunicationsResourceSnapshot.empty());
 
     void dropped() { drops.increment(); }
     void retried() { retries.increment(); }
@@ -36,6 +38,10 @@ public final class CommunicationsMetrics {
         lastFailureClass.set(safe == null ? "unknown" : safe.getClass().getSimpleName());
     }
 
+    void observeResources(CommunicationsResourceSnapshot snapshot) {
+        resources.set(snapshot == null ? CommunicationsResourceSnapshot.empty() : snapshot);
+    }
+
     Snapshot snapshot(
             String runtimeState,
             String jdaState,
@@ -50,7 +56,7 @@ public final class CommunicationsMetrics {
                 runtimeState, jdaState, slashState, storageBackend,
                 inboundQueueDepth, outboundQueueDepth, postLinkQueueDepth,
                 drops.sum(), retries.sum(), deliveryFailures.sum(), blockedUsers.sum(), reconnects + this.reconnects.sum(),
-                Duration.ofNanos(lastLatencyNanos.get()).toMillis(), lastFailureClass.get()
+                Duration.ofNanos(lastLatencyNanos.get()).toMillis(), lastFailureClass.get(), resources.get()
         );
     }
 
@@ -68,6 +74,7 @@ public final class CommunicationsMetrics {
             long blockedUsers,
             long reconnects,
             long lastObservedLatencyMillis,
-            String lastFailureClass
+            String lastFailureClass,
+            CommunicationsResourceSnapshot resources
     ) { }
 }

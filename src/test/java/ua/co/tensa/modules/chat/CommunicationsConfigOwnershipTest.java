@@ -24,8 +24,8 @@ class CommunicationsConfigOwnershipTest {
         DiscordConfig discord = new DiscordConfig();
         discord.reloadCfg();
 
-        String chatsYaml = Files.readString(tempDir.resolve("chats.yml"), StandardCharsets.UTF_8);
-        String discordYaml = Files.readString(tempDir.resolve("discord.yml"), StandardCharsets.UTF_8);
+        String chatsYaml = Files.readString(tempDir.resolve("communications/chats.yml"), StandardCharsets.UTF_8);
+        String discordYaml = Files.readString(tempDir.resolve("communications/discord.yml"), StandardCharsets.UTF_8);
 
         assertThat(chatsYaml).contains("enabled: true", "global:", "staff:", "alert:", "private:", "reply:");
         assertThat(chatsYaml).doesNotContain("proxy:", "proxy_chat:", "discord_format:");
@@ -57,5 +57,21 @@ class CommunicationsConfigOwnershipTest {
                 .contains("<aqua>{message}</aqua>");
         assertThat(reloaded.getString("reply.to_format", ""))
                 .isEqualTo("<gray>custom {message}</gray>");
+    }
+
+    @Test
+    void knownPrivateCommandDefaultAddsPmWithoutOverwritingManualCommands() throws Exception {
+        Tensa.pluginPath = tempDir;
+        ChatConfig initial = new ChatConfig();
+        initial.reloadCfg();
+        initial.getConfig().node("private", "command").set("msg,tell,w");
+        initial.getConfig().node("reply", "command").set("customreply");
+        initial.save();
+
+        ChatConfig reloaded = new ChatConfig();
+        reloaded.reloadCfg();
+
+        assertThat(reloaded.getString("private.command", "")).isEqualTo("pm,msg,tell,w");
+        assertThat(reloaded.getString("reply.command", "")).isEqualTo("customreply");
     }
 }

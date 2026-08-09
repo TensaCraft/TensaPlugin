@@ -85,10 +85,15 @@ class PostLinkEffectsTest {
                 new CommunicationsMetrics()
         )) {
             assertThat(effects.submit(ACCOUNT)).isTrue();
-            assertThat(effects.submit(ACCOUNT)).isTrue();
-            assertThat(effects.submit(ACCOUNT)).isFalse();
+            assertThat(effects.submit(account("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1))).isTrue();
+            assertThat(effects.submit(account("cccccccc-cccc-cccc-cccc-cccccccccccc", 2))).isFalse();
             release.countDown();
         }
+    }
+
+    private static LinkedAccount account(String uuid, long second) {
+        return new LinkedAccount(UUID.fromString(uuid), "Pilot", "12345678901234567",
+                "DiscordPilot", Instant.EPOCH.plusSeconds(second));
     }
 
     private static final class EffectsGateway implements DiscordGateway {

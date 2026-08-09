@@ -13,11 +13,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 final class DiscordWebhookClient implements DiscordWebhookDelivery {
     private final DiscordSettings settings;
     private final HttpClient httpClient;
     private final Gson gson = new Gson();
+    private final ConcurrentMap<DiscordRoute, ManagedDiscordWebhook> managed = new ConcurrentHashMap<>();
+    private final java.util.Set<DiscordRoute> invalidExplicit = ConcurrentHashMap.newKeySet();
+    private final CopyOnWriteArrayList<Consumer<DiscordRoute>> invalidationHandlers = new CopyOnWriteArrayList<>();
 
     DiscordWebhookClient(DiscordSettings settings) {
         this.settings = settings;
@@ -63,6 +70,32 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
         return sendPayload(route, new LinkedHashMap<>(Map.of("embeds", List.of(body))));
     }
 
+    void bind(ManagedDiscordWebhook webhook) {
+        managed.put(webhook.route(), webhook);
+    }
+
+    void onInvalidated(Consumer<DiscordRoute> handler) {
+        invalidationHandlers.add(java.util.Objects.requireNonNull(handler, "handler"));
+    }
+
+    boolean requiresManaged(DiscordRoute route) {
+        return explicitWebhookUri(route).isEmpty() || invalidExplicit.contains(route);
+    }
+
+    Optional<String> managedWebhookId(DiscordRoute route) {
+        ManagedDiscordWebhook webhook = managed.get(route);
+        return webhook == null ? Optional.empty() : Optional.of(webhook.webhookId());
+    }
+
+    @Override
+    public void invalidate(DiscordRoute route) {
+        if (explicitWebhookUri(route).isPresent()) {
+            invalidExplicit.add(route);
+        }
+        managed.remove(route);
+        invalidationHandlers.forEach(handler -> handler.accept(route));
+    }
+
     private CompletableFuture<Void> sendPayload(DiscordRoute route, Map<String, Object> payload) {
         return webhookUri(route)
                 .map(uri -> {
@@ -83,6 +116,17 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
     }
 
     private Optional<URI> webhookUri(DiscordRoute route) {
+        if (!invalidExplicit.contains(route)) {
+            Optional<URI> explicit = explicitWebhookUri(route);
+            if (explicit.isPresent()) {
+                return explicit;
+            }
+        }
+        ManagedDiscordWebhook dynamic = managed.get(route);
+        return dynamic == null ? Optional.empty() : Optional.of(dynamic.uri());
+    }
+
+    private Optional<URI> explicitWebhookUri(DiscordRoute route) {
         return route == DiscordRoute.EVENTS
                 ? settings.credentials().eventsWebhookUri()
                 : settings.credentials().webhookUri();
@@ -102,6 +146,10 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
 
         boolean retryable() {
             return statusCode == 429 || statusCode >= 500;
+        }
+
+        boolean revoked() {
+            return statusCode == 401 || statusCode == 404;
         }
     }
 }

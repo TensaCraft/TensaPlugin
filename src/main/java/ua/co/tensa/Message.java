@@ -95,6 +95,10 @@ public class Message {
         });
     }
 
+    public static void send(CommandSource recipient, Component component) {
+        sendResolved(recipient, component);
+    }
+
     private static void sendResolved(CommandSource recipient, Component component) {
         if (recipient == null || component == null) {
             return;
@@ -170,6 +174,10 @@ public class Message {
     }
 
     public static void privateMessage(CommandSource recipient, String message) {
+        send(recipient, message);
+    }
+
+    public static void privateMessage(CommandSource recipient, Component message) {
         send(recipient, message);
     }
 

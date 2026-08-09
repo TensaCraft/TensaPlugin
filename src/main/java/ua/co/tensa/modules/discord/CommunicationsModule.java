@@ -10,6 +10,7 @@ import ua.co.tensa.config.model.YamlFileIO;
 import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
+import ua.co.tensa.modules.runtime.ModuleScheduler;
 import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.chat.ProxyChatListener;
 import ua.co.tensa.modules.chat.ProxyChatService;
@@ -24,8 +25,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.time.Duration;
 
 /** One lifecycle owner for Minecraft chat, Discord linking, and both relay directions. */
 public final class CommunicationsModule extends AbstractModule {
@@ -65,8 +66,8 @@ public final class CommunicationsModule extends AbstractModule {
     }
 
     private Prepared prepare(boolean allowDegraded) {
-        validateYaml(Tensa.pluginPath.resolve("chats.yml"));
-        validateYaml(Tensa.pluginPath.resolve("discord.yml"));
+        validateYaml(Tensa.pluginPath.resolve(CommunicationsConfigBootstrap.CHATS_FILE));
+        validateYaml(Tensa.pluginPath.resolve(CommunicationsConfigBootstrap.DISCORD_FILE));
 
         ChatConfig chatConfig = new ChatConfig();
         chatConfig.reloadCfg();
@@ -95,7 +96,14 @@ public final class CommunicationsModule extends AbstractModule {
                 }
         );
         ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat, privateReplyTargets);
-        ActiveRuntime active = new ActiveRuntime(proxyChat, chatCommands);
+        ActiveRuntime active = new ActiveRuntime(proxyChat, chatCommands, new ModuleScheduler(
+                "tensa-communications",
+                plan.discordSettings() == null
+                        ? new ModuleScheduler.Defaults(
+                                512, 2, 256, Duration.ofSeconds(30), 1,
+                                Duration.ofSeconds(1), Duration.ofSeconds(30), 0.2)
+                        : plan.discordSettings().schedulerDefaults()
+        ));
 
         try {
             if (plan.discordSettings() != null) {
@@ -115,6 +123,15 @@ public final class CommunicationsModule extends AbstractModule {
                 registerListener(new ProxyChatListener(proxyChat, chatCommands));
                 chatCommands.register();
             }
+            active.scheduler.schedule(ModuleScheduler.job("communications-resource-telemetry", () -> updateResources(active, true))
+                    .scope("communications-telemetry")
+                    .dedupe("communications-resource-telemetry")
+                    .delay(Duration.ofMinutes(1))
+                    .interval(Duration.ofMinutes(1))
+                    .timeout(Duration.ofSeconds(5))
+                    .onDeadLetter(metrics::recordFailure)
+                    .build());
+            updateResources(active, false);
             return active;
         } catch (RuntimeException failure) {
             deactivate(active);
@@ -134,7 +151,7 @@ public final class CommunicationsModule extends AbstractModule {
             throw new IllegalStateException("Discord link repository could not be initialized safely", exception);
         }
 
-        JdaDiscordGateway gateway = new JdaDiscordGateway(settings);
+        JdaDiscordGateway gateway = new JdaDiscordGateway(settings, active.scheduler);
         PostLinkEffects postLinkEffects = new PostLinkEffects(
                 gateway,
                 account -> announceLink(settings, account),
@@ -142,23 +159,35 @@ public final class CommunicationsModule extends AbstractModule {
                 settings.postLinkQueueCapacity(),
                 settings.nicknameSyncAttempts(),
                 settings.nicknameRetryBaseDelay(),
-                metrics
+                metrics,
+                active.scheduler
         );
         DiscordLinkService linkService = new DiscordLinkService(
                 store,
-                new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()),
+                new LinkCodeRegistry(
+                        settings.linkCodeTtl(), settings.linkCodeLength(), settings.eventStateCapacity()),
                 gateway,
                 settings,
                 postLinkEffects::submit
         );
+        DiscordWebhookClient webhookClient = new DiscordWebhookClient(settings);
+        DiscordWebhookProvisioner webhookProvisioner = null;
+        if (settings.webhookAutoCreate()) {
+            DiscordWebhookBindingRepository webhookBindings = new DiscordWebhookBindingRepository(Tensa.storage);
+            webhookBindings.initialize();
+            webhookProvisioner = new DiscordWebhookProvisioner(
+                    settings, gateway, webhookClient, webhookBindings, active.scheduler, metrics);
+        }
         DiscordRuntime discord = new DiscordRuntime(
                 settings,
                 gateway,
                 linkService,
-                new DiscordDelivery(gateway, new DiscordWebhookClient(settings)),
+                new DiscordDelivery(gateway, webhookClient),
                 active.proxyChat()::publishExternal,
                 metrics,
-                postLinkEffects
+                postLinkEffects,
+                webhookProvisioner,
+                active.scheduler
         );
         active.discordRuntime = discord;
         discordReference.set(discord);
@@ -176,12 +205,14 @@ public final class CommunicationsModule extends AbstractModule {
 
         if (settings.backendStatusMessages()) {
             active.statusMonitor = new VelocityBackendStatusMonitor(Tensa.server, settings, discord);
-            scheduleRepeating(
-                    active.statusMonitor::poll,
-                    1,
-                    settings.backendStatusPollInterval().toSeconds(),
-                    TimeUnit.SECONDS
-            );
+            active.scheduler.schedule(ModuleScheduler.job("communications-backend-status", active.statusMonitor::poll)
+                    .scope("communications-status")
+                    .dedupe("communications-backend-status")
+                    .delay(Duration.ofSeconds(1))
+                    .interval(settings.backendStatusPollInterval())
+                    .timeout(settings.backendStatusPingTimeout().plusSeconds(1))
+                    .onDeadLetter(metrics::recordFailure)
+                    .build());
         }
         if (settings.advancementMessages()) {
             VelocityDiscordBackendBridge bridge = new VelocityDiscordBackendBridge(settings, discord);
@@ -192,6 +223,14 @@ public final class CommunicationsModule extends AbstractModule {
         }
         registerCommand("discord", "", new DiscordCommand(discord));
         active.discordCommandRegistered = true;
+        active.scheduler.schedule(ModuleScheduler.job("communications-link-code-cleanup", discord::cleanupExpiredLinkCodes)
+                .scope("communications-linking")
+                .dedupe("communications-link-code-cleanup")
+                .delay(Duration.ofMinutes(1))
+                .interval(Duration.ofMinutes(1))
+                .timeout(Duration.ofSeconds(5))
+                .onDeadLetter(metrics::recordFailure)
+                .build());
     }
 
     private void deactivate(ActiveRuntime active) {
@@ -225,6 +264,7 @@ public final class CommunicationsModule extends AbstractModule {
             active.discordRuntime.close();
             active.discordRuntime = null;
         }
+        active.scheduler.close();
         active.proxyChat().clear();
     }
 
@@ -234,7 +274,7 @@ public final class CommunicationsModule extends AbstractModule {
             AtomicReference<DiscordRuntime> discordReference
     ) {
         long interval = Math.max(5L, Math.min(30L, settings.reconnectMaxDelaySeconds()));
-        active.discordReconnectTask = scheduleRepeating(() -> {
+        active.discordReconnectTask = active.scheduler.schedule(ModuleScheduler.job("communications-discord-recovery", () -> {
             synchronized (active) {
                 if (active.closed || active.discordRuntime != null) {
                     return;
@@ -242,14 +282,22 @@ public final class CommunicationsModule extends AbstractModule {
                 metrics.reconnectAttempted();
                 try {
                     startDiscord(active, settings, discordReference);
-                    cancelTask(active.discordReconnectTask);
+                    active.discordReconnectTask.cancel();
                     active.discordReconnectTask = null;
                     Message.info("communications transition=recovered component=discord");
                 } catch (RuntimeException failure) {
                     metrics.recordFailure(failure);
                 }
             }
-        }, interval, interval, TimeUnit.SECONDS);
+        })
+                .scope("communications-recovery")
+                .dedupe("communications-discord-recovery")
+                .delay(Duration.ofSeconds(interval))
+                .interval(Duration.ofSeconds(interval))
+                .attempts(1)
+                .timeout(Duration.ofSeconds(Math.max(10L, interval)))
+                .onDeadLetter(metrics::recordFailure)
+                .build());
     }
 
     private static void validateYaml(Path path) {
@@ -318,6 +366,9 @@ public final class CommunicationsModule extends AbstractModule {
 
     public static CommunicationsMetrics.Snapshot diagnosticsSnapshot() {
         ActiveRuntime active = INSTANCE.runtimeSlot.runtime();
+        if (active != null) {
+            INSTANCE.updateResources(active, false);
+        }
         DiscordRuntime discord = active == null ? null : active.discordRuntime;
         String backend = Tensa.storage == null ? "unavailable" : Tensa.storage.backendType();
         if (discord == null) {
@@ -330,6 +381,32 @@ public final class CommunicationsModule extends AbstractModule {
             );
         }
         return discord.diagnostics(backend);
+    }
+
+    private void updateResources(ActiveRuntime active, boolean logTransition) {
+        if (active == null || active.closed) {
+            return;
+        }
+        DiscordRuntime discord = active.discordRuntime;
+        CommunicationsResourceSnapshot snapshot = active.resourceMonitor.capture(
+                active.proxyChat().stateSize(),
+                privateReplyTargets.size(),
+                active.proxyChat().clickableUrlsRendered(),
+                discord == null ? DiscordRuntime.ResourceState.empty() : discord.resourceState(),
+                active.scheduler.snapshot()
+        );
+        metrics.observeResources(snapshot);
+        if (!logTransition) {
+            return;
+        }
+        CommunicationsResourceMonitor.Transition transition = active.resourceMonitor.evaluate(snapshot);
+        if (transition == CommunicationsResourceMonitor.Transition.HIGH) {
+            Message.warn("communications component=resources transition=heap-pressure heap_percent="
+                    + snapshot.heapPercent() + " scheduler_queue=" + snapshot.schedulerQueueDepth());
+        } else if (transition == CommunicationsResourceMonitor.Transition.RECOVERED) {
+            Message.info("communications component=resources transition=recovered heap_percent="
+                    + snapshot.heapPercent());
+        }
     }
 
     private static void announceLink(DiscordSettings settings, LinkedAccount account) {
@@ -400,12 +477,18 @@ public final class CommunicationsModule extends AbstractModule {
         private VelocityDiscordBackendBridge backendEventBridge;
         private ChannelIdentifier backendEventChannel;
         private boolean discordCommandRegistered;
-        private com.velocitypowered.api.scheduler.ScheduledTask discordReconnectTask;
+        private ModuleScheduler.Handle discordReconnectTask;
+        private final ModuleScheduler scheduler;
+        private final CommunicationsResourceMonitor resourceMonitor;
         private boolean closed;
 
-        private ActiveRuntime(ProxyChatService proxyChat, ChatCommands chatCommands) {
+        private ActiveRuntime(ProxyChatService proxyChat, ChatCommands chatCommands, ModuleScheduler scheduler) {
             this.proxyChat = proxyChat;
             this.chatCommands = chatCommands;
+            this.scheduler = scheduler;
+            Runtime runtime = Runtime.getRuntime();
+            this.resourceMonitor = new CommunicationsResourceMonitor(
+                    runtime.totalMemory() - runtime.freeMemory(), 85, 75);
         }
 
         ProxyChatService proxyChat() {

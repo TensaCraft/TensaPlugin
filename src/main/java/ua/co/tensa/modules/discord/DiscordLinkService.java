@@ -107,6 +107,18 @@ final class DiscordLinkService implements AutoCloseable {
         return discordUserId != null && store.findByDiscord(discordUserId).isPresent();
     }
 
+    int codeCount() {
+        return codes.size();
+    }
+
+    int linkCount() {
+        return store.size();
+    }
+
+    int cleanupExpiredCodes(Instant now) {
+        return codes.purgeExpired(now);
+    }
+
     void reconcileRoles() {
         if (closed.get() || roleReconciliation.get() != null) {
             return;

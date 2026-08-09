@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import ua.co.tensa.modules.runtime.ModuleScheduler;
 
 public final class DiscordSettings {
     public static final String TOKEN_ENV = "TENSA_DISCORD_BOT_TOKEN";
@@ -32,6 +33,8 @@ public final class DiscordSettings {
     private final String eventsChannelId;
     private final String linkedRoleId;
     private final String linkCommandName;
+    private final boolean webhookAutoCreate;
+    private final String webhookName;
     private final boolean minecraftToDiscord;
     private final boolean discordToMinecraft;
     private final boolean joinMessages;
@@ -86,6 +89,7 @@ public final class DiscordSettings {
     private final int maxMonitoredServers;
     private final String backendEventChannel;
     private final Duration advancementDedupWindow;
+    private final ModuleScheduler.Defaults schedulerDefaults;
 
     private DiscordSettings(DiscordConfig config, Map<String, String> environment) {
         String token = environmentOverride(environment, TOKEN_ENV, config.botToken);
@@ -106,6 +110,8 @@ public final class DiscordSettings {
         this.eventsChannelId = optionalSnowflake(config.eventsChannelId, "discord_ids.announcements_channel_id");
         this.linkedRoleId = optionalSnowflake(config.linkedRoleId, "discord_ids.linked_role_id");
         this.linkCommandName = validateCommandName(config.linkCommandName);
+        this.webhookAutoCreate = config.webhookEnabled && config.webhookAutoCreate;
+        this.webhookName = validateWebhookName(config.webhookName);
         this.minecraftToDiscord = config.minecraftToDiscord;
         this.discordToMinecraft = config.discordToMinecraft;
         this.joinEmbed = embed(config.embeds, "join", Set.of("player", "server"));
@@ -170,6 +176,23 @@ public final class DiscordSettings {
         this.backendEventChannel = validateBackendChannel(config.backendEventChannel);
         this.advancementDedupWindow = Duration.ofSeconds(bounded(
                 config.advancementDedupSeconds, 1, 300, "achievements.dedup_seconds"));
+        int schedulerBackoffMillis = bounded(config.schedulerBackoffMillis, 0, 60_000, "scheduler.backoff_millis");
+        int schedulerMaxBackoffSeconds = bounded(
+                config.schedulerMaxBackoffSeconds, 1, 900, "scheduler.max_backoff_seconds");
+        if (Duration.ofSeconds(schedulerMaxBackoffSeconds).toMillis() < schedulerBackoffMillis) {
+            throw new DiscordConfigurationException(
+                    "discord.yml scheduler.max_backoff_seconds must not be lower than scheduler.backoff_millis");
+        }
+        this.schedulerDefaults = new ModuleScheduler.Defaults(
+                bounded(config.schedulerMaxJobs, 16, 16_384, "scheduler.max_jobs"),
+                bounded(config.schedulerWorkerThreads, 1, 8, "scheduler.worker_threads"),
+                bounded(config.schedulerQueueCapacity, 8, 4_096, "scheduler.queue_capacity"),
+                Duration.ofSeconds(bounded(config.schedulerTimeoutSeconds, 1, 300, "scheduler.timeout_seconds")),
+                bounded(config.schedulerMaxAttempts, 1, 10, "scheduler.max_attempts"),
+                Duration.ofMillis(schedulerBackoffMillis),
+                Duration.ofSeconds(schedulerMaxBackoffSeconds),
+                bounded(config.schedulerJitterPercent, 0, 100, "scheduler.jitter_percent") / 100.0
+        );
     }
 
     public static DiscordSettings from(DiscordConfig config, Map<String, String> environment) {
@@ -185,6 +208,8 @@ public final class DiscordSettings {
     public String eventsChannelId() { return eventsChannelId.isBlank() ? channelId : eventsChannelId; }
     public String linkedRoleId() { return linkedRoleId; }
     public String linkCommandName() { return linkCommandName; }
+    public boolean webhookAutoCreate() { return webhookAutoCreate; }
+    public String webhookName() { return webhookName; }
     public boolean minecraftToDiscord() { return minecraftToDiscord; }
     public boolean discordToMinecraft() { return discordToMinecraft; }
     public boolean joinMessages() { return joinMessages; }
@@ -237,6 +262,7 @@ public final class DiscordSettings {
     public int maxMonitoredServers() { return maxMonitoredServers; }
     public String backendEventChannel() { return backendEventChannel; }
     public Duration advancementDedupWindow() { return advancementDedupWindow; }
+    public ModuleScheduler.Defaults schedulerDefaults() { return schedulerDefaults; }
 
     public boolean linkAnnouncementAllows(String serverName) {
         String normalized = trim(serverName).toLowerCase(Locale.ROOT);
@@ -308,6 +334,14 @@ public final class DiscordSettings {
             throw new DiscordConfigurationException("discord.yml linking.command_name must match [a-z0-9_-]{1,32}");
         }
         return command;
+    }
+
+    private static String validateWebhookName(String value) {
+        String name = DiscordSanitizer.normalize(value).trim();
+        if (name.length() < 2 || name.length() > 80) {
+            throw new DiscordConfigurationException("discord.yml proxy_chat.webhook.name must contain 2-80 characters");
+        }
+        return name;
     }
 
     private static String validateAvatarTemplate(String value) {

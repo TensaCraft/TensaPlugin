@@ -7,6 +7,8 @@ import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.entities.Webhook;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
@@ -20,15 +22,15 @@ import net.dv8tion.jda.api.requests.GatewayIntent;
 import ua.co.tensa.Message;
 
 import java.time.Duration;
+import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import ua.co.tensa.modules.runtime.ModuleScheduler;
 
 final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway {
     private final DiscordSettings settings;
@@ -41,7 +43,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private final AtomicInteger pendingReplyDeletions = new AtomicInteger();
     private final AtomicReference<String> runtimeState = new AtomicReference<>("new");
     private final AtomicReference<String> slashState = new AtomicReference<>("unavailable");
-    private final ScheduledThreadPoolExecutor replyDeletionScheduler;
+    private final ModuleScheduler scheduler;
+    private final boolean ownsScheduler;
     private volatile JDA jda;
     private volatile Guild guild;
     private volatile TextChannel channel;
@@ -52,13 +55,21 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private volatile Runnable readyHandler = () -> { };
 
     JdaDiscordGateway(DiscordSettings settings) {
+        this(settings, new ModuleScheduler("tensa-discord", new ModuleScheduler.Defaults(
+                settings.eventStateCapacity(), 1, settings.queueCapacity(), Duration.ofSeconds(10), 1,
+                Duration.ofMillis(250), Duration.ofSeconds(5), 0.1
+        )), true);
+    }
+
+    JdaDiscordGateway(DiscordSettings settings, ModuleScheduler scheduler) {
+        this(settings, scheduler, false);
+    }
+
+    private JdaDiscordGateway(DiscordSettings settings, ModuleScheduler scheduler, boolean ownsScheduler) {
         this.settings = settings;
         this.slashCommandRegistrar = new DiscordSlashCommandRegistrar(settings.linkCommandName());
-        this.replyDeletionScheduler = new ScheduledThreadPoolExecutor(
-                1,
-                runnable -> Thread.ofPlatform().name("tensa-discord-reply-delete").daemon(true).unstarted(runnable)
-        );
-        this.replyDeletionScheduler.setRemoveOnCancelPolicy(true);
+        this.scheduler = java.util.Objects.requireNonNull(scheduler, "scheduler");
+        this.ownsScheduler = ownsScheduler;
     }
 
     @Override
@@ -300,15 +311,54 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                 reply.delete().queue(null, ignored -> { });
                 return;
             }
-            replyDeletionScheduler.schedule(() -> {
-                try {
-                    if (acceptingEvents.get()) {
-                        reply.delete().queue(null, ignored -> { });
-                    }
-                } finally {
-                    pendingReplyDeletions.decrementAndGet();
-                }
-            }, Math.max(1L, deleteAfter.toMillis()), TimeUnit.MILLISECONDS);
+            try {
+                scheduler.schedule(ModuleScheduler.job("discord-reply-delete-" + reply.getId(), () -> {
+                            try {
+                                if (acceptingEvents.get()) {
+                                    reply.delete().queue(null, ignored -> { });
+                                }
+                            } finally {
+                                pendingReplyDeletions.decrementAndGet();
+                            }
+                        })
+                        .scope("discord-reply-delete")
+                        .dedupe("discord-reply-delete-" + reply.getId())
+                        .delay(deleteAfter.isNegative() || deleteAfter.isZero() ? Duration.ofMillis(1) : deleteAfter)
+                        .build());
+            } catch (RuntimeException schedulerBusy) {
+                pendingReplyDeletions.decrementAndGet();
+                reply.delete().queue(null, ignored -> { });
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
+            DiscordRoute route,
+            String name,
+            String preferredWebhookId
+    ) {
+        TextChannel target = route == DiscordRoute.EVENTS ? eventsChannel : channel;
+        Guild configuredGuild = guild;
+        if (!ready.get() || target == null || configuredGuild == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Discord webhook channel is not ready"));
+        }
+        if (!configuredGuild.getSelfMember().hasPermission(target, Permission.MANAGE_WEBHOOKS)) {
+            return CompletableFuture.failedFuture(new SecurityException(
+                    "Discord bot lacks Manage Webhooks permission in the configured channel"));
+        }
+        return target.retrieveWebhooks().submit().thenCompose(webhooks -> {
+            Webhook existing = webhooks.stream()
+                    .filter(webhook -> ownedByCurrentBot(webhook, configuredGuild))
+                    .filter(webhook -> webhook.getToken() != null && !webhook.getToken().isBlank())
+                    .filter(webhook -> !preferredWebhookId.isBlank() && webhook.getId().equals(preferredWebhookId)
+                            || webhook.getName().equals(name))
+                    .findFirst()
+                    .orElse(null);
+            if (existing != null) {
+                return CompletableFuture.completedFuture(managedWebhook(route, existing));
+            }
+            return target.createWebhook(name).submit().thenApply(webhook -> managedWebhook(route, webhook));
         });
     }
 
@@ -358,7 +408,10 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         inboundHandler = ignored -> { };
         readyHandler = () -> { };
-        replyDeletionScheduler.shutdownNow();
+        scheduler.cancelScope("discord-reply-delete");
+        if (ownsScheduler) {
+            scheduler.close();
+        }
         DiscordBotLease lease = botLease;
         botLease = null;
         try {
@@ -395,6 +448,19 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                 .thenCompose(member -> assign
                         ? configuredGuild.addRoleToMember(member, role).submit()
                         : configuredGuild.removeRoleFromMember(member, role).submit());
+    }
+
+    private boolean ownedByCurrentBot(Webhook webhook, Guild configuredGuild) {
+        try {
+            return webhook.getOwnerAsUser() != null
+                    && webhook.getOwnerAsUser().getId().equals(configuredGuild.getJDA().getSelfUser().getId());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static ManagedDiscordWebhook managedWebhook(DiscordRoute route, Webhook webhook) {
+        return ManagedDiscordWebhook.from(route, webhook.getId(), URI.create(webhook.getUrl()));
     }
 
     private boolean isCurrentConnection(JDA candidate) {

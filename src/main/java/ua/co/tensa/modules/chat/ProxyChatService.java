@@ -13,8 +13,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 
 public final class ProxyChatService {
+    public record ChannelDefinition(
+            String key,
+            boolean enabled,
+            String permission,
+            boolean seeAll,
+            boolean relayToDiscord,
+            String format
+    ) {
+    }
+
     private record PlayerState(long sentAt, long duplicateAt, String duplicateKey) {
     }
 
@@ -27,7 +38,6 @@ public final class ProxyChatService {
             long cooldownMillis,
             long duplicateWindowMillis,
             int maxRepeatedCharacters,
-            String format,
             String discordFormat,
             String cooldownMessage,
             String duplicateMessage,
@@ -40,6 +50,7 @@ public final class ProxyChatService {
     private final YamlAdapter discordConfig;
     private final ProxyChatRelay outbound;
     private final ConcurrentHashMap<UUID, PlayerState> playerStates = new ConcurrentHashMap<>();
+    private final LongAdder clickableUrlsRendered = new LongAdder();
     private volatile Settings settings;
 
     public ProxyChatService(
@@ -100,7 +111,6 @@ public final class ProxyChatService {
                 Math.max(0L, config.getLong("proxy_chat.cooldown_millis", 1500L)),
                 Math.max(0L, config.getLong("proxy_chat.duplicate_window_millis", 15000L)),
                 Math.max(1, config.getInt("proxy_chat.max_repeated_characters", 4)),
-                config.getString("proxy_chat.format", "<white>{player}: {message}</white>"),
                 config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>"),
                 config.getString("proxy_chat.cooldown_message", "<yellow>Зачекайте перед наступним повідомленням.</yellow>"),
                 config.getString("proxy_chat.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>"),
@@ -141,6 +151,10 @@ public final class ProxyChatService {
         }
 
         Settings current = settings;
+        ChannelDefinition definition = resolveChannel(channel);
+        if (!definition.enabled()) {
+            return false;
+        }
         String message = ProxyChatText.sanitize(
                 rawMessage,
                 current.maxLength(),
@@ -174,14 +188,16 @@ public final class ProxyChatService {
                 player.getUsername(),
                 message
         );
-        broadcast(payload, current.format(), current);
-        try {
-            ProxyChatRelay.Result relayResult = outbound.publish(payload);
-            if (relayResult == ProxyChatRelay.Result.LINK_REQUIRED) {
-                Message.privateMessage(player, current.linkRequiredMessage());
+        broadcast(payload, definition, current);
+        if (definition.relayToDiscord()) {
+            try {
+                ProxyChatRelay.Result relayResult = outbound.publish(payload);
+                if (relayResult == ProxyChatRelay.Result.LINK_REQUIRED) {
+                    Message.privateMessage(player, current.linkRequiredMessage());
+                }
+            } catch (RuntimeException exception) {
+                Message.warn("Chat relay rejected a message: " + exception.getClass().getSimpleName());
             }
-        } catch (RuntimeException exception) {
-            Message.warn("Chat relay rejected a message: " + exception.getMessage());
         }
         return true;
     }
@@ -206,7 +222,8 @@ public final class ProxyChatService {
                 player,
                 message
         );
-        broadcast(payload, current.discordFormat(), current);
+        broadcast(payload, new ChannelDefinition(
+                "global", true, "", true, false, current.discordFormat()), current);
     }
 
     public void clear() {
@@ -219,21 +236,70 @@ public final class ProxyChatService {
         }
     }
 
-    private void broadcast(ProxyChatMessage payload, String format, Settings current) {
+    public int stateSize() {
+        return playerStates.size();
+    }
+
+    public void recordClickableUrls(int count) {
+        if (count > 0) {
+            clickableUrlsRendered.add(count);
+        }
+    }
+
+    public long clickableUrlsRendered() {
+        return clickableUrlsRendered.sum();
+    }
+
+    public ChannelDefinition resolveChannel(String channel) {
+        String key = channel == null || channel.isBlank()
+                ? "global"
+                : channel.trim().toLowerCase(java.util.Locale.ROOT);
+        Map<String, Object> section = chatConfig.getSection(key);
+        if (section == null) {
+            section = Map.of();
+        }
+        return new ChannelDefinition(
+                key,
+                booleanValue(section.get("enabled"), true),
+                stringValue(section.get("permission"), ""),
+                booleanValue(section.get("see_all"), false),
+                booleanValue(section.get("relay_to_discord"), false),
+                stringValue(section.get("format"), "<white>{player}: {message}</white>")
+        );
+    }
+
+    private void broadcast(ProxyChatMessage payload, ChannelDefinition definition, Settings current) {
         Map<String, String> values = new HashMap<>();
-        values.put("server", Message.escapeMiniMessage(payload.server()));
-        values.put("player", Message.escapeMiniMessage(payload.playerName()));
-        values.put("message", Message.escapeMiniMessage(payload.message()));
-        String rendered = Message.renderTemplateString(format, values);
+        values.put("server", payload.server());
+        values.put("player", payload.playerName());
+        ChatMessageRenderer.Result rendered = ChatMessageRenderer.render(
+                definition.format(), values, payload.message());
+        recordClickableUrls(rendered.clickableUrls());
 
         for (Player player : Tensa.server.getAllPlayers()) {
             String playerServer = serverName(player).toLowerCase(java.util.Locale.ROOT);
             if (current.excludedServers().contains(playerServer)) {
                 continue;
             }
-            Message.send(player, rendered);
+            if (!definition.seeAll()
+                    && !definition.permission().isBlank()
+                    && !player.hasPermission(definition.permission())) {
+                continue;
+            }
+            Message.send(player, rendered.component());
         }
-        Message.send(Tensa.server.getConsoleCommandSource(), rendered);
+        Message.send(Tensa.server.getConsoleCommandSource(), rendered.component());
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        return value == null ? fallback : String.valueOf(value);
+    }
+
+    private static boolean booleanValue(Object value, boolean fallback) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value instanceof String text ? Boolean.parseBoolean(text) : fallback;
     }
 
     private static String serverName(CommandSource source) {
