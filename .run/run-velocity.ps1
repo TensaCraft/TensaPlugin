@@ -2,22 +2,46 @@ param(
     [switch]$SkipBuild,
     [switch]$WithTests,
     [string]$VelocityVersion,
-    [int]$Port = 25577
+    [int]$Port = 25577,
+    [ValidatePattern('^velocity(?:-[a-z0-9-]+)?$')]
+    [string]$RuntimeName = "velocity",
+    [string]$JavaHome,
+    [switch]$ResetRuntime,
+    [switch]$PrepareOnly
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $projectRoot = Split-Path $PSScriptRoot -Parent
-$runtimeRoot = Join-Path $projectRoot ".run\velocity"
+$runRoot = Join-Path $projectRoot ".run"
+$runtimeRoot = Join-Path $runRoot $RuntimeName
 $pluginsDir = Join-Path $runtimeRoot "plugins"
 $resolvedJava = Get-Command java.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
-$javaCmd = if ($env:JAVA_HOME) {
+$javaCmd = if ($JavaHome) {
+    Join-Path $JavaHome "bin\java.exe"
+} elseif ($env:JAVA_HOME) {
     Join-Path $env:JAVA_HOME "bin\java.exe"
 } elseif ($resolvedJava) {
     $resolvedJava
 } else {
     "java"
+}
+
+if ($JavaHome) {
+    $env:JAVA_HOME = [System.IO.Path]::GetFullPath($JavaHome)
+}
+
+function Reset-IsolatedRuntime {
+    $resolvedRunRoot = [System.IO.Path]::GetFullPath($runRoot).TrimEnd('\')
+    $resolvedRuntime = [System.IO.Path]::GetFullPath($runtimeRoot).TrimEnd('\')
+    $expectedParent = Split-Path $resolvedRuntime -Parent
+    if ($expectedParent -ne $resolvedRunRoot -or $RuntimeName -eq "velocity") {
+        throw "ResetRuntime is restricted to a named isolated runtime below .run (for example velocity-smoke)."
+    }
+    if (Test-Path -LiteralPath $resolvedRuntime) {
+        Remove-Item -LiteralPath $resolvedRuntime -Recurse -Force
+    }
 }
 
 function Get-ProjectMetadata {
@@ -157,6 +181,8 @@ try = [ "lobby" ]
 
 [servers]
 lobby = "127.0.0.1:25566"
+
+[forced-hosts]
 "@ | Set-Content -Path $velocityToml -Encoding UTF8
     }
 }
@@ -178,30 +204,9 @@ function Sync-PluginJar {
 }
 
 function Test-JavaVersion {
-    $stdoutPath = [System.IO.Path]::GetTempFileName()
-    $stderrPath = [System.IO.Path]::GetTempFileName()
-    try {
-        $process = Start-Process -FilePath $javaCmd `
-            -ArgumentList "-version" `
-            -NoNewWindow `
-            -Wait `
-            -PassThru `
-            -RedirectStandardOutput $stdoutPath `
-            -RedirectStandardError $stderrPath
-
-        $versionLines = @()
-        if (Test-Path $stdoutPath) {
-            $versionLines += Get-Content $stdoutPath
-        }
-        if (Test-Path $stderrPath) {
-            $versionLines += Get-Content $stderrPath
-        }
-
-        $versionOutput = $versionLines | Select-Object -First 1
-        $javaExitCode = $process.ExitCode
-    } finally {
-        Remove-Item $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
-    }
+    $versionLines = & $javaCmd -version 2>&1
+    $javaExitCode = $LASTEXITCODE
+    $versionOutput = $versionLines | Select-Object -First 1
 
     if ($javaExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($versionOutput)) {
         throw "Unable to start Java from '$javaCmd'."
@@ -213,6 +218,10 @@ function Test-JavaVersion {
             throw "Java $($project.JavaVersion)+ is required, but '$versionOutput' was detected."
         }
     }
+}
+
+if ($ResetRuntime) {
+    Reset-IsolatedRuntime
 }
 
 if (-not $SkipBuild) {
@@ -228,6 +237,13 @@ $requestedVelocityVersion = if ($VelocityVersion) { $VelocityVersion } else { $p
 $serverJar = Ensure-VelocityRuntime -RequestedVersion $requestedVelocityVersion
 Ensure-DevConfig
 $installedPluginJar = Sync-PluginJar -SourceJar $pluginJar
+
+if ($PrepareOnly) {
+    Write-Host "Prepared isolated Velocity runtime at $runtimeRoot"
+    Write-Host "Velocity jar: $serverJar"
+    Write-Host "Plugin jar: $installedPluginJar"
+    exit 0
+}
 
 Push-Location $runtimeRoot
 try {

@@ -164,8 +164,14 @@ Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MI
 Final local gates:
 
 - TensaPlugin with Java 25: `mvn -B clean test`,
-  `mvn -B dependency:analyze`, and `mvn -B clean package`: 173 tests,
+  `mvn -B dependency:analyze`, and `mvn -B clean package`: 186 tests,
   0 failures/errors/skips, and no dependency problems.
+- A clean Velocity 3.5.1 build 615 smoke profile binds only to localhost,
+  strips Discord credentials from the child environment and disables telemetry.
+  It verifies v2 config generation without secret defaults, UTF-8 Ukrainian
+  localization sync, Communications degraded startup, the real MiniMessage URL
+  template, Scheduler execution, five targeted Scheduler reloads without
+  duplicate ticks, and clean module/storage/process shutdown.
 - TensaProxy with its Java 21 toolchain: `gradlew.bat clean test build`.
   45 tests, 0 failures/errors/skips across testkit and NeoForge.
 - Focused tests cover schema reset/archive failure/future rejection, H2 schema

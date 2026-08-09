@@ -11,6 +11,13 @@ Tensa Velocity Plugin - This one offers a variety of modules for detailed server
   - `.\.run\run-velocity.cmd -SkipBuild` to restart the proxy with the already-built jar
   - `.\.run\run-velocity.cmd -VelocityVersion 3.5.0-SNAPSHOT` to pin a specific runtime version
 
+For an isolated, non-interactive runtime check, run
+`.\.run\smoke-velocity.cmd -WithTests`. It recreates `.run/velocity-smoke`,
+starts a localhost-only Velocity process without Discord credentials or third-party
+plugins, verifies Communications and Scheduler startup, performs five targeted
+Scheduler reloads, checks for duplicate ticks and shuts the process down. This
+profile never reads `.run/velocity` or a production server directory.
+
 ## Velocity Log Cleanup
 You can let the plugin clean old Velocity logs on startup through `config.yml`:
 
