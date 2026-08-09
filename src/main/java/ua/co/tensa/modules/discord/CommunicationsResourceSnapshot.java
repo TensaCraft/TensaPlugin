@@ -9,14 +9,13 @@ public record CommunicationsResourceSnapshot(
         int privateReplyEntries,
         int linkCodes,
         int linkIndexEntries,
-        int guardFeedbackEntries,
         int schedulerJobs,
         int schedulerQueueDepth,
         long schedulerRejected,
         long clickableUrlsRendered
 ) {
     static CommunicationsResourceSnapshot empty() {
-        return new CommunicationsResourceSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        return new CommunicationsResourceSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public int heapPercent() {

@@ -7,9 +7,6 @@ import ua.co.tensa.modules.chat.ProxyChatRelay;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -28,6 +25,7 @@ class DiscordRuntimeLifecycleTest {
         DiscordLinkRepository store = new InMemoryDiscordLinkRepository();
         store.initialize();
         FakeGateway gateway = new FakeGateway();
+        FakeWebhook webhook = new FakeWebhook();
         DiscordLinkService links = new DiscordLinkService(
                 store,
                 new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()),
@@ -38,7 +36,7 @@ class DiscordRuntimeLifecycleTest {
                 settings,
                 gateway,
                 links,
-                new DiscordDelivery(gateway, new DiscordWebhookClient(settings))
+                new DiscordDelivery(gateway, webhook)
         );
 
         runtime.start();
@@ -49,16 +47,17 @@ class DiscordRuntimeLifecycleTest {
                 .isEqualTo(ProxyChatRelay.Result.ACCEPTED);
         assertThat(runtime.relayMinecraftChat(message(ProxyChatMessage.Origin.MINECRAFT, "global")))
                 .isEqualTo(ProxyChatRelay.Result.ACCEPTED);
-        awaitCount(gateway.sentMessages, 2);
+        awaitCount(webhook.sentMessages, 2);
         runtime.announceJoin("Pilot", "Aero");
-        awaitCount(gateway.sentMessages, 3);
-        assertThat(gateway.routes).containsExactly(DiscordRoute.CHAT, DiscordRoute.CHAT, DiscordRoute.EVENTS);
+        awaitCount(gateway.sentMessages, 1);
+        assertThat(gateway.routes).containsExactly(DiscordRoute.EVENTS);
         assertThat(gateway.embeds)
                 .singleElement()
                 .satisfies(embed -> {
                     assertThat(embed.title()).isEqualTo("Гравець приєднався");
                     assertThat(embed.color()).isEqualTo(DiscordEmbedMessage.GREEN);
                     assertThat(embed.description()).contains("Pilot");
+                    assertThat(embed.thumbnailUrl()).isEqualTo("https://mc-heads.net/avatar/Pilot/128");
                 });
 
         runtime.close();
@@ -70,20 +69,12 @@ class DiscordRuntimeLifecycleTest {
     }
 
     @Test
-    void linkGuardBlocksOnlyRelayInBothDirectionsAndRateLimitsDiscordFeedback() throws Exception {
-        DiscordSettings settings = DiscordTestSettings.create(tempDir, config -> {
-            LinkedHashMap<String, Object> guard = new LinkedHashMap<>();
-            guard.put("enabled", true);
-            guard.put("directions", List.of("minecraft_to_discord", "discord_to_minecraft"));
-            guard.put("mode", "only");
-            guard.put("channels", List.of("global"));
-            guard.put("feedback_cooldown_seconds", 30);
-            guard.put("reply_delete_after_seconds", 10);
-            config.proxyChat.put("require_link_to_relay", guard);
-        });
+    void unlinkedAccountsRelayBothDirectionsWhileLoopGuardStillPreventsEcho() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(tempDir);
         InMemoryDiscordLinkRepository store = new InMemoryDiscordLinkRepository();
         store.initialize();
         FakeGateway gateway = new FakeGateway();
+        FakeWebhook webhook = new FakeWebhook();
         DiscordLinkService links = new DiscordLinkService(
                 store,
                 new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()),
@@ -95,36 +86,47 @@ class DiscordRuntimeLifecycleTest {
                 settings,
                 gateway,
                 links,
-                new DiscordDelivery(gateway, new DiscordWebhookClient(settings)),
+                new DiscordDelivery(gateway, webhook),
                 (source, author, content) -> publishedToMinecraft.incrementAndGet()
         );
         runtime.start();
 
         ProxyChatMessage minecraft = message(ProxyChatMessage.Origin.MINECRAFT, "global");
-        assertThat(runtime.relayMinecraftChat(minecraft)).isEqualTo(ProxyChatRelay.Result.LINK_REQUIRED);
-        store.link(new LinkedAccount(
-                minecraft.playerUuid(), minecraft.playerName(), "42345678901234567", "Pilot", Instant.now()));
         assertThat(runtime.relayMinecraftChat(minecraft)).isEqualTo(ProxyChatRelay.Result.ACCEPTED);
+        awaitCount(webhook.sentMessages, 1);
 
         DiscordInboundMessage unlinked = new DiscordInboundMessage(
                 settings.guildId(), settings.channelId(), "52345678901234567", "Guest", "hello", false, false, "1");
         gateway.inbound.accept(unlinked);
         gateway.inbound.accept(unlinked);
-        assertThat(gateway.temporaryReplies).hasValue(1);
-        assertThat(gateway.lastDeleteAfter).isEqualTo(Duration.ofSeconds(10));
-        assertThat(publishedToMinecraft).hasValue(0);
-
-        store.link(new LinkedAccount(
-                UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-                "Linked", unlinked.authorId(), "Guest", Instant.now()));
-        gateway.inbound.accept(unlinked);
-        awaitCount(publishedToMinecraft, 1);
+        awaitCount(publishedToMinecraft, 2);
 
         gateway.inbound.accept(new DiscordInboundMessage(
                 settings.guildId(), settings.channelId(), gateway.selfUserId(), "Bot", "echo", true, false, "2"));
-        assertThat(publishedToMinecraft).hasValue(1);
+        assertThat(publishedToMinecraft).hasValue(2);
         runtime.close();
         assertThat(gateway.closed).isTrue();
+    }
+
+    @Test
+    void readyAndPlayerLifecycleSeamsReconcileConfiguredRoleForLinkedAccounts() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(tempDir);
+        InMemoryDiscordLinkRepository store = new InMemoryDiscordLinkRepository();
+        store.initialize();
+        UUID playerId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        store.link(new LinkedAccount(
+                playerId, "Linked", "42345678901234567", "LinkedDiscord", java.time.Instant.now()));
+        FakeGateway gateway = new FakeGateway();
+        DiscordLinkService links = new DiscordLinkService(
+                store, new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()), gateway, settings);
+        DiscordRuntime runtime = new DiscordRuntime(
+                settings, gateway, links, new DiscordDelivery(gateway, new FakeWebhook()));
+
+        runtime.start();
+        awaitCount(gateway.roleAssignments, 1);
+        runtime.reconcileLinkedRole(playerId);
+        awaitCount(gateway.roleAssignments, 2);
+        runtime.close();
     }
 
     private static ProxyChatMessage message(ProxyChatMessage.Origin origin, String channel) {
@@ -158,8 +160,7 @@ class DiscordRuntimeLifecycleTest {
         private volatile boolean ready;
         private volatile boolean closed;
         private volatile Consumer<DiscordInboundMessage> inbound = ignored -> { };
-        private final AtomicInteger temporaryReplies = new AtomicInteger();
-        private volatile Duration lastDeleteAfter;
+        private final AtomicInteger roleAssignments = new AtomicInteger();
 
         @Override
         public void start(
@@ -189,23 +190,12 @@ class DiscordRuntimeLifecycleTest {
 
         @Override
         public CompletableFuture<Void> assignLinkedRole(String discordUserId) {
+            roleAssignments.incrementAndGet();
             return CompletableFuture.completedFuture(null);
         }
 
         @Override
         public CompletableFuture<Void> removeLinkedRole(String discordUserId) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        @Override
-        public CompletableFuture<Void> sendTemporaryReply(
-                String channelId,
-                String messageId,
-                String content,
-                Duration deleteAfter
-        ) {
-            temporaryReplies.incrementAndGet();
-            lastDeleteAfter = deleteAfter;
             return CompletableFuture.completedFuture(null);
         }
 
@@ -223,6 +213,26 @@ class DiscordRuntimeLifecycleTest {
         public void close(Duration timeout) {
             ready = false;
             closed = true;
+        }
+    }
+
+    private static final class FakeWebhook implements DiscordWebhookDelivery {
+        private final AtomicInteger sentMessages = new AtomicInteger();
+
+        @Override
+        public boolean configured(DiscordRoute route) {
+            return route == DiscordRoute.CHAT;
+        }
+
+        @Override
+        public CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
+            sentMessages.incrementAndGet();
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+            return CompletableFuture.failedFuture(new AssertionError("Announcements must use the bot transport"));
         }
     }
 }

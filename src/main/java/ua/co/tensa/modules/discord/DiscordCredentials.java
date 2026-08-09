@@ -6,12 +6,10 @@ import java.util.Optional;
 public final class DiscordCredentials {
     private final String botToken;
     private final URI webhookUri;
-    private final URI eventsWebhookUri;
 
-    DiscordCredentials(String botToken, URI webhookUri, URI eventsWebhookUri) {
+    DiscordCredentials(String botToken, URI webhookUri) {
         this.botToken = botToken;
         this.webhookUri = webhookUri;
-        this.eventsWebhookUri = eventsWebhookUri;
     }
 
     public String botToken() {
@@ -22,12 +20,8 @@ public final class DiscordCredentials {
         return Optional.ofNullable(webhookUri);
     }
 
-    public Optional<URI> eventsWebhookUri() {
-        return Optional.ofNullable(eventsWebhookUri);
-    }
-
     @Override
     public String toString() {
-        return "DiscordCredentials[botToken=<redacted>, webhookUri=<redacted>, eventsWebhookUri=<redacted>]";
+        return "DiscordCredentials[botToken=<redacted>, webhookUri=<redacted>]";
     }
 }

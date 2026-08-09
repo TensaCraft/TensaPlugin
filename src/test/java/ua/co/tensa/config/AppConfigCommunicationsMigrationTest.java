@@ -31,7 +31,7 @@ class AppConfigCommunicationsMigrationTest {
         assertThat(saved.node("modules", "communications").getBoolean()).isFalse();
         assertThat(saved.node("modules", "chat-manager").virtual()).isTrue();
         assertThat(saved.node("modules", "discord").virtual()).isTrue();
-        assertThat(config.getModules()).contains("librelogin-auth-bridge", "proxy-bridge");
+        assertThat(config.getModules()).contains("librelogin-auth-bridge", "proxy-bridge", "scheduler");
     }
 
     @Test

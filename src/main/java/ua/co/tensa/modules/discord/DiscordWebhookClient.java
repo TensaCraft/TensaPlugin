@@ -64,9 +64,6 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
         if (!embed.footer().isBlank()) {
             body.put("footer", Map.of("text", embed.footer()));
         }
-        if (!embed.imageUrl().isBlank()) {
-            body.put("image", Map.of("url", embed.imageUrl()));
-        }
         return sendPayload(route, new LinkedHashMap<>(Map.of("embeds", List.of(body))));
     }
 
@@ -85,6 +82,17 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
     Optional<String> managedWebhookId(DiscordRoute route) {
         ManagedDiscordWebhook webhook = managed.get(route);
         return webhook == null ? Optional.empty() : Optional.of(webhook.webhookId());
+    }
+
+    String chatTransportState() {
+        if (!invalidExplicit.contains(DiscordRoute.CHAT)
+                && explicitWebhookUri(DiscordRoute.CHAT).isPresent()) {
+            return "explicit";
+        }
+        if (managed.containsKey(DiscordRoute.CHAT)) {
+            return "managed";
+        }
+        return invalidExplicit.contains(DiscordRoute.CHAT) ? "recovering" : "unavailable";
     }
 
     @Override
@@ -127,9 +135,9 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
     }
 
     private Optional<URI> explicitWebhookUri(DiscordRoute route) {
-        return route == DiscordRoute.EVENTS
-                ? settings.credentials().eventsWebhookUri()
-                : settings.credentials().webhookUri();
+        return route == DiscordRoute.CHAT
+                ? settings.credentials().webhookUri()
+                : Optional.empty();
     }
 
     static final class RejectedResponseException extends IllegalStateException {

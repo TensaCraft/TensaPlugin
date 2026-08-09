@@ -28,9 +28,8 @@ class AtomicRuntimeSlotTest {
         assertThat(counters.tasks.get()).isOne();
         assertThat(counters.commands.get()).isOne();
         assertThat(counters.botRuntimes.get()).isOne();
-        assertThat(counters.retrySchedulers.get()).isOne();
-        assertThat(counters.replyDeletionSchedulers.get()).isOne();
-        assertThat(counters.postLinkWorkers.get()).isOne();
+        assertThat(counters.schedulers.get()).isOne();
+        assertThat(counters.linkWorkers.get()).isOne();
         assertThat(counters.maximumBotRuntimes.get()).isOne();
         assertThat(slot.plan()).isEqualTo("v6");
 
@@ -39,9 +38,8 @@ class AtomicRuntimeSlotTest {
         assertThat(counters.tasks.get()).isZero();
         assertThat(counters.commands.get()).isZero();
         assertThat(counters.botRuntimes.get()).isZero();
-        assertThat(counters.retrySchedulers.get()).isZero();
-        assertThat(counters.replyDeletionSchedulers.get()).isZero();
-        assertThat(counters.postLinkWorkers.get()).isZero();
+        assertThat(counters.schedulers.get()).isZero();
+        assertThat(counters.linkWorkers.get()).isZero();
     }
 
     @Test
@@ -105,9 +103,8 @@ class AtomicRuntimeSlotTest {
             counters.listeners.incrementAndGet();
             counters.tasks.incrementAndGet();
             counters.commands.incrementAndGet();
-            counters.retrySchedulers.incrementAndGet();
-            counters.replyDeletionSchedulers.incrementAndGet();
-            counters.postLinkWorkers.incrementAndGet();
+            counters.schedulers.incrementAndGet();
+            counters.linkWorkers.incrementAndGet();
             int active = counters.botRuntimes.incrementAndGet();
             counters.maximumBotRuntimes.accumulateAndGet(active, Math::max);
         }
@@ -119,9 +116,8 @@ class AtomicRuntimeSlotTest {
             counters.tasks.decrementAndGet();
             counters.commands.decrementAndGet();
             counters.botRuntimes.decrementAndGet();
-            counters.retrySchedulers.decrementAndGet();
-            counters.replyDeletionSchedulers.decrementAndGet();
-            counters.postLinkWorkers.decrementAndGet();
+            counters.schedulers.decrementAndGet();
+            counters.linkWorkers.decrementAndGet();
         }
     }
 
@@ -131,8 +127,7 @@ class AtomicRuntimeSlotTest {
         private final AtomicInteger commands = new AtomicInteger();
         private final AtomicInteger botRuntimes = new AtomicInteger();
         private final AtomicInteger maximumBotRuntimes = new AtomicInteger();
-        private final AtomicInteger retrySchedulers = new AtomicInteger();
-        private final AtomicInteger replyDeletionSchedulers = new AtomicInteger();
-        private final AtomicInteger postLinkWorkers = new AtomicInteger();
+        private final AtomicInteger schedulers = new AtomicInteger();
+        private final AtomicInteger linkWorkers = new AtomicInteger();
     }
 }

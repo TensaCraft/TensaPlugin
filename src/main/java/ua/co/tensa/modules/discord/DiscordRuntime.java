@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.LinkedHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,7 +25,6 @@ final class DiscordRuntime implements AutoCloseable {
     private final DiscordServerPolicy serverPolicy;
     private final DiscordEventRateLimiter eventRateLimiter;
     private final CommunicationsMetrics metrics;
-    private final PostLinkEffects postLinkEffects;
     private final DiscordWebhookProvisioner webhookProvisioner;
     private final ModuleScheduler scheduler;
     private final BoundedWorkerQueue<DiscordInboundMessage> inboundQueue;
@@ -34,7 +32,6 @@ final class DiscordRuntime implements AutoCloseable {
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong lastBackpressureWarning = new AtomicLong();
-    private final LinkedHashMap<String, Long> guardFeedback = new LinkedHashMap<>();
 
     DiscordRuntime(
             DiscordSettings settings,
@@ -42,7 +39,7 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordLinkService links,
             DiscordDelivery delivery
     ) {
-        this(settings, gateway, links, delivery, (source, author, content) -> { }, new CommunicationsMetrics(), null, null, null);
+        this(settings, gateway, links, delivery, (source, author, content) -> { }, new CommunicationsMetrics(), null, null);
     }
 
     DiscordRuntime(
@@ -52,7 +49,7 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordDelivery delivery,
             InboundChatPublisher inboundChatPublisher
     ) {
-        this(settings, gateway, links, delivery, inboundChatPublisher, new CommunicationsMetrics(), null, null, null);
+        this(settings, gateway, links, delivery, inboundChatPublisher, new CommunicationsMetrics(), null, null);
     }
 
     DiscordRuntime(
@@ -62,19 +59,6 @@ final class DiscordRuntime implements AutoCloseable {
             DiscordDelivery delivery,
             InboundChatPublisher inboundChatPublisher,
             CommunicationsMetrics metrics,
-            PostLinkEffects postLinkEffects
-    ) {
-        this(settings, gateway, links, delivery, inboundChatPublisher, metrics, postLinkEffects, null, null);
-    }
-
-    DiscordRuntime(
-            DiscordSettings settings,
-            DiscordGateway gateway,
-            DiscordLinkService links,
-            DiscordDelivery delivery,
-            InboundChatPublisher inboundChatPublisher,
-            CommunicationsMetrics metrics,
-            PostLinkEffects postLinkEffects,
             DiscordWebhookProvisioner webhookProvisioner,
             ModuleScheduler scheduler
     ) {
@@ -84,7 +68,6 @@ final class DiscordRuntime implements AutoCloseable {
         this.delivery = delivery;
         this.inboundChatPublisher = inboundChatPublisher;
         this.metrics = java.util.Objects.requireNonNull(metrics, "metrics");
-        this.postLinkEffects = postLinkEffects;
         this.webhookProvisioner = webhookProvisioner;
         this.scheduler = scheduler;
         this.serverPolicy = new DiscordServerPolicy(settings);
@@ -139,13 +122,6 @@ final class DiscordRuntime implements AutoCloseable {
                 || message.playerUuid() == null) {
             return ProxyChatRelay.Result.DISABLED;
         }
-        if (settings.relayGuard().protects(
-                DiscordRelayGuard.Direction.MINECRAFT_TO_DISCORD,
-                message.channel()
-        ) && !links.isPlayerLinked(message.playerUuid())) {
-            metrics.blocked();
-            return ProxyChatRelay.Result.LINK_REQUIRED;
-        }
         String player = DiscordSanitizer.forDiscord(message.playerName(), 80);
         String content = DiscordSanitizer.forDiscord(message.message(), settings.maxDiscordMessageLength());
         if (content.isBlank()) {
@@ -159,13 +135,11 @@ final class DiscordRuntime implements AutoCloseable {
                 )),
                 settings.maxDiscordMessageLength()
         );
-        String botContent = DiscordSanitizer.truncate(player + ": " + webhookContent, settings.maxDiscordMessageLength());
         String avatar = settings.avatarUrlTemplate()
                 .replace("{uuid}", message.playerUuid().toString().replace("-", ""))
                 .replace("{player}", URLEncoder.encode(message.playerName(), StandardCharsets.UTF_8));
         boolean accepted = outboundQueue.offer(DiscordOutboundMessage.chat(
                 webhookContent,
-                botContent,
                 DiscordSanitizer.webhookUsername(message.playerName()),
                 avatar
         ));
@@ -255,9 +229,6 @@ final class DiscordRuntime implements AutoCloseable {
         outboundQueue.close(Duration.ofSeconds(3));
         inboundQueue.close(Duration.ofSeconds(3));
         links.close();
-        if (postLinkEffects != null) {
-            postLinkEffects.close();
-        }
         if (webhookProvisioner != null) {
             webhookProvisioner.close();
         }
@@ -265,9 +236,6 @@ final class DiscordRuntime implements AutoCloseable {
             scheduler.cancelScope("discord-announcements");
         }
         gateway.close(Duration.ofSeconds(5));
-        synchronized (guardFeedback) {
-            guardFeedback.clear();
-        }
     }
 
     private void acceptDiscordMessage(DiscordInboundMessage message) {
@@ -279,14 +247,6 @@ final class DiscordRuntime implements AutoCloseable {
                         settings.channelId(),
                         gateway.selfUserId()
                 )) {
-            return;
-        }
-        if (settings.relayGuard().protects(
-                DiscordRelayGuard.Direction.DISCORD_TO_MINECRAFT,
-                "global"
-        ) && !links.isDiscordLinked(message.authorId())) {
-            metrics.blocked();
-            replyForRequiredLink(message);
             return;
         }
         if (!inboundQueue.offer(message)) {
@@ -310,8 +270,8 @@ final class DiscordRuntime implements AutoCloseable {
     private void deliverToDiscord(DiscordOutboundMessage message) throws Exception {
         long startedNanos = System.nanoTime();
         Exception lastFailure = null;
-        if (delivery.requiresReadyGateway(message)) {
-            awaitGatewayReconnect(message.route());
+        if (!delivery.ready(message)) {
+            awaitTransportReady(message);
         }
         for (int attempt = 1; attempt <= settings.deliveryAttempts(); attempt++) {
             try {
@@ -328,8 +288,8 @@ final class DiscordRuntime implements AutoCloseable {
                 }
                 if (attempt < settings.deliveryAttempts()) {
                     metrics.retried();
-                    if (!gateway.isReady(message.route())) {
-                        awaitGatewayReconnect(message.route());
+                    if (!delivery.ready(message)) {
+                        awaitTransportReady(message);
                     }
                     Thread.sleep(DiscordRetryPolicy.delayMillis(
                             attempt,
@@ -348,13 +308,18 @@ final class DiscordRuntime implements AutoCloseable {
                 || cause instanceof java.io.IOException;
     }
 
-    private void awaitGatewayReconnect(DiscordRoute route) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(settings.reconnectMaxDelaySeconds());
-        while (running.get() && !gateway.isReady(route) && System.nanoTime() < deadline) {
+    private void awaitTransportReady(DiscordOutboundMessage message) throws InterruptedException {
+        long waitSeconds = message.preferWebhook()
+                ? settings.deliveryTimeout().plusSeconds(5).toSeconds()
+                : settings.reconnectMaxDelaySeconds();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(waitSeconds);
+        while (running.get() && !delivery.ready(message) && System.nanoTime() < deadline) {
             Thread.sleep(250L);
         }
-        if (!gateway.isReady(route)) {
-            throw new IllegalStateException("Discord gateway did not reconnect before the configured deadline");
+        if (!delivery.ready(message)) {
+            throw new IllegalStateException(message.preferWebhook()
+                    ? "Discord chat webhook is unavailable"
+                    : "Discord gateway did not reconnect before the internal deadline");
         }
     }
 
@@ -425,7 +390,12 @@ final class DiscordRuntime implements AutoCloseable {
         }
         DiscordOutboundMessage outbound;
         try {
-            outbound = DiscordOutboundMessage.announcement(template.render(values));
+            DiscordEmbedMessage embed = template.render(values);
+            String player = values.getOrDefault("player", "");
+            if (!player.isBlank()) {
+                embed = embed.withThumbnail(playerAvatar(player));
+            }
+            outbound = DiscordOutboundMessage.announcement(embed);
         } catch (IllegalArgumentException localValidationFailure) {
             metrics.recordFailure(localValidationFailure);
             String plain = DiscordSanitizer.truncate(
@@ -442,7 +412,9 @@ final class DiscordRuntime implements AutoCloseable {
 
     private DiscordEmbedMessage renderLinkSuccess(String playerName) {
         try {
-            return settings.linkSuccessEmbed().render(java.util.Map.of("player", eventValue(playerName, 80)));
+            String player = eventValue(playerName, 80);
+            return settings.linkSuccessEmbed().render(java.util.Map.of("player", player))
+                    .withThumbnail(playerAvatar(player));
         } catch (IllegalArgumentException invalid) {
             metrics.recordFailure(invalid);
             return DiscordEmbedMessage.success("Акаунт успішно прив'язано.");
@@ -466,50 +438,24 @@ final class DiscordRuntime implements AutoCloseable {
         return DiscordSanitizer.forDiscord(value, maximum);
     }
 
+    private static String playerAvatar(String playerName) {
+        return "https://mc-heads.net/avatar/"
+                + URLEncoder.encode(playerName, StandardCharsets.UTF_8)
+                + "/128";
+    }
+
     CommunicationsMetrics.Snapshot diagnostics(String storageBackend) {
         return metrics.snapshot(
                 isRunning() ? "running" : closed.get() ? "closed" : "degraded",
                 gateway.runtimeState(),
                 gateway.slashState(),
+                webhookProvisioner == null ? "unavailable" : webhookProvisioner.chatTransportState(),
                 storageBackend,
                 inboundQueue.size(),
                 outboundQueue.size(),
-                postLinkEffects == null ? 0 : postLinkEffects.queueDepth(),
+                links.queueDepth(),
                 gateway.reconnectCount()
         );
-    }
-
-    private void replyForRequiredLink(DiscordInboundMessage message) {
-        if (!allowGuardFeedback(message.authorId())) {
-            return;
-        }
-        gateway.sendTemporaryReply(
-                message.channelId(),
-                message.messageId(),
-                settings.relayGuard().discordReply(),
-                settings.relayGuard().discordReplyDeleteAfter()
-        ).exceptionally(error -> {
-            metrics.deliveryFailed(error);
-            return null;
-        });
-    }
-
-    private boolean allowGuardFeedback(String authorId) {
-        long now = System.nanoTime();
-        long cooldown = settings.relayGuard().feedbackCooldown().toNanos();
-        synchronized (guardFeedback) {
-            Long previous = guardFeedback.get(authorId);
-            if (previous != null && now - previous < cooldown) {
-                return false;
-            }
-            guardFeedback.remove(authorId);
-            guardFeedback.put(authorId, now);
-            while (guardFeedback.size() > settings.eventStateCapacity()) {
-                String eldest = guardFeedback.keySet().iterator().next();
-                guardFeedback.remove(eldest);
-            }
-            return true;
-        }
     }
 
     private void warnRateLimited(String warning) {
@@ -526,17 +472,17 @@ final class DiscordRuntime implements AutoCloseable {
         links.cleanupExpiredCodes(Instant.now());
     }
 
-    ResourceState resourceState() {
-        int feedback;
-        synchronized (guardFeedback) {
-            feedback = guardFeedback.size();
-        }
-        return new ResourceState(links.codeCount(), links.linkCount(), feedback);
+    void reconcileLinkedRole(UUID playerUuid) {
+        links.reconcileRole(playerUuid);
     }
 
-    record ResourceState(int linkCodes, int linkIndexEntries, int guardFeedbackEntries) {
+    ResourceState resourceState() {
+        return new ResourceState(links.codeCount(), links.linkCount());
+    }
+
+    record ResourceState(int linkCodes, int linkIndexEntries) {
         static ResourceState empty() {
-            return new ResourceState(0, 0, 0);
+            return new ResourceState(0, 0);
         }
     }
 

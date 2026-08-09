@@ -59,9 +59,7 @@ public class ChatCommands implements SimpleCommand {
 
         Object value = sec.get(key);
         if (value == null) return def;
-        if (value instanceof String text) return text;
-
-        return String.valueOf(value);
+        return value instanceof String text ? text : def;
     }
 
     private static boolean secBool(Map<String, Object> sec, String key, boolean def) {
@@ -82,9 +80,8 @@ public class ChatCommands implements SimpleCommand {
         Object commands = sec.get("commands");
         if (commands instanceof Collection<?> col) {
             for (Object item : col) {
-                if (item == null) continue;
-
-                String cmd = normalizeCmd(String.valueOf(item));
+                if (!(item instanceof String text)) continue;
+                String cmd = normalizeCmd(text);
                 if (cmd != null && !cmd.isBlank()) {
                     out.add(cmd);
                 }
@@ -230,6 +227,11 @@ public class ChatCommands implements SimpleCommand {
 
         String server = getServerName(source);
         String playerName = getSenderName(source);
+        String permission = secString(sec, "permission", "");
+        if (source instanceof Player && !permission.isBlank() && !source.hasPermission(permission)) {
+            Message.sendLang(source, Lang.no_perms);
+            return;
+        }
 
         if (isPrivate(sec) || isReply(sec)) {
             handlePrivateChat(invocation, sec, server, playerName, isReply(sec));
@@ -257,8 +259,9 @@ public class ChatCommands implements SimpleCommand {
         CommandSource sender = invocation.source();
         boolean console = isConsole(sender);
 
-        int messageOffset = reply ? 0 : 1;
-        int requiredArguments = reply ? 1 : 2;
+        boolean contextualReply = reply && !console;
+        int messageOffset = contextualReply ? 0 : 1;
+        int requiredArguments = contextualReply ? 1 : 2;
         if (invocation.arguments().length < requiredArguments) {
             Message.sendLang(sender, Lang.chat_usage, "{command}", Message.escapeMiniMessage(invocation.alias()));
             return;
@@ -266,7 +269,7 @@ public class ChatCommands implements SimpleCommand {
 
         Player target;
         String targetName;
-        if (reply && sender instanceof Player player) {
+        if (contextualReply && sender instanceof Player player) {
             UUID targetId = lastPrivateTarget.get(player.getUniqueId());
             target = targetId == null ? null : Tensa.server.getPlayer(targetId).orElse(null);
             targetName = target == null ? "" : target.getUsername();
@@ -275,7 +278,7 @@ public class ChatCommands implements SimpleCommand {
             target = Tensa.server.getPlayer(targetName).orElse(null);
         }
         if (target == null) {
-            if (reply) {
+            if (contextualReply) {
                 Message.privateMessage(sender, "<color:#ffb84d>Немає активної приватної розмови або гравець уже офлайн.</color>");
                 return;
             }
@@ -287,16 +290,22 @@ public class ChatCommands implements SimpleCommand {
                 " ",
                 Arrays.copyOfRange(invocation.arguments(), messageOffset, invocation.arguments().length)
         );
-        String msg = ProxyChatText.sanitize(rawMessage, 256, 4);
+        String msg = ProxyChatText.sanitize(rawMessage, 256);
         if (msg.isBlank()) {
             return;
         }
 
-        if (!console) {
-            Player player = (Player) sender;
-            lastPrivateTarget.put(player.getUniqueId(), target.getUniqueId());
-            lastPrivateTarget.put(target.getUniqueId(), player.getUniqueId());
+        if (console) {
+            ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(msg);
+            proxyChat.recordClickableUrls(rendered.clickableUrls());
+            Message.privateMessage(target, rendered.component());
+            Message.send(sender, rendered.component());
+            return;
         }
+
+        Player player = (Player) sender;
+        lastPrivateTarget.put(player.getUniqueId(), target.getUniqueId());
+        lastPrivateTarget.put(target.getUniqueId(), player.getUniqueId());
 
         Map<String, String> values = Map.of(
                 "server", server,
@@ -324,18 +333,13 @@ public class ChatCommands implements SimpleCommand {
         String perm = secString(sec, "permission", "");
         boolean seeAll = secBool(sec, "see_all", false);
 
-        if (source instanceof Player && !perm.isEmpty() && !source.hasPermission(perm)) {
-            Message.sendLang(source, Lang.no_perms);
-            return;
-        }
-
-        String msg = ProxyChatText.sanitize(String.join(" ", invocation.arguments()), 256, 4);
+        String msg = ProxyChatText.sanitize(String.join(" ", invocation.arguments()), 256);
         if (msg.isBlank()) {
             return;
         }
 
         if (isConsole(source)) {
-            ChatMessageRenderer.Result rendered = renderPublicMessage(sec, server, playerName, msg);
+            ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(msg);
             proxyChat.recordClickableUrls(rendered.clickableUrls());
             sendMessageToPermittedPlayers(rendered.component(), seeAll ? "" : perm);
             return;
@@ -390,7 +394,7 @@ public class ChatCommands implements SimpleCommand {
             return CompletableFuture.completedFuture(List.of());
         }
 
-        if (isReply(sec)) {
+        if (isReply(sec) && !isConsole(invocation.source())) {
             return CompletableFuture.completedFuture(List.of());
         }
 

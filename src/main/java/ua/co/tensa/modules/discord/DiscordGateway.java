@@ -19,19 +19,6 @@ interface DiscordGateway extends AutoCloseable {
 
     CompletableFuture<Void> removeLinkedRole(String discordUserId);
 
-    default CompletableFuture<Void> updateNickname(String discordUserId, String nickname) {
-        return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord nickname sync is unavailable"));
-    }
-
-    default CompletableFuture<Void> sendTemporaryReply(
-            String channelId,
-            String messageId,
-            String content,
-            Duration deleteAfter
-    ) {
-        return CompletableFuture.failedFuture(new UnsupportedOperationException("Discord temporary replies are unavailable"));
-    }
-
     default CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
             DiscordRoute route,
             String name,

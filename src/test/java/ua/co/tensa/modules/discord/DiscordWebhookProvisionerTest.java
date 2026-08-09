@@ -20,11 +20,9 @@ class DiscordWebhookProvisionerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void fetchesOrCreatesEachMissingRouteAndPersistsOnlyBindingMetadata() throws Exception {
+    void automaticallyCreatesOnlyTheGlobalChatWebhookAndPersistsOnlyBindingMetadata() throws Exception {
         DiscordSettings settings = DiscordTestSettings.create(temporaryDirectory, config -> {
-            config.webhookAutoCreate = true;
             config.webhookUrl = "";
-            config.eventsWebhookUrl = "";
             ((java.util.Map<String, Object>) config.embeds.get("join")).put("enabled", true);
         });
         FakeGateway gateway = new FakeGateway();
@@ -38,20 +36,20 @@ class DiscordWebhookProvisionerTest {
 
             provisioner.refreshAll();
 
-            await(() -> repository.find(DiscordRoute.CHAT).isPresent()
-                    && repository.find(DiscordRoute.EVENTS).isPresent());
+            await(() -> repository.find(DiscordRoute.CHAT).isPresent());
             assertThat(client.configured(DiscordRoute.CHAT)).isTrue();
-            assertThat(client.configured(DiscordRoute.EVENTS)).isTrue();
-            assertThat(gateway.provisions).hasValue(2);
+            assertThat(client.configured(DiscordRoute.EVENTS)).isFalse();
+            assertThat(repository.find(DiscordRoute.EVENTS)).isEmpty();
+            assertThat(gateway.provisions).hasValue(1);
+            assertThat(gateway.lastName).isEqualTo("ServerChat");
+            assertThat(client.chatTransportState()).isEqualTo("managed");
         }
     }
 
     @Test
     void invalidationCoalescesRecoveryAndRotatesBinding() throws Exception {
         DiscordSettings settings = DiscordTestSettings.create(temporaryDirectory, config -> {
-            config.webhookAutoCreate = true;
             config.webhookUrl = "";
-            config.eventsWebhookUrl = "https://discord.com/api/webhooks/33333333333333333/static-events";
         });
         FakeGateway gateway = new FakeGateway();
         DiscordWebhookClient client = new DiscordWebhookClient(settings);
@@ -72,6 +70,27 @@ class DiscordWebhookProvisionerTest {
                     && !repository.find(DiscordRoute.CHAT).orElseThrow().webhookId().equals(first));
             assertThat(repository.find(DiscordRoute.CHAT).orElseThrow().webhookId()).isNotEqualTo(first);
             assertThat(gateway.provisions).hasValue(2);
+        }
+    }
+
+    @Test
+    void configuredGlobalWebhookIsUsedWithoutCreatingAnotherOne() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(temporaryDirectory, config ->
+                config.webhookUrl = "https://discord.com/api/webhooks/12345678901234567/configured-token");
+        FakeGateway gateway = new FakeGateway();
+        DiscordWebhookClient client = new DiscordWebhookClient(settings);
+        try (CoreStorageService storage = CoreStorageService.local(temporaryDirectory.resolve("configured"), "test_");
+             ModuleScheduler scheduler = scheduler();
+             DiscordWebhookBindingRepository repository = new DiscordWebhookBindingRepository(storage);
+             DiscordWebhookProvisioner provisioner = new DiscordWebhookProvisioner(
+                     settings, gateway, client, repository, scheduler, new CommunicationsMetrics())) {
+            repository.initialize();
+
+            provisioner.refreshAll();
+
+            assertThat(client.chatTransportState()).isEqualTo("explicit");
+            assertThat(gateway.provisions).hasValue(0);
+            assertThat(repository.find(DiscordRoute.CHAT)).isEmpty();
         }
     }
 
@@ -97,10 +116,12 @@ class DiscordWebhookProvisionerTest {
 
     private static final class FakeGateway implements DiscordGateway {
         private final AtomicInteger provisions = new AtomicInteger();
+        private volatile String lastName;
 
         @Override
         public CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
                 DiscordRoute route, String name, String preferredWebhookId) {
+            lastName = name;
             int sequence = provisions.incrementAndGet();
             String id = "1234567890123456" + sequence;
             return CompletableFuture.completedFuture(ManagedDiscordWebhook.from(

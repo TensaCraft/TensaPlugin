@@ -6,13 +6,10 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlAdapter;
 
-import java.time.Clock;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
 public final class ProxyChatService {
@@ -26,30 +23,21 @@ public final class ProxyChatService {
     ) {
     }
 
-    private record PlayerState(long sentAt, long duplicateAt, String duplicateKey) {
-    }
-
     private record Settings(
             boolean enabled,
             boolean nativeGlobalChat,
             Set<String> excludedServers,
             Map<String, String> serverAliases,
+            boolean relayToDiscord,
+            Set<String> relayChannels,
             int maxLength,
-            long cooldownMillis,
-            long duplicateWindowMillis,
-            int maxRepeatedCharacters,
-            String discordFormat,
-            String cooldownMessage,
-            String duplicateMessage,
-            String linkRequiredMessage
+            String discordFormat
     ) {
     }
 
-    private final Clock clock;
     private final YamlAdapter chatConfig;
     private final YamlAdapter discordConfig;
     private final ProxyChatRelay outbound;
-    private final ConcurrentHashMap<UUID, PlayerState> playerStates = new ConcurrentHashMap<>();
     private final LongAdder clickableUrlsRendered = new LongAdder();
     private volatile Settings settings;
 
@@ -58,16 +46,6 @@ public final class ProxyChatService {
             YamlAdapter discordConfig,
             ProxyChatRelay outbound
     ) {
-        this(Clock.systemUTC(), chatConfig, discordConfig, outbound);
-    }
-
-    ProxyChatService(
-            Clock clock,
-            YamlAdapter chatConfig,
-            YamlAdapter discordConfig,
-            ProxyChatRelay outbound
-    ) {
-        this.clock = clock;
         this.chatConfig = java.util.Objects.requireNonNull(chatConfig, "chatConfig");
         this.discordConfig = java.util.Objects.requireNonNull(discordConfig, "discordConfig");
         this.outbound = outbound == null ? ignored -> ProxyChatRelay.Result.DISABLED : outbound;
@@ -97,6 +75,12 @@ public final class ProxyChatService {
                 serverAliases.put(key, value);
             }
         }
+        Set<String> relayChannels = new HashSet<>();
+        for (String channel : config.getStringList("relay.minecraft_to_discord.channels")) {
+            if (channel != null && !channel.isBlank()) {
+                relayChannels.add(channel.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
 
         settings = new Settings(
                 config.getBoolean("proxy_chat.enabled", true),
@@ -107,19 +91,11 @@ public final class ProxyChatService {
                 ),
                 Set.copyOf(excludedServers),
                 Map.copyOf(serverAliases),
-                Math.max(1, config.getInt("proxy_chat.max_length", 256)),
-                Math.max(0L, config.getLong("proxy_chat.cooldown_millis", 1500L)),
-                Math.max(0L, config.getLong("proxy_chat.duplicate_window_millis", 15000L)),
-                Math.max(1, config.getInt("proxy_chat.max_repeated_characters", 4)),
-                config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>"),
-                config.getString("proxy_chat.cooldown_message", "<yellow>Зачекайте перед наступним повідомленням.</yellow>"),
-                config.getString("proxy_chat.duplicate_message", "<yellow>Не повторюйте повідомлення.</yellow>"),
-                config.getString(
-                        "proxy_chat.require_link_to_relay.minecraft_message",
-                        "<yellow>Прив'яжіть Discord через /discord link.</yellow>"
-                )
+                config.getBoolean("relay.minecraft_to_discord.enabled", true),
+                Set.copyOf(relayChannels),
+                256,
+                config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>")
         );
-        playerStates.clear();
     }
 
     public boolean shouldIntercept(Player player) {
@@ -155,30 +131,11 @@ public final class ProxyChatService {
         if (!definition.enabled()) {
             return false;
         }
-        String message = ProxyChatText.sanitize(
-                rawMessage,
-                current.maxLength(),
-                current.maxRepeatedCharacters()
-        );
+        String message = ProxyChatText.sanitize(rawMessage, current.maxLength());
         if (message.isEmpty()) {
             return false;
         }
 
-        long now = clock.millis();
-        String duplicateKey = ProxyChatText.duplicateKey(message);
-        PlayerState previous = playerStates.get(player.getUniqueId());
-        if (previous != null && now - previous.sentAt() < current.cooldownMillis()) {
-            Message.privateMessage(player, current.cooldownMessage());
-            return false;
-        }
-        if (previous != null
-                && duplicateKey.equals(previous.duplicateKey())
-                && now - previous.duplicateAt() < current.duplicateWindowMillis()) {
-            Message.privateMessage(player, current.duplicateMessage());
-            return false;
-        }
-
-        playerStates.put(player.getUniqueId(), new PlayerState(now, now, duplicateKey));
         String server = displayServerName(serverName(player), current);
         ProxyChatMessage payload = new ProxyChatMessage(
                 ProxyChatMessage.Origin.MINECRAFT,
@@ -191,10 +148,7 @@ public final class ProxyChatService {
         broadcast(payload, definition, current);
         if (definition.relayToDiscord()) {
             try {
-                ProxyChatRelay.Result relayResult = outbound.publish(payload);
-                if (relayResult == ProxyChatRelay.Result.LINK_REQUIRED) {
-                    Message.privateMessage(player, current.linkRequiredMessage());
-                }
+                outbound.publish(payload);
             } catch (RuntimeException exception) {
                 Message.warn("Chat relay rejected a message: " + exception.getClass().getSimpleName());
             }
@@ -204,12 +158,8 @@ public final class ProxyChatService {
 
     public void publishExternal(String source, String author, String rawMessage) {
         Settings current = settings;
-        String message = ProxyChatText.sanitize(
-                rawMessage,
-                current.maxLength(),
-                current.maxRepeatedCharacters()
-        );
-        String player = ProxyChatText.sanitize(author, 64, 8);
+        String message = ProxyChatText.sanitize(rawMessage, current.maxLength());
+        String player = ProxyChatText.sanitize(author, 64);
         if (message.isEmpty() || player.isEmpty()) {
             return;
         }
@@ -227,17 +177,13 @@ public final class ProxyChatService {
     }
 
     public void clear() {
-        playerStates.clear();
     }
 
-    public void forget(UUID playerId) {
-        if (playerId != null) {
-            playerStates.remove(playerId);
-        }
+    public void forget(java.util.UUID playerId) {
     }
 
     public int stateSize() {
-        return playerStates.size();
+        return 0;
     }
 
     public void recordClickableUrls(int count) {
@@ -263,7 +209,7 @@ public final class ProxyChatService {
                 booleanValue(section.get("enabled"), true),
                 stringValue(section.get("permission"), ""),
                 booleanValue(section.get("see_all"), false),
-                booleanValue(section.get("relay_to_discord"), false),
+                settings.relayToDiscord() && settings.relayChannels().contains(key),
                 stringValue(section.get("format"), "<white>{player}: {message}</white>")
         );
     }
@@ -292,7 +238,7 @@ public final class ProxyChatService {
     }
 
     private static String stringValue(Object value, String fallback) {
-        return value == null ? fallback : String.valueOf(value);
+        return value instanceof String text ? text : fallback;
     }
 
     private static boolean booleanValue(Object value, boolean fallback) {

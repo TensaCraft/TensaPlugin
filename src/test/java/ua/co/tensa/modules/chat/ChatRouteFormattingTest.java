@@ -56,6 +56,53 @@ class ChatRouteFormattingTest {
                 .containsExactly(raw, raw);
     }
 
+    @Test
+    void malformedNestedPrivateFormatCannotLeakLiteralEmptyMapToPlayers() {
+        Map<String, Object> broken = Map.of(
+                "to_format", Map.of(),
+                "from_format", Map.of()
+        );
+
+        ChatCommands.PrivateMessages messages = ChatCommands.renderPrivateMessages(
+                broken,
+                Map.of("from", "Console", "to", "Pilot", "target", "Pilot", "server", "proxy"),
+                "adsdsasda"
+        );
+
+        assertThat(plain(messages.toRecipient().component())).isEqualTo("Console: adsdsasda");
+        assertThat(plain(messages.toSender().component())).isEqualTo("Pilot: adsdsasda");
+    }
+
+    @Test
+    void consoleMessagesUseOnlyTrustedMiniMessagePayloadWithoutRouteWrapper() {
+        ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole("<green>Технічне повідомлення</green>");
+
+        assertThat(plain(rendered.component())).isEqualTo("Технічне повідомлення");
+        assertThat(rendered.component().color()).isNotNull();
+    }
+
+    @Test
+    void consoleVotePayloadRendersColorsAndOpenUrlInsteadOfLiteralMiniMessageTags() {
+        String payload = """
+                <#55ffff>✦</#55ffff> <#f4a15d>CoolVoider</#f4a15d> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><#55ffff>https://minecraft-ua.com/minecraft/aeronautics</#55ffff></click> та отримав бонус!
+                """.trim();
+
+        ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(payload);
+        List<ClickEvent> clicks = new ArrayList<>();
+        collect(rendered.component(), clicks);
+
+        assertThat(plain(rendered.component()))
+                .isEqualTo("✦ CoolVoider проголосував за сервер на https://minecraft-ua.com/minecraft/aeronautics та отримав бонус!")
+                .doesNotContain("<#", "<click:");
+        assertThat(clicks)
+                .singleElement()
+                .satisfies(click -> {
+                    assertThat(click.action()).isEqualTo(ClickEvent.Action.OPEN_URL);
+                    assertThat(((ClickEvent.Payload.Text) click.payload()).value())
+                            .isEqualTo("https://minecraft-ua.com/minecraft/aeronautics");
+                });
+    }
+
     private static void collect(Component component, List<ClickEvent> clicks) {
         if (component.clickEvent() != null) clicks.add(component.clickEvent());
         component.children().forEach(child -> collect(child, clicks));

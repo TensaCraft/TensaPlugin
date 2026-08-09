@@ -5,7 +5,6 @@ package ua.co.tensa.modules.chat;
 public interface ProxyChatRelay {
     enum Result {
         ACCEPTED,
-        LINK_REQUIRED,
         DISABLED,
         BUSY
     }

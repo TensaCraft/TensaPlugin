@@ -12,17 +12,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-import ua.co.tensa.modules.runtime.ModuleScheduler;
 
 public final class DiscordSettings {
     public static final String TOKEN_ENV = "TENSA_DISCORD_BOT_TOKEN";
     public static final String WEBHOOK_ENV = "TENSA_DISCORD_WEBHOOK_URL";
-    public static final String EVENTS_WEBHOOK_ENV = "TENSA_DISCORD_EVENTS_WEBHOOK_URL";
+    private static final String PLAYER_AVATAR_URL = "https://mc-heads.net/avatar/{player}/128";
 
     private static final Pattern SNOWFLAKE = Pattern.compile("[1-9][0-9]{16,19}");
-    private static final Pattern COMMAND_NAME = Pattern.compile("[a-z0-9_-]{1,32}");
     private static final Pattern SERVER_NAME = Pattern.compile("[a-zA-Z0-9_.-]{1,64}");
-    private static final Pattern CHANNEL_NAME = Pattern.compile("[a-z0-9_.-]{1,32}:[a-z0-9_./-]{1,32}");
     private static final Set<String> DISCORD_WEBHOOK_HOSTS = Set.of(
             "discord.com", "ptb.discord.com", "canary.discord.com", "discordapp.com"
     );
@@ -33,10 +30,9 @@ public final class DiscordSettings {
     private final String eventsChannelId;
     private final String linkedRoleId;
     private final String linkCommandName;
-    private final boolean webhookAutoCreate;
-    private final String webhookName;
     private final boolean minecraftToDiscord;
     private final boolean discordToMinecraft;
+    private final Set<String> minecraftToDiscordChannels;
     private final boolean joinMessages;
     private final boolean quitMessages;
     private final boolean serverSwitchMessages;
@@ -71,15 +67,6 @@ public final class DiscordSettings {
     private final Duration linkCodeTtl;
     private final int linkCodeLength;
     private final int linkExecutorCapacity;
-    private final int postLinkQueueCapacity;
-    private final boolean linkAnnouncementEnabled;
-    private final String linkAnnouncementFormat;
-    private final List<String> linkAnnouncementIncludedServers;
-    private final Set<String> linkAnnouncementExcludedServers;
-    private final boolean nicknameSync;
-    private final int nicknameSyncAttempts;
-    private final Duration nicknameRetryBaseDelay;
-    private final DiscordRelayGuard relayGuard;
     private final int maxLinks;
     private final int reconnectMaxDelaySeconds;
     private final Duration backendStatusPollInterval;
@@ -89,31 +76,23 @@ public final class DiscordSettings {
     private final int maxMonitoredServers;
     private final String backendEventChannel;
     private final Duration advancementDedupWindow;
-    private final ModuleScheduler.Defaults schedulerDefaults;
 
     private DiscordSettings(DiscordConfig config, Map<String, String> environment) {
         String token = environmentOverride(environment, TOKEN_ENV, config.botToken);
-        String webhook = config.webhookEnabled
-                ? environmentOverride(environment, WEBHOOK_ENV, config.webhookUrl)
-                : "";
-        String eventsWebhook = config.webhookEnabled
-                ? environmentOverride(environment, EVENTS_WEBHOOK_ENV, config.eventsWebhookUrl)
-                : "";
+        String webhook = environmentOverride(environment, WEBHOOK_ENV, config.webhookUrl);
 
         this.credentials = new DiscordCredentials(
                 requiredSecret(token, TOKEN_ENV),
-                parseWebhook(webhook),
-                parseWebhook(eventsWebhook)
+                parseWebhook(webhook)
         );
         this.guildId = requireSnowflake(config.guildId, "discord_ids.guild_id");
         this.channelId = requireSnowflake(config.channelId, "discord_ids.main_channel_id");
         this.eventsChannelId = optionalSnowflake(config.eventsChannelId, "discord_ids.announcements_channel_id");
         this.linkedRoleId = optionalSnowflake(config.linkedRoleId, "discord_ids.linked_role_id");
-        this.linkCommandName = validateCommandName(config.linkCommandName);
-        this.webhookAutoCreate = config.webhookEnabled && config.webhookAutoCreate;
-        this.webhookName = validateWebhookName(config.webhookName);
+        this.linkCommandName = "link";
         this.minecraftToDiscord = config.minecraftToDiscord;
         this.discordToMinecraft = config.discordToMinecraft;
+        this.minecraftToDiscordChannels = Set.copyOf(normalizeChannelList(config.minecraftToDiscordChannels));
         this.joinEmbed = embed(config.embeds, "join", Set.of("player", "server"));
         this.quitEmbed = embed(config.embeds, "quit", Set.of("player", "server"));
         this.serverSwitchEmbed = embed(config.embeds, "server_switch", Set.of("player", "from", "to"));
@@ -138,61 +117,26 @@ public final class DiscordSettings {
         this.backendUnavailableFormat = backendUnavailableEmbed.description();
         this.backendRecoveredFormat = backendRecoveredEmbed.description();
         this.advancementFormat = advancementEmbed.description();
-        this.avatarUrlTemplate = validateAvatarTemplate(config.avatarUrlTemplate);
-        this.maxMinecraftMessageLength = bounded(config.maxMinecraftMessageLength, 32, 1_000, "limits.max_minecraft_message_length");
-        this.maxDiscordMessageLength = bounded(config.maxDiscordMessageLength, 32, 1_900, "limits.max_discord_message_length");
-        this.queueCapacity = bounded(config.queueCapacity, 8, 4_096, "limits.queue_capacity");
-        this.eventRatePerMinute = bounded(config.eventRatePerMinute, 1, 600, "limits.event_rate_per_minute");
-        this.eventStateCapacity = bounded(config.eventStateCapacity, 32, 16_384, "limits.event_state_capacity");
-        this.deliveryAttempts = bounded(config.deliveryAttempts, 1, 5, "delivery.attempts");
-        this.deliveryTimeout = Duration.ofSeconds(bounded(config.deliveryTimeoutSeconds, 2, 30, "delivery.timeout_seconds"));
-        this.linkCodeTtl = Duration.ofSeconds(bounded(config.linkCodeTtlSeconds, 30, 3_600, "linking.code_ttl_seconds"));
-        this.linkCodeLength = bounded(config.linkCodeLength, 6, 12, "linking.code_length");
-        this.linkExecutorCapacity = bounded(config.linkExecutorCapacity, 8, 256, "linking.executor_queue_capacity");
-        this.postLinkQueueCapacity = bounded(config.postLinkQueueCapacity, 8, 256, "linking.post_link_queue_capacity");
-        this.linkAnnouncementEnabled = config.linkAnnouncementEnabled;
-        this.linkAnnouncementFormat = requireTemplate(config.linkAnnouncementFormat, "linking.link_announcement.format");
-        this.linkAnnouncementIncludedServers = normalizeServerList(
-                config.linkAnnouncementIncludedServers, "linking.link_announcement.servers.include");
-        this.linkAnnouncementExcludedServers = Set.copyOf(normalizeServerList(
-                config.linkAnnouncementExcludedServers, "linking.link_announcement.servers.exclude"));
-        this.nicknameSync = validateNicknameMode(config.nicknameSyncMode);
-        this.nicknameSyncAttempts = bounded(config.nicknameSyncAttempts, 1, 5, "linking.nickname_sync.attempts");
-        this.nicknameRetryBaseDelay = Duration.ofMillis(bounded(
-                config.nicknameRetryBaseDelayMillis, 100, 5_000, "linking.nickname_sync.retry_base_delay_millis"));
-        this.relayGuard = validateRelayGuard(config.proxyChat);
-        this.maxLinks = bounded(config.maxLinks, 1, 100_000, "limits.max_links");
-        this.reconnectMaxDelaySeconds = bounded(config.reconnectMaxDelaySeconds, 5, 900, "gateway.max_reconnect_delay_seconds");
-        this.backendStatusPollInterval = Duration.ofSeconds(bounded(
-                config.backendStatusPollIntervalSeconds, 5, 300, "announcements.backend_status.poll_interval_seconds"));
-        this.backendStatusPingTimeout = Duration.ofSeconds(bounded(
-                config.backendStatusPingTimeoutSeconds, 1, 30, "announcements.backend_status.ping_timeout_seconds"));
-        this.backendStatusDebounce = Duration.ofSeconds(bounded(
-                config.backendStatusDebounceSeconds, 0, 300, "announcements.backend_status.debounce_seconds"));
-        this.backendStatusConfirmations = bounded(
-                config.backendStatusConfirmations, 1, 10, "announcements.backend_status.confirmations");
-        this.maxMonitoredServers = bounded(
-                config.maxMonitoredServers, 1, 512, "announcements.backend_status.max_monitored_servers");
-        this.backendEventChannel = validateBackendChannel(config.backendEventChannel);
-        this.advancementDedupWindow = Duration.ofSeconds(bounded(
-                config.advancementDedupSeconds, 1, 300, "achievements.dedup_seconds"));
-        int schedulerBackoffMillis = bounded(config.schedulerBackoffMillis, 0, 60_000, "scheduler.backoff_millis");
-        int schedulerMaxBackoffSeconds = bounded(
-                config.schedulerMaxBackoffSeconds, 1, 900, "scheduler.max_backoff_seconds");
-        if (Duration.ofSeconds(schedulerMaxBackoffSeconds).toMillis() < schedulerBackoffMillis) {
-            throw new DiscordConfigurationException(
-                    "discord.yml scheduler.max_backoff_seconds must not be lower than scheduler.backoff_millis");
-        }
-        this.schedulerDefaults = new ModuleScheduler.Defaults(
-                bounded(config.schedulerMaxJobs, 16, 16_384, "scheduler.max_jobs"),
-                bounded(config.schedulerWorkerThreads, 1, 8, "scheduler.worker_threads"),
-                bounded(config.schedulerQueueCapacity, 8, 4_096, "scheduler.queue_capacity"),
-                Duration.ofSeconds(bounded(config.schedulerTimeoutSeconds, 1, 300, "scheduler.timeout_seconds")),
-                bounded(config.schedulerMaxAttempts, 1, 10, "scheduler.max_attempts"),
-                Duration.ofMillis(schedulerBackoffMillis),
-                Duration.ofSeconds(schedulerMaxBackoffSeconds),
-                bounded(config.schedulerJitterPercent, 0, 100, "scheduler.jitter_percent") / 100.0
-        );
+        this.avatarUrlTemplate = PLAYER_AVATAR_URL;
+        this.maxMinecraftMessageLength = 256;
+        this.maxDiscordMessageLength = 1_000;
+        this.queueCapacity = 256;
+        this.eventRatePerMinute = 60;
+        this.eventStateCapacity = 4_096;
+        this.deliveryAttempts = 3;
+        this.deliveryTimeout = Duration.ofSeconds(10);
+        this.linkCodeTtl = Duration.ofMinutes(10);
+        this.linkCodeLength = 8;
+        this.linkExecutorCapacity = 32;
+        this.maxLinks = 100_000;
+        this.reconnectMaxDelaySeconds = 120;
+        this.backendStatusPollInterval = Duration.ofSeconds(15);
+        this.backendStatusPingTimeout = Duration.ofSeconds(5);
+        this.backendStatusDebounce = Duration.ofSeconds(20);
+        this.backendStatusConfirmations = 2;
+        this.maxMonitoredServers = 128;
+        this.backendEventChannel = "tensa:discord_events";
+        this.advancementDedupWindow = Duration.ofSeconds(10);
     }
 
     public static DiscordSettings from(DiscordConfig config, Map<String, String> environment) {
@@ -208,10 +152,9 @@ public final class DiscordSettings {
     public String eventsChannelId() { return eventsChannelId.isBlank() ? channelId : eventsChannelId; }
     public String linkedRoleId() { return linkedRoleId; }
     public String linkCommandName() { return linkCommandName; }
-    public boolean webhookAutoCreate() { return webhookAutoCreate; }
-    public String webhookName() { return webhookName; }
     public boolean minecraftToDiscord() { return minecraftToDiscord; }
     public boolean discordToMinecraft() { return discordToMinecraft; }
+    public Set<String> minecraftToDiscordChannels() { return minecraftToDiscordChannels; }
     public boolean joinMessages() { return joinMessages; }
     public boolean quitMessages() { return quitMessages; }
     public boolean serverSwitchMessages() { return serverSwitchMessages; }
@@ -246,13 +189,6 @@ public final class DiscordSettings {
     public Duration linkCodeTtl() { return linkCodeTtl; }
     public int linkCodeLength() { return linkCodeLength; }
     public int linkExecutorCapacity() { return linkExecutorCapacity; }
-    public int postLinkQueueCapacity() { return postLinkQueueCapacity; }
-    public boolean linkAnnouncementEnabled() { return linkAnnouncementEnabled; }
-    public String linkAnnouncementFormat() { return linkAnnouncementFormat; }
-    public boolean nicknameSync() { return nicknameSync; }
-    public int nicknameSyncAttempts() { return nicknameSyncAttempts; }
-    public Duration nicknameRetryBaseDelay() { return nicknameRetryBaseDelay; }
-    public DiscordRelayGuard relayGuard() { return relayGuard; }
     public int maxLinks() { return maxLinks; }
     public int reconnectMaxDelaySeconds() { return reconnectMaxDelaySeconds; }
     public Duration backendStatusPollInterval() { return backendStatusPollInterval; }
@@ -262,15 +198,6 @@ public final class DiscordSettings {
     public int maxMonitoredServers() { return maxMonitoredServers; }
     public String backendEventChannel() { return backendEventChannel; }
     public Duration advancementDedupWindow() { return advancementDedupWindow; }
-    public ModuleScheduler.Defaults schedulerDefaults() { return schedulerDefaults; }
-
-    public boolean linkAnnouncementAllows(String serverName) {
-        String normalized = trim(serverName).toLowerCase(Locale.ROOT);
-        if (linkAnnouncementExcludedServers.contains(normalized)) {
-            return false;
-        }
-        return linkAnnouncementIncludedServers.isEmpty() || linkAnnouncementIncludedServers.contains(normalized);
-    }
 
     @Override
     public String toString() {
@@ -328,37 +255,6 @@ public final class DiscordSettings {
         return trimmed.isBlank() ? "" : requireSnowflake(trimmed, key);
     }
 
-    private static String validateCommandName(String value) {
-        String command = trim(value).toLowerCase(Locale.ROOT);
-        if (!COMMAND_NAME.matcher(command).matches()) {
-            throw new DiscordConfigurationException("discord.yml linking.command_name must match [a-z0-9_-]{1,32}");
-        }
-        return command;
-    }
-
-    private static String validateWebhookName(String value) {
-        String name = DiscordSanitizer.normalize(value).trim();
-        if (name.length() < 2 || name.length() > 80) {
-            throw new DiscordConfigurationException("discord.yml proxy_chat.webhook.name must contain 2-80 characters");
-        }
-        return name;
-    }
-
-    private static String validateAvatarTemplate(String value) {
-        String template = requireTemplate(value, "relay.minecraft_to_discord.avatar_url_template");
-        String sample = template.replace("{uuid}", "00000000000000000000000000000000")
-                .replace("{player}", "Player");
-        try {
-            URI uri = new URI(sample);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
-                throw new DiscordConfigurationException("discord.yml relay.minecraft_to_discord.avatar_url_template must be an HTTPS URL");
-            }
-        } catch (URISyntaxException e) {
-            throw new DiscordConfigurationException("discord.yml relay.minecraft_to_discord.avatar_url_template is invalid");
-        }
-        return template;
-    }
-
     private static List<String> normalizeServerList(List<String> values, String key) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         if (values != null) {
@@ -368,6 +264,21 @@ public final class DiscordSettings {
                     throw new DiscordConfigurationException("discord.yml " + key + " contains an invalid backend name");
                 }
                 normalized.add(server.toLowerCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private static List<String> normalizeChannelList(List<String> values) {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (values != null) {
+            for (String value : values) {
+                String channel = trim(value);
+                if (!SERVER_NAME.matcher(channel).matches()) {
+                    throw new DiscordConfigurationException(
+                            "discord.yml relay.minecraft_to_discord.channels contains an invalid logical channel");
+                }
+                normalized.add(channel.toLowerCase(Locale.ROOT));
             }
         }
         return List.copyOf(normalized);
@@ -392,74 +303,6 @@ public final class DiscordSettings {
         return Map.copyOf(labels);
     }
 
-    private static String validateBackendChannel(String value) {
-        String channel = trim(value).toLowerCase(Locale.ROOT);
-        if (!CHANNEL_NAME.matcher(channel).matches()) {
-            throw new DiscordConfigurationException("discord.yml achievements.backend_bridge.channel must be a namespaced channel");
-        }
-        return channel;
-    }
-
-    private static boolean validateNicknameMode(String value) {
-        return switch (trim(value).toLowerCase(Locale.ROOT)) {
-            case "disabled" -> false;
-            case "minecraft" -> true;
-            default -> throw new DiscordConfigurationException(
-                    "discord.yml linking.nickname_sync.mode must be disabled or minecraft");
-        };
-    }
-
-    private static DiscordRelayGuard validateRelayGuard(Map<String, Object> proxyChat) {
-        Map<String, Object> guard = childMap(proxyChat, "require_link_to_relay");
-        boolean enabled = booleanValue(guard.get("enabled"), false);
-        java.util.EnumSet<DiscordRelayGuard.Direction> directions = java.util.EnumSet.noneOf(
-                DiscordRelayGuard.Direction.class);
-        for (String value : stringList(guard.get("directions"), List.of(
-                "minecraft_to_discord", "discord_to_minecraft"))) {
-            directions.add(DiscordRelayGuard.Direction.parse(value));
-        }
-        if (directions.isEmpty()) {
-            throw new DiscordConfigurationException(
-                    "discord.yml proxy_chat.require_link_to_relay.directions must not be empty");
-        }
-        LinkedHashSet<String> channels = new LinkedHashSet<>();
-        for (String value : stringList(guard.get("channels"), List.of("global"))) {
-            String channel = trim(value).toLowerCase(Locale.ROOT);
-            if (!COMMAND_NAME.matcher(channel).matches()) {
-                throw new DiscordConfigurationException(
-                        "discord.yml proxy_chat.require_link_to_relay.channels contains an invalid logical channel");
-            }
-            channels.add(channel);
-        }
-        if (channels.isEmpty()) {
-            throw new DiscordConfigurationException(
-                    "discord.yml proxy_chat.require_link_to_relay.channels must not be empty");
-        }
-        String minecraftMessage = requireTemplate(
-                stringValue(guard.get("minecraft_message"), "<yellow>Прив'яжіть Discord через /discord link.</yellow>"),
-                "proxy_chat.require_link_to_relay.minecraft_message");
-        String discordReply = DiscordSanitizer.normalize(stringValue(
-                guard.get("discord_reply"), "Прив'яжіть Minecraft-акаунт через /discord link у грі.")).trim();
-        if (discordReply.isBlank() || discordReply.length() > 2_000) {
-            throw new DiscordConfigurationException(
-                    "discord.yml proxy_chat.require_link_to_relay.discord_reply must contain 1-2000 characters");
-        }
-        int deleteSeconds = bounded(intValue(guard.get("reply_delete_after_seconds"), 10), 1, 60,
-                "proxy_chat.require_link_to_relay.reply_delete_after_seconds");
-        int cooldownSeconds = bounded(intValue(guard.get("feedback_cooldown_seconds"), 30), 1, 600,
-                "proxy_chat.require_link_to_relay.feedback_cooldown_seconds");
-        return new DiscordRelayGuard(
-                enabled,
-                directions,
-                DiscordRelayGuard.Mode.parse(stringValue(guard.get("mode"), "only")),
-                channels,
-                minecraftMessage,
-                discordReply,
-                Duration.ofSeconds(deleteSeconds),
-                Duration.ofSeconds(cooldownSeconds)
-        );
-    }
-
     private static DiscordEmbedTemplate embed(
             Map<String, Object> embeds,
             String name,
@@ -482,62 +325,12 @@ public final class DiscordSettings {
         return result;
     }
 
-    private static List<String> stringList(Object value, List<String> fallback) {
-        if (!(value instanceof Iterable<?> values)) {
-            return fallback;
-        }
-        java.util.ArrayList<String> result = new java.util.ArrayList<>();
-        values.forEach(item -> result.add(String.valueOf(item)));
-        return result;
-    }
-
-    private static String stringValue(Object value, String fallback) {
-        return value == null ? fallback : String.valueOf(value);
-    }
-
-    private static int intValue(Object value, int fallback) {
-        if (value == null) {
-            return fallback;
-        }
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(value));
-        } catch (NumberFormatException ignored) {
-            throw new DiscordConfigurationException(
-                    "discord.yml proxy_chat.require_link_to_relay contains a non-numeric duration");
-        }
-    }
-
-    private static boolean booleanValue(Object value, boolean fallback) {
-        if (value instanceof Boolean booleanValue) {
-            return booleanValue;
-        }
-        if (value == null) {
-            return fallback;
-        }
-        String text = String.valueOf(value).trim().toLowerCase(Locale.ROOT);
-        if ("true".equals(text) || "false".equals(text)) {
-            return Boolean.parseBoolean(text);
-        }
-        throw new DiscordConfigurationException(
-                "discord.yml proxy_chat.require_link_to_relay.enabled must be true or false");
-    }
-
     private static String requireTemplate(String value, String key) {
         String trimmed = trim(value);
         if (trimmed.isBlank() || trimmed.length() > 2_000) {
             throw new DiscordConfigurationException("discord.yml " + key + " must be a non-empty template under 2000 characters");
         }
         return trimmed;
-    }
-
-    private static int bounded(int value, int minimum, int maximum, String key) {
-        if (value < minimum || value > maximum) {
-            throw new DiscordConfigurationException("discord.yml " + key + " must be between " + minimum + " and " + maximum);
-        }
-        return value;
     }
 
     private static String trim(String value) {

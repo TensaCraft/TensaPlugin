@@ -28,13 +28,15 @@ class CommunicationsConfigOwnershipTest {
         String discordYaml = Files.readString(tempDir.resolve("communications/discord.yml"), StandardCharsets.UTF_8);
 
         assertThat(chatsYaml).contains("enabled: true", "global:", "staff:", "alert:", "private:", "reply:");
-        assertThat(chatsYaml).doesNotContain("proxy:", "proxy_chat:", "discord_format:");
+        assertThat(chatsYaml).doesNotContain(
+                "proxy:", "proxy_chat:", "discord_format:", "relay_to_discord:");
         assertThat(discordYaml).contains(
                 "enabled: false",
                 "proxy_chat:",
                 "excluded_servers:",
                 "server_aliases:",
-                "discord_format:"
+                "discord_format:",
+                "channels:"
         );
     }
 

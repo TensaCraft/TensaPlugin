@@ -10,7 +10,6 @@ public final class CommunicationsMetrics {
     private final LongAdder drops = new LongAdder();
     private final LongAdder retries = new LongAdder();
     private final LongAdder deliveryFailures = new LongAdder();
-    private final LongAdder blockedUsers = new LongAdder();
     private final LongAdder reconnects = new LongAdder();
     private final AtomicLong lastLatencyNanos = new AtomicLong();
     private final AtomicReference<String> lastFailureClass = new AtomicReference<>("none");
@@ -19,7 +18,6 @@ public final class CommunicationsMetrics {
 
     void dropped() { drops.increment(); }
     void retried() { retries.increment(); }
-    void blocked() { blockedUsers.increment(); }
     void reconnectAttempted() { reconnects.increment(); }
 
     void deliveryFailed(Throwable failure) {
@@ -46,16 +44,17 @@ public final class CommunicationsMetrics {
             String runtimeState,
             String jdaState,
             String slashState,
+            String chatTransportState,
             String storageBackend,
             int inboundQueueDepth,
             int outboundQueueDepth,
-            int postLinkQueueDepth,
+            int roleQueueDepth,
             long reconnects
     ) {
         return new Snapshot(
-                runtimeState, jdaState, slashState, storageBackend,
-                inboundQueueDepth, outboundQueueDepth, postLinkQueueDepth,
-                drops.sum(), retries.sum(), deliveryFailures.sum(), blockedUsers.sum(), reconnects + this.reconnects.sum(),
+                runtimeState, jdaState, slashState, chatTransportState, storageBackend,
+                inboundQueueDepth, outboundQueueDepth, roleQueueDepth,
+                drops.sum(), retries.sum(), deliveryFailures.sum(), reconnects + this.reconnects.sum(),
                 Duration.ofNanos(lastLatencyNanos.get()).toMillis(), lastFailureClass.get(), resources.get()
         );
     }
@@ -64,14 +63,14 @@ public final class CommunicationsMetrics {
             String runtimeState,
             String jdaState,
             String slashState,
+            String chatTransportState,
             String storageBackend,
             int inboundQueueDepth,
             int outboundQueueDepth,
-            int postLinkQueueDepth,
+            int roleQueueDepth,
             long drops,
             long retries,
             long deliveryFailures,
-            long blockedUsers,
             long reconnects,
             long lastObservedLatencyMillis,
             String lastFailureClass,

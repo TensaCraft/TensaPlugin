@@ -8,6 +8,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.Webhook;
+import net.dv8tion.jda.api.entities.Icon;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
@@ -19,6 +20,7 @@ import net.dv8tion.jda.api.events.session.SessionResumeEvent;
 import net.dv8tion.jda.api.events.session.ShutdownEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.FileUpload;
 import ua.co.tensa.Message;
 
 import java.time.Duration;
@@ -26,11 +28,11 @@ import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import ua.co.tensa.modules.runtime.ModuleScheduler;
+import ua.co.tensa.modules.runtime.SchedulerModule;
 
 final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway {
     private final DiscordSettings settings;
@@ -40,7 +42,6 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private final AtomicBoolean acceptingEvents = new AtomicBoolean();
     private final AtomicLong lastInteractionWarning = new AtomicLong();
     private final AtomicLong reconnects = new AtomicLong();
-    private final AtomicInteger pendingReplyDeletions = new AtomicInteger();
     private final AtomicReference<String> runtimeState = new AtomicReference<>("new");
     private final AtomicReference<String> slashState = new AtomicReference<>("unavailable");
     private final ModuleScheduler scheduler;
@@ -55,10 +56,7 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     private volatile Runnable readyHandler = () -> { };
 
     JdaDiscordGateway(DiscordSettings settings) {
-        this(settings, new ModuleScheduler("tensa-discord", new ModuleScheduler.Defaults(
-                settings.eventStateCapacity(), 1, settings.queueCapacity(), Duration.ofSeconds(10), 1,
-                Duration.ofMillis(250), Duration.ofSeconds(5), 0.1
-        )), true);
+        this(settings, new ModuleScheduler("tensa-discord", SchedulerModule.defaults()), true);
     }
 
     JdaDiscordGateway(DiscordSettings settings, ModuleScheduler scheduler) {
@@ -253,10 +251,13 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         if (!ready.get() || target == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
         }
-        return target.sendMessageEmbeds(toMessageEmbed(embed))
-                .setAllowedMentions(List.of())
-                .submit()
-                .thenApply(ignored -> null);
+        var icon = embed.thumbnailUrl().isBlank() ? ServerIconAsset.path() : java.util.Optional.<java.nio.file.Path>empty();
+        DiscordEmbedMessage prepared = icon.isPresent() ? embed.withThumbnail(ServerIconAsset.ATTACHMENT_URL) : embed;
+        var action = target.sendMessageEmbeds(toMessageEmbed(prepared)).setAllowedMentions(List.of());
+        if (icon.isPresent()) {
+            action = action.addFiles(FileUpload.fromData(icon.orElseThrow(), ServerIconAsset.FILE_NAME));
+        }
+        return action.submit().thenApply(ignored -> null);
     }
 
     @Override
@@ -273,63 +274,6 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
             return CompletableFuture.completedFuture(null);
         }
         return updateRole(discordUserId, false);
-    }
-
-    @Override
-    public CompletableFuture<Void> updateNickname(String discordUserId, String nickname) {
-        Guild configuredGuild = guild;
-        if (!ready.get() || configuredGuild == null) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
-        }
-        String safeNickname = DiscordSanitizer.truncate(DiscordSanitizer.normalize(nickname), 32).trim();
-        if (safeNickname.isBlank()) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("Discord nickname is empty"));
-        }
-        return configuredGuild.retrieveMemberById(discordUserId)
-                .submit()
-                .thenCompose(member -> configuredGuild.modifyNickname(member, safeNickname).submit());
-    }
-
-    @Override
-    public CompletableFuture<Void> sendTemporaryReply(
-            String channelId,
-            String messageId,
-            String content,
-            Duration deleteAfter
-    ) {
-        TextChannel target = channel;
-        if (!ready.get() || target == null || !target.getId().equals(channelId)) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Discord relay channel is not ready"));
-        }
-        var action = target.sendMessage(content).setAllowedMentions(List.of());
-        if (messageId != null && !messageId.isBlank()) {
-            action = action.setMessageReference(messageId).failOnInvalidReply(false);
-        }
-        return action.submit().thenAccept(reply -> {
-            if (pendingReplyDeletions.incrementAndGet() > settings.eventStateCapacity()) {
-                pendingReplyDeletions.decrementAndGet();
-                reply.delete().queue(null, ignored -> { });
-                return;
-            }
-            try {
-                scheduler.schedule(ModuleScheduler.job("discord-reply-delete-" + reply.getId(), () -> {
-                            try {
-                                if (acceptingEvents.get()) {
-                                    reply.delete().queue(null, ignored -> { });
-                                }
-                            } finally {
-                                pendingReplyDeletions.decrementAndGet();
-                            }
-                        })
-                        .scope("discord-reply-delete")
-                        .dedupe("discord-reply-delete-" + reply.getId())
-                        .delay(deleteAfter.isNegative() || deleteAfter.isZero() ? Duration.ofMillis(1) : deleteAfter)
-                        .build());
-            } catch (RuntimeException schedulerBusy) {
-                pendingReplyDeletions.decrementAndGet();
-                reply.delete().queue(null, ignored -> { });
-            }
-        });
     }
 
     @Override
@@ -352,13 +296,33 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                     .filter(webhook -> ownedByCurrentBot(webhook, configuredGuild))
                     .filter(webhook -> webhook.getToken() != null && !webhook.getToken().isBlank())
                     .filter(webhook -> !preferredWebhookId.isBlank() && webhook.getId().equals(preferredWebhookId)
-                            || webhook.getName().equals(name))
+                            || webhook.getName().equals(name)
+                            || webhook.getName().equals("Tensa Communications"))
                     .findFirst()
                     .orElse(null);
             if (existing != null) {
-                return CompletableFuture.completedFuture(managedWebhook(route, existing));
+                var icon = ServerIconAsset.path();
+                if (icon.isEmpty()) {
+                    return CompletableFuture.completedFuture(managedWebhook(route, existing));
+                }
+                try {
+                    return existing.getManager().setAvatar(Icon.from(icon.orElseThrow().toFile()))
+                            .submit()
+                            .handle((ignored, error) -> managedWebhook(route, existing));
+                } catch (java.io.IOException ignored) {
+                    return CompletableFuture.completedFuture(managedWebhook(route, existing));
+                }
             }
-            return target.createWebhook(name).submit().thenApply(webhook -> managedWebhook(route, webhook));
+            var action = target.createWebhook(name);
+            try {
+                var icon = ServerIconAsset.path();
+                if (icon.isPresent()) {
+                    action = action.setAvatar(Icon.from(icon.orElseThrow().toFile()));
+                }
+            } catch (java.io.IOException ignored) {
+                // A missing or unreadable local icon must not prevent webhook recovery.
+            }
+            return action.submit().thenApply(webhook -> managedWebhook(route, webhook));
         });
     }
 
@@ -408,7 +372,6 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         inboundHandler = ignored -> { };
         readyHandler = () -> { };
-        scheduler.cancelScope("discord-reply-delete");
         if (ownsScheduler) {
             scheduler.close();
         }
@@ -445,9 +408,15 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         return configuredGuild.retrieveMemberById(discordUserId)
                 .submit()
-                .thenCompose(member -> assign
-                        ? configuredGuild.addRoleToMember(member, role).submit()
-                        : configuredGuild.removeRoleFromMember(member, role).submit());
+                .thenCompose(member -> {
+                    boolean hasRole = member.getRoles().contains(role);
+                    if (assign == hasRole) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return assign
+                            ? configuredGuild.addRoleToMember(member, role).submit()
+                            : configuredGuild.removeRoleFromMember(member, role).submit();
+                });
     }
 
     private boolean ownedByCurrentBot(Webhook webhook, Guild configuredGuild) {
@@ -546,9 +515,6 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         }
         if (!embed.footer().isBlank()) {
             builder.setFooter(embed.footer());
-        }
-        if (!embed.imageUrl().isBlank()) {
-            builder.setImage(embed.imageUrl());
         }
         return builder.build();
     }

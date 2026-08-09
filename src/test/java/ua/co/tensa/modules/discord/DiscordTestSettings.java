@@ -22,10 +22,6 @@ final class DiscordTestSettings {
         config.channelId = "22345678901234567";
         config.linkedRoleId = "32345678901234567";
         config.botToken = "test-token";
-        config.queueCapacity = 8;
-        config.deliveryAttempts = 1;
-        config.deliveryTimeoutSeconds = 2;
-        config.linkExecutorCapacity = 8;
         customize.accept(config);
         return config.settings(Map.of());
     }

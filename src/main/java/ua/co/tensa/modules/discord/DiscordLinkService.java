@@ -8,7 +8,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -46,27 +45,17 @@ final class DiscordLinkService implements AutoCloseable {
     private final LinkCodeRegistry codes;
     private final DiscordGateway gateway;
     private final DiscordSettings settings;
-    private final java.util.function.Consumer<LinkedAccount> linkedHandler;
-    private final ExecutorService executor;
+    private final ThreadPoolExecutor executor;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
+    private final java.util.concurrent.ConcurrentHashMap<UUID, CompletableFuture<Void>> playerRoleChecks =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     DiscordLinkService(DiscordLinkRepository store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
-        this(store, codes, gateway, settings, ignored -> { });
-    }
-
-    DiscordLinkService(
-            DiscordLinkRepository store,
-            LinkCodeRegistry codes,
-            DiscordGateway gateway,
-            DiscordSettings settings,
-            java.util.function.Consumer<LinkedAccount> linkedHandler
-    ) {
         this.store = store;
         this.codes = codes;
         this.gateway = gateway;
         this.settings = settings;
-        this.linkedHandler = java.util.Objects.requireNonNull(linkedHandler, "linkedHandler");
         this.executor = new ThreadPoolExecutor(
                 1,
                 1,
@@ -120,7 +109,7 @@ final class DiscordLinkService implements AutoCloseable {
     }
 
     void reconcileRoles() {
-        if (closed.get() || roleReconciliation.get() != null) {
+        if (settings.linkedRoleId().isBlank() || closed.get() || roleReconciliation.get() != null) {
             return;
         }
         CompletableFuture<Void> promise = new CompletableFuture<>();
@@ -133,6 +122,36 @@ final class DiscordLinkService implements AutoCloseable {
             roleReconciliation.compareAndSet(promise, null);
             promise.completeExceptionally(rejected);
         }
+    }
+
+    void reconcileRole(UUID playerUuid) {
+        if (playerUuid == null || settings.linkedRoleId().isBlank() || closed.get()) {
+            return;
+        }
+        CompletableFuture<Void> marker = new CompletableFuture<>();
+        if (playerRoleChecks.putIfAbsent(playerUuid, marker) != null) {
+            return;
+        }
+        CompletableFuture<Void> check = submit(() -> {
+            Optional<LinkedAccount> account = store.findByPlayer(playerUuid);
+            if (account.isPresent()) {
+                awaitGatewayReadyForRole();
+                await(gateway.assignLinkedRole(account.orElseThrow().discordUserId()));
+            }
+            return null;
+        });
+        check.whenComplete((ignored, error) -> {
+            if (error == null) {
+                marker.complete(null);
+            } else {
+                marker.completeExceptionally(error);
+            }
+            playerRoleChecks.remove(playerUuid, marker);
+        });
+    }
+
+    int queueDepth() {
+        return executor.getQueue().size();
     }
 
     private void startRoleReconciliation(CompletableFuture<Void> promise) {
@@ -187,17 +206,10 @@ final class DiscordLinkService implements AutoCloseable {
                 return Result.of(ResultType.DISCORD_ALREADY_LINKED);
             }
             try {
-                awaitGatewayReadyForRole();
-                await(gateway.assignLinkedRole(discordUserId));
+                assignConfiguredRole(discordUserId);
             } catch (Exception roleFailure) {
                 store.unlink(account.playerUuid());
                 return Result.of(ResultType.ROLE_FAILED);
-            }
-            try {
-                linkedHandler.accept(account);
-            } catch (RuntimeException postLinkFailure) {
-                Message.warn("communications event=post_link_drop failure="
-                        + DiscordDiagnostics.unwrap(postLinkFailure).getClass().getSimpleName());
             }
             return new Result(ResultType.LINKED, account);
         } catch (IOException e) {
@@ -212,8 +224,7 @@ final class DiscordLinkService implements AutoCloseable {
         }
         LinkedAccount account = existing.get();
         try {
-            awaitGatewayReadyForRole();
-            await(gateway.removeLinkedRole(account.discordUserId()));
+            removeConfiguredRole(account.discordUserId());
         } catch (Exception e) {
             return Result.of(ResultType.ROLE_FAILED);
         }
@@ -223,7 +234,7 @@ final class DiscordLinkService implements AutoCloseable {
             return new Result(ResultType.UNLINKED, account);
         } catch (IOException e) {
             try {
-                await(gateway.assignLinkedRole(account.discordUserId()));
+                assignConfiguredRole(account.discordUserId());
             } catch (Exception ignored) {
                 Message.warn("Discord role compensation failed after a local unlink storage error");
             }
@@ -233,6 +244,22 @@ final class DiscordLinkService implements AutoCloseable {
 
     private void await(CompletableFuture<Void> future) throws Exception {
         future.get(settings.deliveryTimeout().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private void assignConfiguredRole(String discordUserId) throws Exception {
+        if (settings.linkedRoleId().isBlank()) {
+            return;
+        }
+        awaitGatewayReadyForRole();
+        await(gateway.assignLinkedRole(discordUserId));
+    }
+
+    private void removeConfiguredRole(String discordUserId) throws Exception {
+        if (settings.linkedRoleId().isBlank()) {
+            return;
+        }
+        awaitGatewayReadyForRole();
+        await(gateway.removeLinkedRole(discordUserId));
     }
 
     private void awaitGatewayReadyForRole() throws InterruptedException {
@@ -276,6 +303,8 @@ final class DiscordLinkService implements AutoCloseable {
         if (reconciliation != null) {
             reconciliation.cancel(false);
         }
+        playerRoleChecks.values().forEach(future -> future.cancel(false));
+        playerRoleChecks.clear();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {

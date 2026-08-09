@@ -28,22 +28,23 @@ class DiscordConfigTest {
         assertThat(yaml).contains(
                 "config_version: 2",
                 "bot:",
-                "webhook:",
                 "discord_ids:",
                 "guild_id:",
                 "main_channel_id:",
                 "relay:",
+                "channels:",
                 "announcements:",
                 "achievements:",
-                "linking:",
                 "proxy_chat:",
-                "webhook:",
-                "embeds:",
-                "auto_create:"
+                "embeds:"
         );
-        assertThat(yaml).doesNotContain("delivery:", "limits:", "gateway:", "diagnostics:");
+        assertThat(yaml).doesNotContain(
+                "delivery:", "limits:", "gateway:", "diagnostics:", "scheduler:", "backend_status:",
+                "auto_create:", "webhook:", "cooldown_millis:", "duplicate_window_millis:",
+                "max_repeated_characters:", "duplicate_message:", "require_link_to_relay:",
+                "thumbnail_url:", "image_url:", "nickname_sync:", "link_announcement:", "linking:"
+        );
         assertThat(yaml).doesNotContain("\nchannel_id:", "\nlinked_role_id:", "\nlink_command_name:", "store_file:");
-        assertThat(yaml).contains("https://mc-heads.net/avatar/{player}/128");
         assertThat(yaml).doesNotContain("token:", "chat_url:", "announcements_url:", "TENSA_DISCORD_BOT_TOKEN=");
     }
 
@@ -53,34 +54,28 @@ class DiscordConfigTest {
         DiscordConfig config = new DiscordConfig();
         config.botToken = "configured-token";
         config.webhookUrl = "https://discord.com/api/webhooks/111/configured";
-        config.eventsWebhookUrl = "https://discord.com/api/webhooks/333/configured-events";
         config.guildId = "12345678901234567";
         config.channelId = "22345678901234567";
 
         DiscordSettings settings = config.settings(Map.of(
                 DiscordSettings.TOKEN_ENV, "environment-token",
-                DiscordSettings.WEBHOOK_ENV, "https://discord.com/api/webhooks/222/environment",
-                DiscordSettings.EVENTS_WEBHOOK_ENV, "https://discord.com/api/webhooks/444/environment-events"
+                DiscordSettings.WEBHOOK_ENV, "https://discord.com/api/webhooks/222/environment"
         ));
 
         assertThat(settings.credentials().botToken()).isEqualTo("environment-token");
         assertThat(settings.credentials().webhookUri()).get()
                 .extracting(Object::toString)
                 .isEqualTo("https://discord.com/api/webhooks/222/environment");
-        assertThat(settings.credentials().eventsWebhookUri()).get()
-                .extracting(Object::toString)
-                .isEqualTo("https://discord.com/api/webhooks/444/environment-events");
         assertThat(settings.toString())
                 .doesNotContain(
                         "environment-token",
                         "configured-token",
-                        "/api/webhooks/222/environment",
-                        "/api/webhooks/444/environment-events"
+                        "/api/webhooks/222/environment"
                 );
     }
 
     @Test
-    void rejectsInvalidDiscordIdsAndLinkBounds() {
+    void rejectsInvalidDiscordIds() {
         Tensa.pluginPath = tempDir;
         DiscordConfig config = new DiscordConfig();
         config.botToken = "test-token";
@@ -91,34 +86,44 @@ class DiscordConfigTest {
                 .isInstanceOf(DiscordConfigurationException.class)
                 .hasMessageContaining("guild_id");
 
-        config.guildId = "12345678901234567";
-        config.maxLinks = 0;
-        assertThatThrownBy(() -> config.settings(Map.of()))
-                .isInstanceOf(DiscordConfigurationException.class)
-                .hasMessageContaining("max_links");
     }
 
     @Test
-    void validatesAdvancedSchedulerOverridesWithoutPublishingThemAsDefaults() throws IOException {
+    void prunesObsoleteTechnicalAndModerationSettingsFromExistingV2() throws IOException {
         Tensa.pluginPath = tempDir;
-        DiscordConfig config = new DiscordConfig();
-        config.botToken = "test-token";
-        config.guildId = "12345678901234567";
-        config.channelId = "22345678901234567";
-        config.schedulerMaxJobs = 64;
-        config.schedulerWorkerThreads = 3;
-        config.schedulerJitterPercent = 25;
+        Files.createDirectories(tempDir.resolve("communications"));
+        Path file = tempDir.resolve("communications/discord.yml");
+        Files.writeString(file, """
+                config_version: 2
+                bot:
+                  enabled: false
+                webhook:
+                  enabled: true
+                proxy_chat:
+                  cooldown_millis: 1500
+                  duplicate_window_millis: 15000
+                  require_link_to_relay:
+                    enabled: true
+                announcements:
+                  backend_status:
+                    poll_interval_seconds: 15
+                limits:
+                  queue_capacity: 999
+                delivery:
+                  attempts: 5
+                gateway:
+                  max_reconnect_delay_seconds: 500
+                scheduler:
+                  worker_threads: 8
+                """);
 
-        assertThat(config.settings(Map.of()).schedulerDefaults())
-                .satisfies(defaults -> {
-                    assertThat(defaults.maxJobs()).isEqualTo(64);
-                    assertThat(defaults.workerThreads()).isEqualTo(3);
-                    assertThat(defaults.jitter()).isEqualTo(0.25);
-                });
+        new DiscordConfig().reloadCfg();
 
-        config.reloadCfg();
-        assertThat(Files.readString(tempDir.resolve("communications/discord.yml")))
-                .doesNotContain("scheduler:");
+        String yaml = Files.readString(file);
+        assertThat(yaml).doesNotContain(
+                "webhook:", "cooldown_millis:", "duplicate_window_millis:", "require_link_to_relay:",
+                "backend_status:", "limits:", "delivery:", "gateway:", "scheduler:"
+        );
     }
 
     @Test

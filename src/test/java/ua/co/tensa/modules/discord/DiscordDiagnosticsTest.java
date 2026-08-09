@@ -11,11 +11,13 @@ class DiscordDiagnosticsTest {
         String webhook = "https://discord.com/api/" + "webhooks/123456789/secret-webhook-value";
 
         String description = DiscordDiagnostics.describe(
-                new IllegalStateException("registration failed token=" + token + " webhook=" + webhook)
+                new IllegalStateException("registration failed guild=123456789012345678 token=" + token
+                        + " webhook=" + webhook)
         );
 
         assertThat(description)
-                .contains("IllegalStateException", "registration failed", "[REDACTED_TOKEN]", "[REDACTED_WEBHOOK]")
-                .doesNotContain(token, webhook, "secret-webhook-value");
+                .contains("IllegalStateException", "registration failed", "[REDACTED_TOKEN]", "[REDACTED_WEBHOOK]",
+                        "[REDACTED_DISCORD_ID]")
+                .doesNotContain(token, webhook, "secret-webhook-value", "123456789012345678");
     }
 }

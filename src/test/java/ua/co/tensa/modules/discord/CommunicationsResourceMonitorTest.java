@@ -18,6 +18,6 @@ class CommunicationsResourceMonitorTest {
 
     private static CommunicationsResourceSnapshot snapshot(long used, long maximum) {
         return new CommunicationsResourceSnapshot(used, maximum, used - 100,
-                1, 2, 3, 4, 5, 6, 7, 8, 9);
+                1, 2, 3, 4, 5, 6, 7, 8);
     }
 }

@@ -13,28 +13,35 @@ final class DiscordDelivery {
 
     CompletableFuture<Void> send(DiscordOutboundMessage message) {
         if (message.embed() != null) {
-            if (message.preferWebhook() && webhook.configured(message.route())) {
-                return fallbackOnRejectedResponse(message.route(),
-                        webhook.sendEmbed(message.route(), message.embed()),
-                        () -> gateway.sendBotMessage(message.route(), message.botContent())
-                );
-            }
             return fallbackOnRejectedResponse(message.route(),
                     gateway.sendBotEmbed(message.route(), message.embed()),
                     () -> gateway.sendBotMessage(message.route(), message.botContent())
             );
         }
-        if (message.preferWebhook() && webhook.configured(message.route())) {
-            return fallbackOnRejectedResponse(message.route(),
-                    webhook.send(message.route(), message.webhookContent(), message.webhookUsername(), message.avatarUrl()),
-                    () -> gateway.sendBotMessage(message.route(), message.botContent())
-            );
+        if (message.preferWebhook()) {
+            if (!webhook.configured(message.route())) {
+                return CompletableFuture.failedFuture(new IllegalStateException("Discord chat webhook is not ready"));
+            }
+            return webhook.send(
+                    message.route(), message.webhookContent(), message.webhookUsername(), message.avatarUrl())
+                    .handle((ignored, error) -> {
+                        if (error == null) {
+                            return CompletableFuture.<Void>completedFuture(null);
+                        }
+                        Throwable cause = DiscordDiagnostics.unwrap(error);
+                        if (revokedWebhook(cause)) {
+                            webhook.invalidate(message.route());
+                        }
+                        return CompletableFuture.<Void>failedFuture(cause);
+                    }).thenCompose(java.util.function.Function.identity());
         }
         return gateway.sendBotMessage(message.route(), message.botContent());
     }
 
-    boolean requiresReadyGateway(DiscordOutboundMessage message) {
-        return !message.preferWebhook() || !webhook.configured(message.route());
+    boolean ready(DiscordOutboundMessage message) {
+        return message.preferWebhook()
+                ? webhook.configured(message.route())
+                : gateway.isReady(message.route());
     }
 
     private CompletableFuture<Void> fallbackOnRejectedResponse(
@@ -63,7 +70,7 @@ final class DiscordDelivery {
     static boolean retryable(Throwable error) {
         Throwable cause = DiscordDiagnostics.unwrap(error);
         if (cause instanceof DiscordWebhookClient.RejectedResponseException rejected) {
-            return rejected.retryable();
+            return rejected.retryable() || rejected.revoked();
         }
         if (cause instanceof net.dv8tion.jda.api.exceptions.RateLimitedException) {
             return true;

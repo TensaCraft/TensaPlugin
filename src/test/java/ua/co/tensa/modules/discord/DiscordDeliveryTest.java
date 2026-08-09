@@ -23,16 +23,16 @@ class DiscordDeliveryTest {
     }
 
     @Test
-    void definiteWebhookRejectionUsesBotFallbackOnce() {
+    void invalidWebhookPayloadNeverLosesPlayerIdentityThroughBotFallback() {
         FakeGateway gateway = new FakeGateway();
         DiscordDelivery delivery = new DiscordDelivery(
                 gateway,
                 new FailedWebhook(new DiscordWebhookClient.RejectedResponseException(400))
         );
 
-        delivery.send(message()).join();
-
-        assertThat(gateway.botMessages.get()).isOne();
+        assertThatThrownBy(() -> delivery.send(message()).join())
+                .hasRootCauseInstanceOf(DiscordWebhookClient.RejectedResponseException.class);
+        assertThat(gateway.botMessages.get()).isZero();
     }
 
     @Test
@@ -53,19 +53,42 @@ class DiscordDeliveryTest {
     }
 
     @Test
-    void revokedManagedWebhookIsInvalidatedAndFallsBackOnce() {
+    void revokedManagedWebhookIsInvalidatedWithoutCrossTransportFallback() {
         FakeGateway gateway = new FakeGateway();
         FailedWebhook webhook = new FailedWebhook(new DiscordWebhookClient.RejectedResponseException(404));
         DiscordDelivery delivery = new DiscordDelivery(gateway, webhook);
 
-        delivery.send(message()).join();
+        assertThatThrownBy(() -> delivery.send(message()).join())
+                .hasRootCauseInstanceOf(DiscordWebhookClient.RejectedResponseException.class);
 
         assertThat(webhook.invalidations).hasValue(1);
-        assertThat(gateway.botMessages).hasValue(1);
+        assertThat(gateway.botMessages).hasValue(0);
+        assertThat(DiscordDelivery.retryable(new DiscordWebhookClient.RejectedResponseException(404))).isTrue();
+    }
+
+    @Test
+    void missingChatWebhookIsUnavailableInsteadOfFallingBackToBotIdentity() {
+        FakeGateway gateway = new FakeGateway();
+        DiscordWebhookDelivery missing = new DiscordWebhookDelivery() {
+            @Override public boolean configured(DiscordRoute route) { return false; }
+            @Override public CompletableFuture<Void> send(DiscordRoute route, String content, String username, String avatarUrl) {
+                return CompletableFuture.failedFuture(new AssertionError("must not send"));
+            }
+            @Override public CompletableFuture<Void> sendEmbed(DiscordRoute route, DiscordEmbedMessage embed) {
+                return CompletableFuture.failedFuture(new AssertionError("must not send"));
+            }
+        };
+        DiscordDelivery delivery = new DiscordDelivery(gateway, missing);
+
+        assertThat(delivery.ready(message())).isFalse();
+        assertThatThrownBy(() -> delivery.send(message()).join())
+                .hasRootCauseInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("webhook");
+        assertThat(gateway.botMessages).hasValue(0);
     }
 
     private static DiscordOutboundMessage message() {
-        return DiscordOutboundMessage.chat("webhook", "bot", "player", "");
+        return DiscordOutboundMessage.chat("webhook", "player", "");
     }
 
     private static final class FailedWebhook implements DiscordWebhookDelivery {

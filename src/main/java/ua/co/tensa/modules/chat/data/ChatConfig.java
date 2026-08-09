@@ -33,7 +33,6 @@ public class ChatConfig extends ConfigBase {
             entry("command", "g,global,gchat"),
             entry("permission", ""),
             entry("see_all", true),
-            entry("relay_to_discord", true),
             entry("format", "<color:#f4c15d>{player}</color> <dark_gray>»</dark_gray> <white>{message}</white>")
     );
 
@@ -43,7 +42,6 @@ public class ChatConfig extends ConfigBase {
             entry("command", "s"),
             entry("permission", "tensa.chat.staff"),
             entry("see_all", false),
-            entry("relay_to_discord", false),
             entry("format", "<dark_gray>[</dark_gray><color:#ff6b6b>S</color><dark_gray>]</dark_gray> <color:#6edcff>{server}</color> <color:#f4c15d>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>")
     );
 
@@ -53,7 +51,6 @@ public class ChatConfig extends ConfigBase {
             entry("command", "alert"),
             entry("permission", "tensa.chat.alert"),
             entry("see_all", true),
-            entry("relay_to_discord", true),
             entry("format", "<dark_gray>[</dark_gray><color:#ff5c5c>УВАГА</color><dark_gray>]</dark_gray> <white>{message}</white>")
     );
 
@@ -104,6 +101,13 @@ public class ChatConfig extends ConfigBase {
             changed |= migrateKnownDefault(section + ".from_format", LEGACY_PRIVATE_FROM_FORMAT, PRIVATE_FROM_FORMAT);
         }
         changed |= migrateKnownDefault("private.command", LEGACY_PRIVATE_COMMANDS, PRIVATE_COMMANDS);
+        for (String section : java.util.List.of("global", "staff", "alert", "private", "reply")) {
+            String obsoleteRelayFlag = section + ".relay_to_discord";
+            if (contains(obsoleteRelayFlag)) {
+                setNodeValue(node(obsoleteRelayFlag), null);
+                changed = true;
+            }
+        }
         if (changed) {
             save();
             super.reloadCfg();

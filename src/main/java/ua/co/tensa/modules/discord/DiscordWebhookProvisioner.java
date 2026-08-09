@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Fetches or creates bot-owned webhooks without ever persisting their credentials. */
 final class DiscordWebhookProvisioner implements AutoCloseable {
     private static final String SCOPE = "discord-webhook-provisioning";
+    private static final String GLOBAL_WEBHOOK_NAME = "ServerChat";
     private final DiscordSettings settings;
     private final DiscordGateway gateway;
     private final DiscordWebhookClient client;
@@ -42,19 +43,16 @@ final class DiscordWebhookProvisioner implements AutoCloseable {
     }
 
     void refreshAll() {
-        if (!settings.webhookAutoCreate() || closed.get()) {
+        if (closed.get()) {
             return;
         }
         if (settings.minecraftToDiscord() && client.requiresManaged(DiscordRoute.CHAT)) {
             recover(DiscordRoute.CHAT);
         }
-        if (eventsEnabled() && client.requiresManaged(DiscordRoute.EVENTS)) {
-            recover(DiscordRoute.EVENTS);
-        }
     }
 
     private void recover(DiscordRoute route) {
-        if (!settings.webhookAutoCreate() || closed.get() || !requested.get(route).compareAndSet(false, true)) {
+        if (route != DiscordRoute.CHAT || closed.get() || !requested.get(route).compareAndSet(false, true)) {
             return;
         }
         try {
@@ -69,7 +67,7 @@ final class DiscordWebhookProvisioner implements AutoCloseable {
                         requested.get(route).set(false);
                         metrics.recordFailure(error);
                         Message.warn("communications component=webhook route=" + route.name().toLowerCase()
-                                + " transition=bot-fallback failure="
+                                + " transition=recovery-failed failure="
                                 + DiscordDiagnostics.unwrap(error).getClass().getSimpleName());
                     })
                     .build());
@@ -81,12 +79,9 @@ final class DiscordWebhookProvisioner implements AutoCloseable {
 
     private void provision(DiscordRoute route) throws Exception {
         String preferredId = repository.find(route).map(DiscordWebhookBinding::webhookId).orElse("");
-        String name = route == DiscordRoute.EVENTS
-                ? DiscordSanitizer.truncate(settings.webhookName() + " Events", 80)
-                : settings.webhookName();
         ManagedDiscordWebhook webhook;
         try {
-            webhook = gateway.ensureManagedWebhook(route, name, preferredId)
+            webhook = gateway.ensureManagedWebhook(route, GLOBAL_WEBHOOK_NAME, preferredId)
                     .get(settings.deliveryTimeout().plusSeconds(2).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
         } catch (Exception failure) {
             Throwable cause = DiscordDiagnostics.unwrap(failure);
@@ -94,7 +89,7 @@ final class DiscordWebhookProvisioner implements AutoCloseable {
                 requested.get(route).set(false);
                 metrics.recordFailure(cause);
                 Message.warn("communications component=webhook route=" + route.name().toLowerCase()
-                        + " transition=bot-fallback failure=" + cause.getClass().getSimpleName());
+                        + " transition=unavailable failure=" + cause.getClass().getSimpleName());
                 return;
             }
             throw failure;
@@ -106,19 +101,15 @@ final class DiscordWebhookProvisioner implements AutoCloseable {
                 + " transition=ready managed=true");
     }
 
-    private boolean eventsEnabled() {
-        return settings.joinMessages()
-                || settings.quitMessages()
-                || settings.serverSwitchMessages()
-                || settings.backendStatusMessages()
-                || settings.advancementMessages();
-    }
-
     private static boolean permanentPermissionFailure(Throwable cause) {
         return cause instanceof SecurityException
                 || cause instanceof net.dv8tion.jda.api.exceptions.InsufficientPermissionException
                 || cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response
                 && response.getErrorCode() == 50_013;
+    }
+
+    String chatTransportState() {
+        return client.chatTransportState();
     }
 
     @Override

@@ -42,6 +42,17 @@ public final class ChatMessageRenderer {
         return new Result(component, linkified.urls());
     }
 
+    /** Renders trusted operator input without a route-specific player wrapper. */
+    public static Result renderConsole(String rawMessage) {
+        String message = rawMessage == null ? "" : rawMessage;
+        try {
+            return new Result(MINI.deserialize(message), 0);
+        } catch (RuntimeException invalidMarkup) {
+            Linkified fallback = linkify(message);
+            return new Result(fallback.component(), fallback.urls());
+        }
+    }
+
     private static Linkified linkify(String message) {
         Matcher matcher = HTTP_URL.matcher(message);
         Component result = Component.empty();

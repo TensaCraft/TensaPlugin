@@ -17,6 +17,7 @@ final class DiscordVelocityListener {
     }
 
     void prime(Player player) {
+        runtime.reconcileLinkedRole(player.getUniqueId());
         player.getCurrentServer().ifPresent(connection -> presence.prime(
                 player.getUniqueId(),
                 connection.getServerInfo().getName()
@@ -34,6 +35,7 @@ final class DiscordVelocityListener {
 
     @Subscribe
     public void onServerPostConnect(ServerPostConnectEvent event) {
+        runtime.reconcileLinkedRole(event.getPlayer().getUniqueId());
         Optional<String> current = event.getPlayer().getCurrentServer()
                 .map(connection -> connection.getServerInfo().getName());
         if (current.isEmpty()) {

@@ -7,6 +7,7 @@ package ua.co.tensa.modules;
 public interface ModuleEntry {
     String id();
     String title();
+    default boolean required() { return false; }
     void enable();
     void disable();
     default void reload() {

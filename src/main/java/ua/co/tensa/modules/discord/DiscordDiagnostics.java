@@ -12,6 +12,7 @@ final class DiscordDiagnostics {
     private static final Pattern BOT_TOKEN = Pattern.compile(
             "[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{6,}\\.[A-Za-z0-9_-]{20,}"
     );
+    private static final Pattern DISCORD_ID = Pattern.compile("\\b[1-9][0-9]{16,19}\\b");
     private static final int MAX_LENGTH = 400;
 
     private DiscordDiagnostics() {
@@ -23,6 +24,7 @@ final class DiscordDiagnostics {
         String message = cause == null || cause.getMessage() == null ? "no details" : cause.getMessage();
         String sanitized = WEBHOOK.matcher(message).replaceAll("[REDACTED_WEBHOOK]");
         sanitized = BOT_TOKEN.matcher(sanitized).replaceAll("[REDACTED_TOKEN]");
+        sanitized = DISCORD_ID.matcher(sanitized).replaceAll("[REDACTED_DISCORD_ID]");
         sanitized = sanitized.replace('\r', ' ').replace('\n', ' ')
                 .replace("<", "\\<")
                 .trim();

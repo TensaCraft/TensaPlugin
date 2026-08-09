@@ -91,14 +91,15 @@ public class TensaInfoCommand implements SimpleCommand {
         Message.privateMessage(source, "  <yellow>runtime</yellow>=<white>" + snapshot.runtimeState()
                 + "</white> <yellow>jda</yellow>=<white>" + snapshot.jdaState()
                 + "</white> <yellow>slash</yellow>=<white>" + snapshot.slashState() + "</white>");
+        Message.privateMessage(source, "  <yellow>chat_transport</yellow>=<white>"
+                + snapshot.chatTransportState() + "</white>");
         Message.privateMessage(source, "  <yellow>storage</yellow>=<white>" + snapshot.storageBackend()
                 + "</white> <yellow>queues</yellow>=<white>in:" + snapshot.inboundQueueDepth()
                 + ",out:" + snapshot.outboundQueueDepth()
-                + ",post-link:" + snapshot.postLinkQueueDepth() + "</white>");
+                + ",roles:" + snapshot.roleQueueDepth() + "</white>");
         Message.privateMessage(source, "  <yellow>drops</yellow>=<white>" + snapshot.drops()
                 + "</white> <yellow>retries</yellow>=<white>" + snapshot.retries()
-                + "</white> <yellow>delivery_failures</yellow>=<white>" + snapshot.deliveryFailures()
-                + "</white> <yellow>blocked</yellow>=<white>" + snapshot.blockedUsers() + "</white>");
+                + "</white> <yellow>delivery_failures</yellow>=<white>" + snapshot.deliveryFailures() + "</white>");
         Message.privateMessage(source, "  <yellow>reconnects</yellow>=<white>" + snapshot.reconnects()
                 + "</white> <yellow>latency_ms</yellow>=<white>" + snapshot.lastObservedLatencyMillis()
                 + "</white> <yellow>last_failure</yellow>=<white>" + snapshot.lastFailureClass() + "</white>");
@@ -107,8 +108,7 @@ public class TensaInfoCommand implements SimpleCommand {
                 + "</white> <yellow>state</yellow>=<white>chat:" + resources.chatStateEntries()
                 + ",reply:" + resources.privateReplyEntries()
                 + ",codes:" + resources.linkCodes()
-                + ",links:" + resources.linkIndexEntries()
-                + ",guard:" + resources.guardFeedbackEntries() + "</white>");
+                + ",links:" + resources.linkIndexEntries() + "</white>");
         Message.privateMessage(source, "  <yellow>chat_components</yellow>=<white>clickable_urls:"
                 + resources.clickableUrlsRendered() + "</white>");
         Message.privateMessage(source, "  <yellow>scheduler</yellow>=<white>jobs:" + resources.schedulerJobs()

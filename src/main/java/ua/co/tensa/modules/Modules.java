@@ -129,7 +129,7 @@ public class Modules {
         for (Map.Entry<String, ModuleEntry> entry : REGISTRY.entrySet()) {
             String id = entry.getKey();
             ModuleEntry module = entry.getValue();
-            boolean desired = Tensa.config != null && Tensa.config.isModuleEnabled(id);
+            boolean desired = module.required() || Tensa.config != null && Tensa.config.isModuleEnabled(id);
 
             if (!desired) {
                 if (module.isEnabled()) {

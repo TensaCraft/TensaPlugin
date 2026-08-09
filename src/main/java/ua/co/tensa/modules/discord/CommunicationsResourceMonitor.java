@@ -34,7 +34,6 @@ final class CommunicationsResourceMonitor {
                 privateReplies,
                 discord.linkCodes(),
                 discord.linkIndexEntries(),
-                discord.guardFeedbackEntries(),
                 scheduler.activeJobs(),
                 scheduler.workerQueueDepth(),
                 scheduler.rejected(),

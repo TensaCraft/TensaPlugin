@@ -11,6 +11,7 @@ import ua.co.tensa.modules.AbstractModule;
 import ua.co.tensa.modules.ModuleEntry;
 import ua.co.tensa.modules.runtime.AtomicRuntimeSlot;
 import ua.co.tensa.modules.runtime.ModuleScheduler;
+import ua.co.tensa.modules.runtime.SchedulerModule;
 import ua.co.tensa.modules.chat.ChatCommands;
 import ua.co.tensa.modules.chat.ProxyChatListener;
 import ua.co.tensa.modules.chat.ProxyChatService;
@@ -96,14 +97,8 @@ public final class CommunicationsModule extends AbstractModule {
                 }
         );
         ChatCommands chatCommands = new ChatCommands(plan.chatConfig(), proxyChat, privateReplyTargets);
-        ActiveRuntime active = new ActiveRuntime(proxyChat, chatCommands, new ModuleScheduler(
-                "tensa-communications",
-                plan.discordSettings() == null
-                        ? new ModuleScheduler.Defaults(
-                                512, 2, 256, Duration.ofSeconds(30), 1,
-                                Duration.ofSeconds(1), Duration.ofSeconds(30), 0.2)
-                        : plan.discordSettings().schedulerDefaults()
-        ));
+        ActiveRuntime active = new ActiveRuntime(
+                proxyChat, chatCommands, SchedulerModule.create("tensa-communications"));
 
         try {
             if (plan.discordSettings() != null) {
@@ -152,32 +147,18 @@ public final class CommunicationsModule extends AbstractModule {
         }
 
         JdaDiscordGateway gateway = new JdaDiscordGateway(settings, active.scheduler);
-        PostLinkEffects postLinkEffects = new PostLinkEffects(
-                gateway,
-                account -> announceLink(settings, account),
-                settings.nicknameSync(),
-                settings.postLinkQueueCapacity(),
-                settings.nicknameSyncAttempts(),
-                settings.nicknameRetryBaseDelay(),
-                metrics,
-                active.scheduler
-        );
         DiscordLinkService linkService = new DiscordLinkService(
                 store,
                 new LinkCodeRegistry(
                         settings.linkCodeTtl(), settings.linkCodeLength(), settings.eventStateCapacity()),
                 gateway,
-                settings,
-                postLinkEffects::submit
+                settings
         );
         DiscordWebhookClient webhookClient = new DiscordWebhookClient(settings);
-        DiscordWebhookProvisioner webhookProvisioner = null;
-        if (settings.webhookAutoCreate()) {
-            DiscordWebhookBindingRepository webhookBindings = new DiscordWebhookBindingRepository(Tensa.storage);
-            webhookBindings.initialize();
-            webhookProvisioner = new DiscordWebhookProvisioner(
-                    settings, gateway, webhookClient, webhookBindings, active.scheduler, metrics);
-        }
+        DiscordWebhookBindingRepository webhookBindings = new DiscordWebhookBindingRepository(Tensa.storage);
+        webhookBindings.initialize();
+        DiscordWebhookProvisioner webhookProvisioner = new DiscordWebhookProvisioner(
+                settings, gateway, webhookClient, webhookBindings, active.scheduler, metrics);
         DiscordRuntime discord = new DiscordRuntime(
                 settings,
                 gateway,
@@ -185,7 +166,6 @@ public final class CommunicationsModule extends AbstractModule {
                 new DiscordDelivery(gateway, webhookClient),
                 active.proxyChat()::publishExternal,
                 metrics,
-                postLinkEffects,
                 webhookProvisioner,
                 active.scheduler
         );
@@ -314,7 +294,7 @@ public final class CommunicationsModule extends AbstractModule {
         }
     }
 
-    private static void validateChat(YamlAdapter config) {
+    static void validateChat(YamlAdapter config) {
         Set<String> aliases = new HashSet<>();
         Set<String> reserved = Set.of(
                 "tensa", "tensahelp", "tensareload", "tensamodules", "tpl", "psend", "tparse",
@@ -322,14 +302,32 @@ public final class CommunicationsModule extends AbstractModule {
         );
         for (String section : config.getKeys(false)) {
             Map<String, Object> values = config.getSection(section);
-            if (values == null || !booleanValue(values.get("enabled"), true)) {
+            if (values == null) {
                 continue;
             }
+            validateOptionalBoolean(values, section, "enabled");
+            validateOptionalBoolean(values, section, "native");
+            validateOptionalBoolean(values, section, "see_all");
+            validateOptionalString(values, section, "type");
+            validateOptionalString(values, section, "permission");
+            validateOptionalString(values, section, "command");
+            validateCommandList(values, section);
+            validateMiniMessage(values.get("format"), "chats.yml " + section + ".format");
+            validateMiniMessage(values.get("to_format"), "chats.yml " + section + ".to_format");
+            validateMiniMessage(values.get("from_format"), "chats.yml " + section + ".from_format");
+            if (!booleanValue(values.get("enabled"), true)) {
+                continue;
+            }
+
             Object rawCommands = values.get("command");
-            if (rawCommands == null) {
-                continue;
+            java.util.ArrayList<String> configuredCommands = new java.util.ArrayList<>();
+            if (rawCommands instanceof String text) {
+                configuredCommands.addAll(java.util.List.of(text.split("[,;\\s]+")));
             }
-            for (String alias : String.valueOf(rawCommands).split("[,;\\s]+")) {
+            if (values.get("commands") instanceof Iterable<?> commandList) {
+                commandList.forEach(value -> configuredCommands.add((String) value));
+            }
+            for (String alias : configuredCommands) {
                 String normalized = alias.startsWith("/") ? alias.substring(1) : alias;
                 normalized = normalized.trim().toLowerCase(java.util.Locale.ROOT);
                 if (normalized.isBlank()) {
@@ -339,29 +337,92 @@ public final class CommunicationsModule extends AbstractModule {
                     throw new DiscordConfigurationException("chats.yml contains a duplicate or reserved command: " + normalized);
                 }
             }
-            validateMiniMessage(values.get("format"), "chats.yml " + section + ".format");
-            validateMiniMessage(values.get("to_format"), "chats.yml " + section + ".to_format");
-            validateMiniMessage(values.get("from_format"), "chats.yml " + section + ".from_format");
         }
     }
 
-    private static void validateProxyChat(YamlAdapter config) {
-        bounded(config.getInt("proxy_chat.max_length", 256), 1, 1_000, "proxy_chat.max_length");
-        bounded(config.getLong("proxy_chat.cooldown_millis", 1_500), 0, 60_000, "proxy_chat.cooldown_millis");
-        bounded(config.getLong("proxy_chat.duplicate_window_millis", 15_000), 0, 600_000, "proxy_chat.duplicate_window_millis");
-        bounded(config.getInt("proxy_chat.max_repeated_characters", 4), 1, 100, "proxy_chat.max_repeated_characters");
-        validateMiniMessage(config.getString("proxy_chat.format", ""), "discord.yml proxy_chat.format");
-        validateMiniMessage(config.getString("proxy_chat.discord_format", ""), "discord.yml proxy_chat.discord_format");
-        validateMiniMessage(config.getString("proxy_chat.cooldown_message", ""), "discord.yml proxy_chat.cooldown_message");
-        validateMiniMessage(config.getString("proxy_chat.duplicate_message", ""), "discord.yml proxy_chat.duplicate_message");
-        validateMiniMessage(
-                config.getString("proxy_chat.require_link_to_relay.minecraft_message", ""),
-                "discord.yml proxy_chat.require_link_to_relay.minecraft_message"
-        );
-        validateMiniMessage(
-                config.getString("linking.link_announcement.format", ""),
-                "discord.yml linking.link_announcement.format"
-        );
+    private static void validateOptionalString(Map<String, Object> section, String sectionName, String key) {
+        Object value = section.get(key);
+        if (value != null && !(value instanceof String)) {
+            throw new DiscordConfigurationException("chats.yml " + sectionName + "." + key + " must be a string");
+        }
+    }
+
+    private static void validateOptionalBoolean(Map<String, Object> section, String sectionName, String key) {
+        Object value = section.get(key);
+        if (value != null && !(value instanceof Boolean)) {
+            throw new DiscordConfigurationException("chats.yml " + sectionName + "." + key + " must be true or false");
+        }
+    }
+
+    private static void validateCommandList(Map<String, Object> section, String sectionName) {
+        Object value = section.get("commands");
+        if (value == null) {
+            return;
+        }
+        if (!(value instanceof Iterable<?> commands)) {
+            throw new DiscordConfigurationException("chats.yml " + sectionName + ".commands must be a string list");
+        }
+        for (Object command : commands) {
+            if (!(command instanceof String)) {
+                throw new DiscordConfigurationException("chats.yml " + sectionName + ".commands must contain only strings");
+            }
+        }
+    }
+
+    static void validateProxyChat(YamlAdapter config) {
+        Map<String, Object> proxyChat = config.getSection("proxy_chat");
+        if (proxyChat == null) {
+            return;
+        }
+        Object enabled = proxyChat.get("enabled");
+        if (enabled != null && !(enabled instanceof Boolean)) {
+            throw new DiscordConfigurationException("discord.yml proxy_chat.enabled must be true or false");
+        }
+        Object excluded = proxyChat.get("excluded_servers");
+        if (excluded != null) {
+            if (!(excluded instanceof Iterable<?> servers)) {
+                throw new DiscordConfigurationException("discord.yml proxy_chat.excluded_servers must be a string list");
+            }
+            for (Object server : servers) {
+                if (!(server instanceof String)) {
+                    throw new DiscordConfigurationException(
+                            "discord.yml proxy_chat.excluded_servers must contain only strings");
+                }
+            }
+        }
+        Object aliases = proxyChat.get("server_aliases");
+        if (aliases != null) {
+            if (!(aliases instanceof Map<?, ?> values)) {
+                throw new DiscordConfigurationException("discord.yml proxy_chat.server_aliases must be a string map");
+            }
+            for (Map.Entry<?, ?> entry : values.entrySet()) {
+                if (!(entry.getKey() instanceof String) || !(entry.getValue() instanceof String)) {
+                    throw new DiscordConfigurationException(
+                            "discord.yml proxy_chat.server_aliases must map backend names to strings");
+                }
+            }
+        }
+        validateMiniMessage(proxyChat.get("discord_format"), "discord.yml proxy_chat.discord_format");
+
+        Map<String, Object> minecraftRelay = config.getSection("relay.minecraft_to_discord");
+        if (minecraftRelay == null || minecraftRelay.get("channels") == null) {
+            return;
+        }
+        Object channels = minecraftRelay.get("channels");
+        if (!(channels instanceof Iterable<?> values)) {
+            throw new DiscordConfigurationException(
+                    "discord.yml relay.minecraft_to_discord.channels must be a string list");
+        }
+        for (Object channel : values) {
+            if (!(channel instanceof String text)) {
+                throw new DiscordConfigurationException(
+                        "discord.yml relay.minecraft_to_discord.channels must contain only strings");
+            }
+            if (!text.trim().matches("[a-zA-Z0-9_.-]{1,64}")) {
+                throw new DiscordConfigurationException(
+                        "discord.yml relay.minecraft_to_discord.channels contains an invalid logical channel");
+            }
+        }
     }
 
     public static CommunicationsMetrics.Snapshot diagnosticsSnapshot() {
@@ -374,6 +435,7 @@ public final class CommunicationsModule extends AbstractModule {
         if (discord == null) {
             return INSTANCE.metrics.snapshot(
                     active == null ? "stopped" : "chat-only",
+                    "unavailable",
                     "unavailable",
                     "unavailable",
                     backend,
@@ -409,24 +471,6 @@ public final class CommunicationsModule extends AbstractModule {
         }
     }
 
-    private static void announceLink(DiscordSettings settings, LinkedAccount account) {
-        if (!settings.linkAnnouncementEnabled() || Tensa.server == null) {
-            return;
-        }
-        String rendered = Message.renderTemplateString(
-                settings.linkAnnouncementFormat(),
-                Map.of("player", Message.escapeMiniMessage(account.playerName()))
-        );
-        for (com.velocitypowered.api.proxy.Player recipient : Tensa.server.getAllPlayers()) {
-            String server = recipient.getCurrentServer()
-                    .map(connection -> connection.getServerInfo().getName())
-                    .orElse("proxy");
-            if (settings.linkAnnouncementAllows(server)) {
-                Message.send(recipient, rendered);
-            }
-        }
-    }
-
     private static boolean booleanValue(Object value, boolean fallback) {
         if (value instanceof Boolean booleanValue) {
             return booleanValue;
@@ -441,7 +485,9 @@ public final class CommunicationsModule extends AbstractModule {
         if (value == null) {
             return;
         }
-        String text = String.valueOf(value);
+        if (!(value instanceof String text)) {
+            throw new DiscordConfigurationException(key + " must be a MiniMessage string");
+        }
         if (text.length() > 4_096) {
             throw new DiscordConfigurationException(key + " is longer than 4096 characters");
         }
@@ -449,14 +495,6 @@ public final class CommunicationsModule extends AbstractModule {
             MiniMessage.miniMessage().deserialize(text);
         } catch (RuntimeException exception) {
             throw new DiscordConfigurationException(key + " contains invalid MiniMessage markup");
-        }
-    }
-
-    private static void bounded(long value, long minimum, long maximum, String key) {
-        if (value < minimum || value > maximum) {
-            throw new DiscordConfigurationException(
-                    "discord.yml " + key + " must be between " + minimum + " and " + maximum
-            );
         }
     }
 
