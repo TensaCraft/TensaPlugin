@@ -56,6 +56,11 @@ Usage:
 - `/psend <player/all> <server>`: Sends the specified player to the specified server.
 
 ## Modules
+### Task Scheduler:
+Required infrastructure module (`scheduler`) with a fixed bounded policy. Each
+runtime module owns its own jobs and mutable scheduler state; there are no public
+scheduler tuning keys.
+
 ### PlayerTime:
 Tracks the total playing time of each player on the server, providing the ability to view the time played by a specific player or the entire server.
 - `/tptime`: Returns the player's total playing time.
@@ -250,40 +255,15 @@ events:
 ```
 
 ### Communications:
-Owns Minecraft chat channels, Discord linking, relay, guards, announcements and
-delivery as one reloadable runtime. `chats.yml` contains Minecraft channel
-formats; `discord.yml` contains Discord and shared relay settings. Both live in
+Owns Minecraft chat channels, Discord linking/role reconciliation, webhook-only
+chat relay, announcements and delivery as one reloadable runtime. `chats.yml` contains Minecraft channel
+routes, permissions and formats; `discord.yml` contains Discord and shared relay settings, including the
+logical channels forwarded to Discord. Both live in
 the `communications/` module directory. `/tensainfo communications` exposes a
-secret-safe lifecycle, queue, scheduler, resource and URL-component snapshot. See
+secret-safe lifecycle, chat-transport, queue, scheduler, resource and URL-component snapshot. See
 [`docs/COMMUNICATIONS_V2_MIGRATION.md`](docs/COMMUNICATIONS_V2_MIGRATION.md)
 before upgrading an existing installation.
-```yaml
-# Chat Manager 
-# Placeholders: {player}, {server}, {message}
-
-# Global chat
-global:
-  enabled: true
-  alias: '!'
-  command: g
-  # If empty, everyone can use this chat and see the messages
-  permission: tensa.chat.global
-  see_all: true
-  format: '&8[&6G&8] &a{player} &6=> &f{message}'
-# Staff chat
-staff:
-  enabled: true
-  alias: '@'
-  command: s
-  permission: tensa.chat.staff
-  see_all: false
-  format: '&8&l[&4&lS&8&l] &b&l{server} &a&l{player} &6&l=> &f&l{message}'
-# Alert chat
-alert:
-  enabled: true
-  alias: ''
-  command: alert
-  permission: tensa.chat.alert
-  see_all: true
-  format: '&8[&4ALERT&8] &f{message}'
-```
+Console invocations of every chat route render only their trusted MiniMessage
+payload. Player public/private messages keep the configured route wrappers.
+Minecraft-to-Discord chat always uses the configured or automatically managed
+global webhook so its per-message Minecraft name and avatar are preserved.

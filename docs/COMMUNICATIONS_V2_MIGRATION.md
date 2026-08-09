@@ -33,16 +33,16 @@ The separate `config.yml` module switch is migrated safely: an existing
 ## Data ownership after reset
 
 - `communications/chats.yml`: `global`, `staff`, `alert`, `private`, `reply`
-  and their formats.
-- `communications/discord.yml`: bot/webhooks, IDs, relay, announcements,
-  achievements, linking, `proxy_chat` and embeds. Advanced validated overrides
-  are supported but omitted from clean public defaults.
+  routes, permissions and Minecraft formats; it contains no Discord relay keys.
+- `communications/discord.yml`: bot enablement, Discord IDs, relay directions
+  plus logical channel list/format, announcement scope, achievements, `proxy_chat` presentation and
+  embed text/colors. Queue, delivery, gateway, scheduler, moderation and timing
+  policy is fixed and bounded in code rather than exposed as operator tuning.
 - `<table_prefix>discord_links`: the sole persistent link source through
   `CoreStorageService`.
 - `<table_prefix>discord_webhook_bindings`: managed route/webhook ID/token
   fingerprint metadata. It never stores the webhook URL or token.
-- In-memory only: short-lived link codes, relay deduplication windows and
-  runtime metrics.
+- In-memory only: short-lived link codes and runtime metrics.
 
 If `storage.type` selects the external database, make sure it is reachable and
 the configured user can create/use the link table. Otherwise use the local H2
@@ -56,16 +56,19 @@ backend. Do not manually copy legacy JSON rows into the database.
   or database passwords.
 - Prepare clean v2 values from the generated annotated files. Prefer environment
   overrides for Discord secrets.
-- Leave `proxy_chat.webhook.auto_create` disabled unless the bot has
-  `MANAGE_WEBHOOKS` in each configured target channel. Missing permission safely
-  keeps bot-message fallback.
-- Keep `linking.guard`, announcements, nickname sync and the TensaProxy
-  advancement producer disabled for the first receiver canary.
+- Chat always uses one webhook so the Minecraft name and avatar cannot be lost
+  through a bot-message fallback. A configured `TENSA_DISCORD_WEBHOOK_URL` is
+  used directly; otherwise the bot recovers or creates one `ServerChat` webhook
+  in the main channel. Automatic creation requires `MANAGE_WEBHOOKS`.
+- Linking owns durable account association and the optional configured linked
+  role only. It does not gate relay, change Discord nicknames or announce links.
 - Tell users that links must be recreated; preserve the verified JSON archive
   only for rollback/audit, not import.
 - Validate `/discord link`, the clipboard button, Discord `/link`, JDBC
-  persistence, webhook identity/avatar and `/tensainfo communications` before
-  enabling the guard. A rising `clickable_urls` count proves that the plugin
+  persistence, role reconciliation, webhook identity/avatar and
+  `/tensainfo communications` before enabling announcements. The safe
+  `chat_transport` state must be `explicit` or `managed`. A rising
+  `clickable_urls` count proves that the plugin
   emitted URL click actions; remaining non-clickable behavior is client-side.
 
 ## Rollback boundary

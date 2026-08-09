@@ -19,10 +19,11 @@ replacement restores the previous validated plan. The communications metrics
 object survives that replacement, while JDA, listeners, queues, workers and
 scheduled tasks belong to exactly one active runtime.
 
-The follow-up chat/resource audit restored webhook-first player identity,
-eliminated command-route formatting bypasses, emits real URL click components,
-and consolidated delayed module work under one bounded scheduler. Operational
-communications files now live under `communications/`.
+The follow-up chat/resource audit made player chat strictly webhook-delivered,
+eliminated command-route formatting bypasses and chat moderation, emits real URL
+click components, and exposes the fixed scheduling policy as the required
+`scheduler` module. Operational communications files now live under
+`communications/`.
 
 The authentication investigation confirmed two causes consistent with offline
 players becoming frozen after transfers: route aliases were incorrectly treated
@@ -40,12 +41,12 @@ player routing remain canary gates.
 ```mermaid
 flowchart LR
     CY["communications/chats.yml: Minecraft channel formats"] --> CM["communications runtime"]
-    DY["communications/discord.yml: Discord, relay, guard, embeds"] --> CM
+    DY["communications/discord.yml: Discord, relay and embeds"] --> CM
     CM --> CHAT["Minecraft chat runtime"]
     CM --> DR["Discord runtime"]
     DR --> GW["single leased JDA gateway/listener"]
     DR --> PIPE["bounded delivery pipelines"]
-    DR --> SCH["bounded module scheduler"]
+    DR --> SCH["scheduler module policy / owned bounded runtime"]
     DR --> WH["managed webhook provisioning"]
     DR --> REPO["DiscordLinkRepository"]
     REPO --> CORE["CoreStorageService: MariaDB/MySQL or local H2"]
@@ -67,18 +68,18 @@ is instance-owned and closed during replacement.
 | High | A syntactically valid YAML value with the wrong type could silently fall back to a Java default during reload. | `chats.yml` and `discord.yml` now receive strict annotated-field type validation before missing defaults are written. A type error aborts the candidate and leaves the old runtime active. |
 | High | Reload could duplicate listeners, JDA sessions, slash registration, tasks or workers. | A serialized atomic runtime slot validates first, closes the old runtime, starts the candidate and rolls back from its previous validated plan on failure. Five consecutive replacement tests assert one instance of every owned resource. |
 | High | Existing `lang/uk.yml` did not gain new bundled keys. | Runtime localization merges only missing bundled keys and preserves manual values. The real `discord_link_code` template and its MiniMessage `COPY_TO_CLIPBOARD` action are tested; the click payload is exactly the raw code. |
-| High | Relay guard and shared Discord/chat settings had unclear ownership. | `discord.yml` owns Discord, `proxy_chat`, guard, delivery, embeds and diagnostics. `chats.yml` owns only `global`, `staff`, `alert`, `private` and `reply`. The guard supports both directions, `only`/`except`, and logical channel lists without blocking local Minecraft chat. |
-| High | `/pm` was absent from the default private aliases, public command routes could bypass the shared formatter, and console-originated public commands emitted raw MiniMessage. | The known old alias set migrates to `pm,msg,tell,w` without replacing manual aliases. Every logical route resolves its format and relay policy from `communications/chats.yml`; private `to_format`/`from_format`, console and player paths all use one injection-safe component renderer. |
+| High | Relay guard and chat moderation were outside the plugin's responsibility and bloated Discord configuration. | Link-required relay blocking, reply deletion/cooldowns, duplicate suppression, repeated-character filtering and their state/tasks were removed. Channel access belongs to Discord roles and Minecraft permissions. `discord.yml` owns the relay direction, logical channel list and presentation; `chats.yml` owns Minecraft channel routes and formats without Discord keys. |
+| High | `/pm` was absent from the default private aliases, malformed nested YAML could stringify as `{}`, and console commands inherited player wrappers. | The known old alias set migrates to `pm,msg,tell,w` without replacing manual aliases. Nested route types are validated before activation. Every route uses the same typed resolver: players receive configured public or private wrappers, while console invocations send only the trusted MiniMessage payload, including explicit-target `/r`. |
 | High | Plain HTTP/HTTPS text had no Adventure click action, so the client could not open it even though the text was preserved. | The renderer detects bounded HTTP/HTTPS tokens after sanitization and inserts `OPEN_URL` plus hover actions while keeping all other user input literal. `/tensainfo communications` reports the number of URL actions produced; if that counter increases but clicks still fail, the remaining behavior is upstream client/modpack handling. |
-| High | Minecraft-to-Discord identity formatting depended on a manually configured webhook and silently fell back to bot identity when it was absent or revoked. | Webhook remains the preferred transport with the in-game name and validated avatar URL. Opt-in `proxy_chat.webhook.auto_create` fetches a bot-owned webhook or creates one only with `MANAGE_WEBHOOKS`; 401/404 invalidates the runtime credential, performs one definite bot fallback and schedules coalesced recovery. |
+| High | Minecraft-to-Discord identity formatting depended on a manually configured webhook and silently fell back to bot identity when it was absent or revoked. | Chat is webhook-only. The configured global webhook is used automatically; otherwise one bot-owned `ServerChat` webhook is recovered or created idempotently. Every message overrides username/avatar with the Minecraft identity. HTTP 400/401/404, timeout and 5xx never cross-fallback to bot chat; revoked credentials trigger coalesced recovery. `/tensainfo communications` reports only `explicit`, `managed`, `recovering` or `unavailable`. |
 | High | Persisting a generated webhook URL would have stored a live secret, while storing only an ID could not detect token rotation. | `<prefix>discord_webhook_bindings` stores route, webhook ID and a SHA-256 token fingerprint only. The token/URL exists only in the active runtime, is never rendered by `toString` or logs, and is re-fetched from Discord after startup/reconnect. |
 | High | Root-level communications files did not follow module ownership and could diverge from newly generated defaults. | Existing schema-v2 root files are backed up, hash-verified and atomically relocated byte-for-byte to `communications/`. Destination-wins handling archives and removes obsolete root copies. Schema reset/future-version guarantees remain unchanged. |
-| High | Reconnect, status polling, reply deletion, post-link retry and recovery each had separate scheduling/executor behavior. | `ModuleScheduler` owns bounded jobs with conditions, delay/interval, per-job/default attempts, exponential backoff, timeout, jitter, dead-letter handlers, pause/resume/cancel, scopes and dedupe keys. It now owns reconnect, status, reply deletion, webhook recovery, post-link effects, announcements and link-code cleanup. |
-| High | Expired link codes were removed only when queried or reissued, allowing stale entries to accumulate across many disconnected players. | The registry has a hard capacity, purges expiry on issue and receives a lifecycle-owned periodic cleanup. Link indexes, queues, guard feedback, event state and scheduler work are all bounded. |
-| Medium | Public `discord.yml` exposed implementation tuning that normal operators should not need. | Clean defaults retain only operational fields. Advanced scheduler/delivery/limit settings still accept validated manual overrides but are not emitted into new public defaults. |
-| Medium | There was no live evidence for heap regression or retained Communications state. | Runtime-only telemetry records startup-to-live heap delta, heap percentage, chat/reply/link/guard state, scheduler jobs/queue/rejections and queue depths. Heap warnings are transition-only with recovery hysteresis, avoiding periodic log spam. |
-| High | Discord delivery had duplicate-delivery risks and insufficient backpressure. | Ingress, normalization, formatting and delivery use bounded queues. Backoff with jitter is limited to definite retryable failures. Timeout/I/O does not trigger a second transport. Plain fallback is limited to local validation or definite Discord invalid-form responses. |
-| High | Link completion effects could block linking or execute more than once. | Only a final new `LINKED` result enters a bounded post-link queue. Minecraft announcement is once-only and scope-filtered. Nickname sync is best effort, bounded to Discord's limit, retries transient errors only, and never rolls back a committed link. |
+| High | Reconnect, status polling, webhook recovery and cleanup had separate scheduling/executor behavior. | The visible required `scheduler` module defines an immutable bounded policy. Each consumer owns its own `ModuleScheduler` instance and mutable jobs, avoiding cross-module state. It owns reconnect, status, webhook recovery, announcements, telemetry and link-code cleanup. |
+| High | Expired link codes were removed only when queried or reissued, allowing stale entries to accumulate across many disconnected players. | The registry has a hard capacity, purges expiry on issue and receives a lifecycle-owned periodic cleanup. Link indexes, queues, event state and scheduler work are all bounded. |
+| Medium | Public `discord.yml` exposed implementation tuning that normal operators should not need. | `limits`, `delivery`, `gateway`, `scheduler`, `backend_status`, link timing, avatar URL, webhook creation/name and moderation keys were removed from schema and parser. Existing v2 files prune these known obsolete keys idempotently; fixed conservative bounds remain in code. |
+| Medium | There was no live evidence for heap regression or retained Communications state. | Runtime-only telemetry records startup-to-live heap delta, heap percentage, chat/reply/link state, scheduler jobs/queue/rejections, transport state and queue depths. Heap warnings are transition-only with recovery hysteresis, avoiding periodic log spam. |
+| High | Discord delivery had duplicate-delivery risks and insufficient backpressure. | Ingress, normalization, formatting and delivery use bounded queues. Backoff with jitter is limited to definite retryable failures. Timeout/I/O does not trigger a second transport. Announcement embeds may fall back to bot plain text only after local validation or definite invalid-form rejection; player chat never changes transport. |
+| High | Linking accumulated unrelated nickname and announcement effects. | Linking now owns only codes, durable association and configured linked-role assignment/removal. Role assignment is idempotent; the configured role is reconciled for all linked accounts on JDA Ready/reconnect and per linked player on connect/server-switch. With no role configured, no role API call occurs. |
 | High | Backend advancement text depended on whichever component title happened to be visible at runtime. | TDE2 carries locale, localized title and optional description. TensaProxy embeds SHA-1-verified `uk_ua`/`en_us` vanilla catalogs and loads bounded mod language catalogs; TensaPlugin accepts strict TDE1 and TDE2 frames for rolling compatibility. |
 | Critical | Auth route suppression treated two Velocity routes sharing a backend ID as the same route. Offline-auth players could remain attached to a gameplay backend while its gate stayed locked. | The alias-route mutation was removed. LibreLogin owns auth/gameplay routing. A signed backend ID is cryptographic identity, not route identity; exact physical endpoint aliases require a distinct auth endpoint. |
 | High | A dropped initial or lease-renewal challenge left a backend player locked until timeout. | TensaProxy retries unanswered challenges at a bounded interval no faster than five seconds. Session/challenge identity is retained, while each retry has a fresh message ID, nonce, timestamps and signature. Any valid bound `AUTH_STATE` stops retries; exact replay remains rejected. |
@@ -125,7 +126,8 @@ Both `communications/discord.yml` and `communications/chats.yml` require
 - Root schema-v2 files are verified and relocated into `communications/`; if a
   destination already exists it wins and the obsolete root file is archived.
 - Managed webhook storage contains only IDs and token fingerprints, never URLs
-  or tokens. Auto-create remains disabled by default.
+  or tokens. Global chat webhook recovery/creation is automatic when no explicit
+  webhook is configured.
 - Link persistence follows `storage.type`: configured MariaDB/MySQL when
   selected and available, otherwise local H2 according to core-storage rules.
 - Manual runtime language translations are preserved while missing bundled
@@ -141,14 +143,13 @@ Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MI
 - Permissions are `tensa.reload` and `tensa.reload.<module-id>`, including tab
   completion filtering.
 - Communications config parsing, type validation, MiniMessage parsing, Discord
-  IDs, HTTPS URLs, placeholders, Discord limits, queue sizes and timing bounds
-  are validated before runtime replacement.
+  IDs, webhook URLs, placeholders and embed limits are validated before runtime
+  replacement. Technical queue/timing bounds are immutable code policy.
 - Chat can stay active while initial Discord startup is degraded. Targeted
   communications reload is stricter: an operational activation failure restores
   the previous runtime rather than accepting a new degraded candidate.
-- Inbound relay rejects bot/webhook/self, wrong guild/channel, duplicate and
-  guarded traffic. Rate-limited feedback deletion tasks are runtime-owned and
-  cancelled on close.
+- Inbound relay rejects bot/webhook/self and wrong guild/channel traffic. It
+  does not require an account link; Discord roles own channel access policy.
 - Metrics are module-owned, in-memory and monotonic across targeted reload;
   queues and workers are runtime-owned.
 - Resource telemetry is safe and runtime-only. It reports counts and heap
@@ -161,15 +162,15 @@ Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MI
 Final local gates:
 
 - TensaPlugin with Java 25: `mvn -B clean test`,
-  `mvn -B dependency:analyze`, and `mvn -B clean package`: 168 tests,
+  `mvn -B dependency:analyze`, and `mvn -B clean package`: 173 tests,
   0 failures/errors/skips, and no dependency problems.
 - TensaProxy with its Java 21 toolchain: `gradlew.bat clean test build`.
   45 tests, 0 failures/errors/skips across testkit and NeoForge.
 - Focused tests cover schema reset/archive failure/future rejection, H2 schema
-  and conflicts, restart persistence, non-import of JSON, link completion
-  effects, guard directions/scopes, definite versus ambiguous delivery failure,
-  webhook binding/provisioning/revocation, route formatting, URL components,
-  scheduler lifecycle, resource thresholds, embeds, metrics, five runtime replacements, auth transfer/retry/replay,
+  and conflicts, restart persistence, non-import of JSON, role reconciliation,
+  strict webhook-only delivery, webhook binding/provisioning/revocation, route
+  formatting and nested type rejection, URL components, scheduler module/runtime
+  lifecycle, server-icon fallback, resource thresholds, embeds, metrics, five runtime replacements, auth transfer/retry/replay,
   MiniMessage clipboard behavior, and strict TDE1/TDE2 codecs/localization.
 - Artifact hashes are recorded in the implementation handoff.
 
@@ -187,9 +188,10 @@ Final local gates:
    endpoint behave like distinct transfer destinations.
 6. Auth runtime settings are restart-required by design; targeted reload only
    validates them so live player sessions remain untouched.
-7. Managed webhook creation requires `MANAGE_WEBHOOKS`. Without it, relay stays
-   operational through bot delivery and diagnostics/logs expose only the safe
-   failure class.
+7. Managed webhook creation requires `MANAGE_WEBHOOKS`. Without an explicit
+   webhook or that permission, Minecraft chat remains local but Discord chat
+   relay is unavailable; it never falls back to bot identity. Diagnostics/logs
+   expose only safe state/failure classes.
 
 ## Safe rollout and rollback
 
@@ -203,14 +205,13 @@ This procedure was not executed.
    receiver, and start it once. Do not hot-swap the old JAR.
 4. Verify the generated archive and SHA-256 manifest, core storage backend,
    `communications` diagnostics, guild-scoped `/link`, copy button, and TDE1
-   reception. Keep new guard/announcement/nickname features disabled.
+   reception. Keep announcements disabled for the first canary.
 5. Test premium and offline accounts through login, auth-to-game transfer,
    gameplay server switch and lease renewal. No player may stay frozen after a
    completed transfer.
-6. Open the relink window. Confirm new links survive a targeted communications
-   reload and a controlled proxy restart before enabling link-required guards.
-7. Canary relay in both directions, link announcement, nickname sync and typed
-   embeds. Repeat communications reload five times and verify one JDA/listener/
+6. Open the relink window. Confirm new links and the optional linked role survive
+   a targeted communications reload and a controlled proxy restart.
+7. Canary relay in both directions and typed embeds. Repeat communications reload five times and verify one JDA/listener/
    command/task set, scheduler counts and URL-component diagnostics via
    `/tensainfo communications`.
 8. Only after the receiver is stable, install TensaProxy TDE2 on one backend,
