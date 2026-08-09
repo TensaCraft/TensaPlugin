@@ -172,15 +172,6 @@ public class ChatCommands implements SimpleCommand {
         return "Unknown";
     }
 
-    private static Map<String, String> publicCtx(String server, String player, String msg) {
-        Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", Message.escapeMiniMessage(server));
-        ctx.put("player", Message.escapeMiniMessage(player));
-        ctx.put("message", Message.escapeMiniMessage(msg));
-        ctx.put("message_payload", Message.escapeMiniMessageArgument(msg));
-        return ctx;
-    }
-
     static Map<String, String> privateCtx(String server, String from, String to, String msg) {
         Map<String, String> ctx = new HashMap<>();
         ctx.put("server", Message.escapeMiniMessage(server));

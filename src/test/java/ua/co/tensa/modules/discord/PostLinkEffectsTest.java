@@ -86,6 +86,7 @@ class PostLinkEffectsTest {
         )) {
             assertThat(effects.submit(ACCOUNT)).isTrue();
             assertThat(effects.submit(account("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1))).isTrue();
+            assertThat(effects.submit(null)).isFalse();
             assertThat(effects.submit(account("cccccccc-cccc-cccc-cccc-cccccccccccc", 2))).isFalse();
             release.countDown();
         }

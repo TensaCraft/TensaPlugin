@@ -19,6 +19,7 @@ class DiscordWebhookProvisionerTest {
     Path temporaryDirectory;
 
     @Test
+    @SuppressWarnings("unchecked")
     void fetchesOrCreatesEachMissingRouteAndPersistsOnlyBindingMetadata() throws Exception {
         DiscordSettings settings = DiscordTestSettings.create(temporaryDirectory, config -> {
             config.webhookAutoCreate = true;

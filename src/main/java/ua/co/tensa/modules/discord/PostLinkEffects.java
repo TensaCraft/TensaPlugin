@@ -82,7 +82,10 @@ final class PostLinkEffects implements AutoCloseable {
     }
 
     boolean submit(LinkedAccount account) {
-        if (closed.get() || account == null || pending.incrementAndGet() > capacity + 1) {
+        if (closed.get() || account == null) {
+            return false;
+        }
+        if (pending.incrementAndGet() > capacity + 1) {
             pending.updateAndGet(value -> Math.max(0, value - 1));
             metrics.dropped();
             return false;
