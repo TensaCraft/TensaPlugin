@@ -4,7 +4,6 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.permission.PermissionFunction;
 import com.velocitypowered.api.permission.Tristate;
 import com.velocitypowered.api.proxy.ProxyServer;
-import net.kyori.adventure.identity.Identity;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.TranslatableComponent;
@@ -37,12 +36,6 @@ public class RconCommandSource implements CommandSource {
 		if (buffer.length() != 0)
 			buffer.append("\n");
 		buffer.append(txt);
-	}
-
-	@Override
-	@SuppressWarnings("deprecation")
-	public void sendMessage(Identity source, Component message) {
-		addToBuffer(message);
 	}
 
 	@Override

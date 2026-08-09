@@ -81,20 +81,27 @@ function Get-LatestVelocityBuild {
 
     $headers = @{ "User-Agent" = "Tensa-DevRunner/1.0" }
     $projectInfo = Invoke-RestMethod -Headers $headers -Uri "https://fill.papermc.io/v3/projects/velocity"
-    [string[]]$availableVersions = $projectInfo.versions.'3.0.0'
+    [string[]]$availableVersions = @(
+        foreach ($versionGroup in $projectInfo.versions.PSObject.Properties) {
+            foreach ($publishedVersion in @($versionGroup.Value)) {
+                if ([string]$publishedVersion -like "4.*") {
+                    [string]$publishedVersion
+                }
+            }
+        }
+    )
 
     if (-not $availableVersions -or $availableVersions.Count -eq 0) {
-        throw "Fill v3 did not return any Velocity 3.x versions."
+        throw "Fill v3 did not return any Velocity 4 versions."
+    }
+    if ($RequestedVersion -and $RequestedVersion -notlike "4.*") {
+        throw "Tensa requires Velocity 4; requested version '$RequestedVersion' is unsupported."
     }
 
-    $version = if ($RequestedVersion -and $availableVersions -contains $RequestedVersion) {
-        $RequestedVersion
-    } else {
-        if ($RequestedVersion) {
-            Write-Warning "Velocity version '$RequestedVersion' is not published via Fill v3. Falling back to the latest available Velocity 3.x build."
-        }
-        $availableVersions[0]
+    if ($RequestedVersion -and $availableVersions -notcontains $RequestedVersion) {
+        throw "Velocity 4 version '$RequestedVersion' is not published via Fill v3."
     }
+    $version = if ($RequestedVersion) { $RequestedVersion } else { $availableVersions[0] }
 
     $builds = Invoke-RestMethod -Headers $headers -Uri "https://fill.papermc.io/v3/projects/velocity/versions/$([uri]::EscapeDataString($version))/builds"
     if (-not $builds -or $builds.Count -eq 0) {
@@ -137,10 +144,15 @@ function Ensure-FileHash {
 }
 
 function Ensure-VelocityRuntime {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RequestedVersion
+    )
+
     New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
 
-    $buildInfo = Get-LatestVelocityBuild -RequestedVersion $VelocityVersion
+    $buildInfo = Get-LatestVelocityBuild -RequestedVersion $RequestedVersion
     $serverJar = Join-Path $runtimeRoot $buildInfo.FileName
 
     if (-not (Ensure-FileHash -Path $serverJar -ExpectedSha256 $buildInfo.Sha256)) {

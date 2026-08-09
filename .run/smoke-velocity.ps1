@@ -232,8 +232,28 @@ $serverJar = Get-ChildItem -LiteralPath $runtimeRoot -File -Filter "velocity-*.j
 if (-not $serverJar) {
     throw "Prepared Velocity jar was not found."
 }
+$pluginJar = Get-ChildItem -LiteralPath (Join-Path $runtimeRoot "plugins") -File -Filter "Tensa.jar" |
+        Select-Object -First 1
+if (-not $pluginJar) {
+    throw "Prepared Tensa plugin jar was not found."
+}
 
 $javaExe = Join-Path $resolvedJavaHome "bin\java.exe"
+$javacExe = Join-Path $resolvedJavaHome "bin\javac.exe"
+$probeSource = Join-Path $PSScriptRoot "Velocity4TextPipelineProbe.java"
+$probeClasses = Join-Path $runtimeRoot "probe-classes"
+[System.IO.Directory]::CreateDirectory($probeClasses) | Out-Null
+& $javacExe -encoding UTF-8 -d $probeClasses -cp "$($serverJar.FullName);$($pluginJar.FullName)" $probeSource
+if ($LASTEXITCODE -ne 0) {
+    throw "Velocity 4 text compatibility probe did not compile."
+}
+$probeOutput = & $javaExe -cp "$($serverJar.FullName);$($pluginJar.FullName);$probeClasses" Velocity4TextPipelineProbe 2>&1
+if ($LASTEXITCODE -ne 0 -or $probeOutput -notcontains "VELOCITY_TEXT_PIPELINE_COMPATIBLE") {
+    $probeOutput | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    throw "Built Tensa jar is binary-incompatible with Velocity 4 text events."
+}
+Write-Host "Velocity 4 text compatibility probe PASSED."
+
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $javaExe
 $startInfo.WorkingDirectory = $runtimeRoot
@@ -281,13 +301,23 @@ try {
     Send-ConsoleCommand -Process $process -Command "tensainfo communications"
     Wait-ForOutput -Process $process -Readers $readers -Pattern 'runtime=chat-only.*jda=unavailable.*slash=unavailable' -TimeoutSeconds 10
 
-    $clickOutputStart = $transcript.Length
-    $clickTemplate = "tparse <aqua>★</aqua> <gold>{username}</gold> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><aqua>https://minecraft-ua.com/minecraft/aeronautics</aqua></click> та отримав бонус!"
-    Send-ConsoleCommand -Process $process -Command $clickTemplate
+    $renderOutputStart = $transcript.Length
+    $renderTemplate = "tparse <aqua>★</aqua> <gold>{username}</gold> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><aqua>https://minecraft-ua.com/minecraft/aeronautics</aqua></click> та отримав бонус!"
+    Send-ConsoleCommand -Process $process -Command $renderTemplate
     Wait-ForOutput -Process $process -Readers $readers -Pattern '\{username\}.*https://minecraft-ua\.com/minecraft/aeronautics' -TimeoutSeconds 5
-    $clickOutput = $transcript.ToString().Substring($clickOutputStart)
-    if ($clickOutput.Contains("click:open_url")) {
+    $renderOutput = $transcript.ToString().Substring($renderOutputStart)
+    $renderedLines = @($renderOutput -split '\r?\n' | Where-Object { $_ -match '\{username\}.*https://minecraft-ua\.com/minecraft/aeronautics' })
+    if ($renderedLines.Count -ne 1 -or $renderedLines[0].Contains("click:open_url")) {
         throw "MiniMessage click tag leaked into visible runtime output."
+    }
+
+    $clickOutputStart = $transcript.Length
+    $clickTemplate = "m TensaCraft <aqua>★</aqua> <gold>{username}</gold> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><aqua>https://minecraft-ua.com/minecraft/aeronautics</aqua></click> та отримав бонус!"
+    Send-ConsoleCommand -Process $process -Command $clickTemplate
+    Read-ProcessOutput -Readers $readers -WaitMilliseconds 1500
+    $clickOutput = $transcript.ToString().Substring($clickOutputStart)
+    if ($clickOutput -match 'NoSuchFieldError|Unable to invoke command') {
+        throw "Private-message MiniMessage rendering is binary-incompatible with this Velocity runtime."
     }
 
     Wait-ForOutput -Process $process -Readers $readers -Pattern 'SMOKE_SCHED_TICK' -TimeoutSeconds 8 -MinimumMatches 2
@@ -325,7 +355,7 @@ try {
         throw "Scheduler did not report a clean shutdown."
     }
 
-    Write-Host "Velocity smoke test PASSED: clean startup, v2 config generation, diagnostics, scheduler execution, five targeted reloads, no duplicate runtime, clean shutdown." -ForegroundColor Green
+    Write-Host "Velocity 4 smoke test PASSED: binary text probe, clean startup, v2 config generation, diagnostics, formatting, scheduler execution, five targeted reloads, no duplicate runtime, clean shutdown." -ForegroundColor Green
 } finally {
     if (-not $process.HasExited) {
         if (-not $shutdownSent) {

@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-09
 
-Scope: TensaPlugin (Java 25 / Velocity 3.5 API) and the relevant TensaProxy
+Scope: TensaPlugin (Java 25 / Velocity 4 API) and the relevant TensaProxy
 authentication and NeoForge advancement producer (Java 21 toolchain).
 
 ## Executive result
@@ -166,10 +166,11 @@ Final local gates:
 - TensaPlugin with Java 25: `mvn -B clean test`,
   `mvn -B dependency:analyze`, and `mvn -B clean package`: 186 tests,
   0 failures/errors/skips, and no dependency problems.
-- A clean Velocity 3.5.1 build 615 smoke profile binds only to localhost,
+- A clean Velocity 4 smoke profile binds only to localhost,
   strips Discord credentials from the child environment and disables telemetry.
-  It verifies v2 config generation without secret defaults, UTF-8 Ukrainian
-  localization sync, Communications degraded startup, the real MiniMessage URL
+  It verifies the built JAR against Velocity 4/Adventure 5 click-event bytecode,
+  v2 config generation without secret defaults, UTF-8 Ukrainian localization
+  sync, Communications degraded startup, the real MiniMessage URL
   template, Scheduler execution, five targeted Scheduler reloads without
   duplicate ticks, and clean module/storage/process shutdown.
 - TensaProxy with its Java 21 toolchain: `gradlew.bat clean test build`.
