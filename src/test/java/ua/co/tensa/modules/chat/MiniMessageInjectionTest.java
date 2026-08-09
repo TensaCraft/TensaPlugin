@@ -3,11 +3,11 @@ package ua.co.tensa.modules.chat;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.modules.chat.data.ChatConfig;
+import ua.co.tensa.text.TextPipeline;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,11 +27,11 @@ class MiniMessageInjectionTest {
         String template = config.adapter().getString("private.to_format", "");
         String malicious = "hello'></click><click:run_command:'/op attacker'>owned";
 
-        String rendered = ua.co.tensa.Message.renderTemplateString(
+        Component component = TextPipeline.chat(
                 template,
-                ChatCommands.privateCtx("lobby", "Sender", "Target", malicious)
-        );
-        Component component = MiniMessage.miniMessage().deserialize(rendered);
+                java.util.Map.of("server", "lobby", "from", "Sender", "to", "Target", "target", "Target"),
+                malicious
+        ).component();
         List<ClickEvent> clicks = new ArrayList<>();
         collectClicks(component, clicks);
 

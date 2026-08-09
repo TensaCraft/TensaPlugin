@@ -17,6 +17,7 @@ import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.core.user.UserDataService;
+import ua.co.tensa.text.TextPipeline;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -66,11 +67,15 @@ public class EventManager {
     }
 
     private static void sendCommand(EventContext context, String command, boolean console) {
-        if (console || context.player() == null) {
-            Util.executeCommand(command);
-        } else {
-            Util.executeCommand(context.player(), command);
-        }
+        TextPipeline.resolvePlaceholdersAsync(context.player(), command).thenCompose(resolved ->
+                console || context.player() == null
+                        ? Util.executeCommand(resolved)
+                        : Util.executeCommand(context.player(), resolved)
+        ).exceptionally(failure -> {
+            Message.warn("Events: placeholder or command execution failed: "
+                    + failure.getClass().getSimpleName());
+            return false;
+        });
     }
 
     static List<String> renderCommands(List<String> commands, Map<String, String> placeholders) {

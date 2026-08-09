@@ -3,6 +3,7 @@ package ua.co.tensa.modules.discord;
 import com.velocitypowered.api.command.CommandSource;
 import ua.co.tensa.Message;
 import ua.co.tensa.config.data.LangYAML;
+import ua.co.tensa.text.TextPipeline;
 
 import java.util.Map;
 
@@ -21,13 +22,6 @@ final class DiscordMessages {
     }
 
     static String render(String template, Map<String, String> values) {
-        String rendered = template == null ? "" : template;
-        if (values == null) {
-            return rendered;
-        }
-        for (Map.Entry<String, String> entry : values.entrySet()) {
-            rendered = rendered.replace("{" + entry.getKey() + "}", entry.getValue() == null ? "" : entry.getValue());
-        }
-        return rendered;
+        return TextPipeline.interpolate(template == null ? "" : template, values);
     }
 }

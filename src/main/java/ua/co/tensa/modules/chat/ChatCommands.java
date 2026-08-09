@@ -9,6 +9,7 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.text.TextPipeline;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -19,7 +20,7 @@ public class ChatCommands implements SimpleCommand {
     public record ChatRoute(String key, boolean privateRoute, boolean replyRoute) {
     }
 
-    record PrivateMessages(ChatMessageRenderer.Result toRecipient, ChatMessageRenderer.Result toSender) {
+    record PrivateMessages(TextPipeline.Rendered toRecipient, TextPipeline.Rendered toSender) {
     }
 
     private final Map<UUID, UUID> lastPrivateTarget;
@@ -169,17 +170,6 @@ public class ChatCommands implements SimpleCommand {
         return "Unknown";
     }
 
-    static Map<String, String> privateCtx(String server, String from, String to, String msg) {
-        Map<String, String> ctx = new HashMap<>();
-        ctx.put("server", Message.escapeMiniMessage(server));
-        ctx.put("from", Message.escapeMiniMessage(from));
-        ctx.put("to", Message.escapeMiniMessage(to));
-        ctx.put("target", Message.escapeMiniMessage(to));
-        ctx.put("message", Message.escapeMiniMessage(msg));
-        ctx.put("message_payload", Message.escapeMiniMessageArgument(msg));
-        return ctx;
-    }
-
     public void register() {
         for (String key : chatCfg.getKeys(false)) {
             Map<String, Object> sec = chatCfg.getSection(key);
@@ -296,7 +286,7 @@ public class ChatCommands implements SimpleCommand {
         }
 
         if (console) {
-            ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(msg);
+            TextPipeline.Rendered rendered = TextPipeline.operator(msg);
             proxyChat.recordClickableUrls(rendered.clickableUrls());
             Message.privateMessage(target, rendered.component());
             Message.send(sender, rendered.component());
@@ -314,9 +304,9 @@ public class ChatCommands implements SimpleCommand {
                 "target", target.getUsername()
         );
 
-        PrivateMessages messages = renderPrivateMessages(sec, values, msg);
-        ChatMessageRenderer.Result toMessage = messages.toRecipient();
-        ChatMessageRenderer.Result fromMessage = messages.toSender();
+        PrivateMessages messages = renderPrivateMessages(player, sec, values, msg);
+        TextPipeline.Rendered toMessage = messages.toRecipient();
+        TextPipeline.Rendered fromMessage = messages.toSender();
         proxyChat.recordClickableUrls(toMessage.clickableUrls() + fromMessage.clickableUrls());
         Message.privateMessage(target, toMessage.component());
         Message.privateMessage(sender, fromMessage.component());
@@ -339,7 +329,7 @@ public class ChatCommands implements SimpleCommand {
         }
 
         if (isConsole(source)) {
-            ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(msg);
+            TextPipeline.Rendered rendered = TextPipeline.operator(msg);
             proxyChat.recordClickableUrls(rendered.clickableUrls());
             sendMessageToPermittedPlayers(rendered.component(), seeAll ? "" : perm);
             return;
@@ -351,7 +341,7 @@ public class ChatCommands implements SimpleCommand {
             return;
         }
 
-        ChatMessageRenderer.Result result = renderPublicMessage(sec, server, playerName, msg);
+        TextPipeline.Rendered result = renderPublicMessage(player, sec, server, playerName, msg);
         proxyChat.recordClickableUrls(result.clickableUrls());
         net.kyori.adventure.text.Component rendered = result.component();
 
@@ -368,19 +358,41 @@ public class ChatCommands implements SimpleCommand {
             Map<String, String> values,
             String message
     ) {
+        return renderPrivateMessages(null, section, values, message);
+    }
+
+    private static PrivateMessages renderPrivateMessages(
+            Player placeholderContext,
+            Map<String, Object> section,
+            Map<String, String> values,
+            String message
+    ) {
         return new PrivateMessages(
-                ChatMessageRenderer.render(secString(section, "to_format", "{from}: {message}"), values, message),
-                ChatMessageRenderer.render(secString(section, "from_format", "{to}: {message}"), values, message)
+                TextPipeline.chat(placeholderContext,
+                        secString(section, "to_format", "{from}: {message}"), values, message),
+                TextPipeline.chat(placeholderContext,
+                        secString(section, "from_format", "{to}: {message}"), values, message)
         );
     }
 
-    static ChatMessageRenderer.Result renderPublicMessage(
+    static TextPipeline.Rendered renderPublicMessage(
             Map<String, Object> section,
             String server,
             String player,
             String message
     ) {
-        return ChatMessageRenderer.render(
+        return renderPublicMessage(null, section, server, player, message);
+    }
+
+    private static TextPipeline.Rendered renderPublicMessage(
+            Player placeholderContext,
+            Map<String, Object> section,
+            String server,
+            String player,
+            String message
+    ) {
+        return TextPipeline.chat(
+                placeholderContext,
                 secString(section, "format", "{player}: {message}"),
                 Map.of("server", server == null ? "" : server, "player", player == null ? "" : player),
                 message

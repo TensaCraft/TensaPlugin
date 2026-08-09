@@ -1,10 +1,6 @@
 package ua.co.tensa.placeholders;
 
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.minimessage.tag.Tag;
-import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
-import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.placeholders.providers.LuckPermsPlaceholderProvider;
 import ua.co.tensa.placeholders.providers.PAPIProxyBridgeProvider;
@@ -57,26 +53,6 @@ public class PlaceholderManager {
             }
             return "";
         });
-    }
-
-    private static TagResolver buildCustomTagResolver(Player player) {
-        TagResolver.Builder builder = TagResolver.builder();
-        for (Map.Entry<String, Function<Player, String>> e : custom.entrySet()) {
-            String id = e.getKey();
-            builder.resolver(TagResolver.resolver(id, (args, ctx) -> {
-                String out = Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse("");
-                return Tag.selfClosingInserting(net.kyori.adventure.text.Component.text(out));
-            }));
-            String namespaced = namespacedKey(id);
-            if (namespaced.equals(id)) {
-                continue;
-            }
-            builder.resolver(TagResolver.resolver(namespaced, (args, ctx) -> {
-                String out = Optional.ofNullable(e.getValue()).map(f -> f.apply(player)).orElse("");
-                return Tag.selfClosingInserting(net.kyori.adventure.text.Component.text(out));
-            }));
-        }
-        return builder.build();
     }
 
     public static void register(String key, Function<Player, String> resolver) {
@@ -145,24 +121,15 @@ public class PlaceholderManager {
         return out;
     }
 
-    public static Component resolveComponent(Player player, String input) {
-        if (input == null || input.isEmpty()) return Component.empty();
-        // First resolve custom and PAPI-style into a raw string
-        String raw = resolveRaw(player, input);
-
-        // Replace our custom <tags>, then render with legacy/MiniMessage auto-detect
-        String replaced = replaceAnglePlaceholders(player, raw);
-        return Message.convert(replaced);
-    }
-
-    public static TagResolver getCustomTagResolver(Player player) {
-        return buildCustomTagResolver(player);
+    public static String resolveText(Player player, String input) {
+        if (input == null || input.isEmpty()) return input;
+        return replaceAnglePlaceholders(player, resolveRaw(player, input));
     }
 
     // Async resolve that leverages PAPI async API when available
-    public static java.util.concurrent.CompletableFuture<Component> resolveComponentAsync(Player player, String input) {
+    public static java.util.concurrent.CompletableFuture<String> resolveTextAsync(Player player, String input) {
         if (input == null || input.isEmpty()) {
-            return java.util.concurrent.CompletableFuture.completedFuture(Component.empty());
+            return java.util.concurrent.CompletableFuture.completedFuture(input);
         }
         String raw = applyCustomPlaceholdersOnly(player, input);
         boolean mayHavePapi = raw.indexOf('%') >= 0;
@@ -171,10 +138,10 @@ public class PlaceholderManager {
                 // Now we have PAPI placeholders resolved to raw strings (e.g. &aAdmin)
                 // Replace our custom angle placeholders before parsing
                 String replaced = replaceAnglePlaceholders(player, resolved);
-                return Message.convert(replaced);
+                return replaced;
             });
         }
-        return java.util.concurrent.CompletableFuture.completedFuture(resolveComponent(player, input));
+        return java.util.concurrent.CompletableFuture.completedFuture(resolveText(player, input));
     }
 
     private static String replaceAnglePlaceholders(Player player, String input) {

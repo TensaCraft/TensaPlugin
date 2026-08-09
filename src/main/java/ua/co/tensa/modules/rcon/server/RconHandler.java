@@ -109,7 +109,10 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
         String commandLabel = commandLabel(payload);
         // Optional debug logging (configurable to prevent spam)
         if (RconServerModule.isDebugEnabled()) {
-            ua.co.tensa.Message.info(Lang.rcon_connect_notify.getClean().replace("{address}", ip).replace("{command}", commandLabel));
+            ua.co.tensa.Message.info(ua.co.tensa.text.TextPipeline.interpolate(
+                    Lang.rcon_connect_notify.getClean(),
+                    java.util.Map.of("address", ip, "command", commandLabel)
+            ));
         }
 
 		// Only notify players if debug is enabled (to prevent spam)

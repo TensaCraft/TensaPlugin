@@ -3,6 +3,7 @@ package ua.co.tensa.config;
 import net.kyori.adventure.text.Component;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import ua.co.tensa.Message;
+import ua.co.tensa.text.TextPipeline;
 import ua.co.tensa.config.data.LangYAML;
 
 public enum Lang {
@@ -81,9 +82,7 @@ public enum Lang {
                 return Message.convert(key);
             }
             String resp = config.node((Object[]) key.split("\\.")).getString(key);
-            for (int i = 0; i < replaceList.length - 1; i += 2) {
-                resp = resp.replace(replaceList[i], replaceList[i + 1]);
-            }
+            resp = TextPipeline.interpolateTokens(resp, replaceList);
             String withPrefix = (prefix == null || prefix.isEmpty()) ? resp : prefix + resp;
             return Message.convert(withPrefix);
         }

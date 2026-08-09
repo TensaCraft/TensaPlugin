@@ -13,6 +13,7 @@ import java.util.Map;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.event.ClickEvent;
+import ua.co.tensa.text.TextPipeline;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -75,7 +76,7 @@ class ChatRouteFormattingTest {
 
     @Test
     void consoleMessagesUseOnlyTrustedMiniMessagePayloadWithoutRouteWrapper() {
-        ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole("<green>Технічне повідомлення</green>");
+        TextPipeline.Rendered rendered = TextPipeline.operator("<green>Технічне повідомлення</green>");
 
         assertThat(plain(rendered.component())).isEqualTo("Технічне повідомлення");
         assertThat(rendered.component().color()).isNotNull();
@@ -87,7 +88,7 @@ class ChatRouteFormattingTest {
                 <#55ffff>✦</#55ffff> <#f4a15d>CoolVoider</#f4a15d> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><#55ffff>https://minecraft-ua.com/minecraft/aeronautics</#55ffff></click> та отримав бонус!
                 """.trim();
 
-        ChatMessageRenderer.Result rendered = ChatMessageRenderer.renderConsole(payload);
+        TextPipeline.Rendered rendered = TextPipeline.operator(payload);
         List<ClickEvent> clicks = new ArrayList<>();
         collect(rendered.component(), clicks);
 

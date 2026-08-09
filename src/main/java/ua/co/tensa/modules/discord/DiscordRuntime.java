@@ -135,9 +135,13 @@ final class DiscordRuntime implements AutoCloseable {
                 )),
                 settings.maxDiscordMessageLength()
         );
-        String avatar = settings.avatarUrlTemplate()
-                .replace("{uuid}", message.playerUuid().toString().replace("-", ""))
-                .replace("{player}", URLEncoder.encode(message.playerName(), StandardCharsets.UTF_8));
+        String avatar = ua.co.tensa.text.TextPipeline.interpolate(
+                settings.avatarUrlTemplate(),
+                java.util.Map.of(
+                        "uuid", message.playerUuid().toString().replace("-", ""),
+                        "player", URLEncoder.encode(message.playerName(), StandardCharsets.UTF_8)
+                )
+        );
         boolean accepted = outboundQueue.offer(DiscordOutboundMessage.chat(
                 webhookContent,
                 DiscordSanitizer.webhookUsername(message.playerName()),

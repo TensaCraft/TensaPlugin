@@ -1,7 +1,6 @@
 package ua.co.tensa.placeholders.providers;
 
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
 import ua.co.tensa.Message;
 import ua.co.tensa.placeholders.PlaceholderProvider;
 
@@ -47,22 +46,6 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
         }
     }
 
-    @Override
-    public Component resolveComponent(Player player, String input) {
-        if (!isAvailable()) {
-            return Message.convert(resolveRaw(player, input));
-        }
-        try {
-            if (player == null) return Message.convert(input);
-            UUID uuid = player.getUniqueId();
-            CompletableFuture<Component> fut = apiInstance.formatComponentPlaceholders(input, uuid);
-            return fut.getNow(Message.convert(input));
-        } catch (Throwable e) {
-            Message.placeholder("COMPONENT ERROR", "PAPIProxyBridge → " + e.getMessage());
-            return Message.convert(input);
-        }
-    }
-
     // Async helpers
     public CompletableFuture<String> formatPlaceholdersAsync(Player player, String input) {
         if (!isAvailable() || player == null || input == null) return CompletableFuture.completedFuture(input);
@@ -74,13 +57,4 @@ public class PAPIProxyBridgeProvider implements PlaceholderProvider {
         }
     }
 
-    public CompletableFuture<Component> formatComponentAsync(Player player, String input) {
-        if (!isAvailable() || player == null || input == null) return CompletableFuture.completedFuture(Message.convert(input));
-        try {
-            return apiInstance.formatComponentPlaceholders(input, player.getUniqueId());
-        } catch (Throwable e) {
-            Message.placeholder("ASYNC COMPONENT ERROR", "PAPIProxyBridge → " + e.getMessage());
-            return CompletableFuture.completedFuture(Message.convert(input));
-        }
-    }
 }

@@ -242,16 +242,18 @@ public final class CommandQueueManager implements AutoCloseable {
         if (config.logDispatch()) {
             Message.info("Queue -> dispatching #" + entry.id() + " for " + player.getUsername() + " via " + trigger);
         }
-        String finalCommand = command;
-        Util.executeCommand(finalCommand).whenComplete((success, throwable) -> {
+        ua.co.tensa.text.TextPipeline.resolvePlaceholdersAsync(player, command)
+                .thenCompose(Util::executeCommand)
+                .whenComplete((success, throwable) -> {
             if (throwable != null) {
-                Message.error("Queue -> command #" + entry.id() + " failed for " + player.getUsername() + ": " + throwable.getMessage());
+                Message.error("Queue -> command #" + entry.id() + " failed for " + player.getUsername()
+                        + ": " + throwable.getClass().getSimpleName());
                 return;
             }
             if (config.logDispatch()) {
                 Message.info("Queue -> executed #" + entry.id() + " for " + player.getUsername() + " accepted=" + success);
             }
-        });
+                });
     }
 
     private String renderCommand(QueuedCommandEntry entry, Player player) {

@@ -5,6 +5,7 @@ import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.text.TextPipeline;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -218,8 +219,11 @@ public final class ProxyChatService {
         Map<String, String> values = new HashMap<>();
         values.put("server", payload.server());
         values.put("player", payload.playerName());
-        ChatMessageRenderer.Result rendered = ChatMessageRenderer.render(
-                definition.format(), values, payload.message());
+        Player placeholderContext = payload.playerUuid() == null
+                ? null
+                : Tensa.server.getPlayer(payload.playerUuid()).orElse(null);
+        TextPipeline.Rendered rendered = TextPipeline.chat(
+                placeholderContext, definition.format(), values, payload.message());
         recordClickableUrls(rendered.clickableUrls());
 
         for (Player player : Tensa.server.getAllPlayers()) {
