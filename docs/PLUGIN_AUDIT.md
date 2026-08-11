@@ -1,6 +1,6 @@
 # TensaPlugin architecture, stability, and security audit
 
-Audit date: 2026-08-09
+Audit date: 2026-08-11
 
 Scope: TensaPlugin (Java 25 / Velocity 4 API) and the relevant TensaProxy
 authentication and NeoForge advancement producer (Java 21 toolchain).
@@ -25,12 +25,15 @@ click components, and separates internal lifecycle scheduling from the optional
 configurable `scheduler` command module. Operational communications files now
 live under `communications/`.
 
-The authentication investigation confirmed two causes consistent with offline
-players becoming frozen after transfers: route aliases were incorrectly treated
-as equivalent when they shared a signed backend ID, and a lost authentication
-challenge had no bounded retry. LibreLogin now remains the sole route owner and
-TensaProxy retries unanswered initial and renewal challenges without weakening
-replay protection.
+The authentication investigation confirmed four interacting causes consistent
+with offline players becoming frozen or being kicked after transfers: route
+aliases were incorrectly treated as equivalent when they shared a signed
+backend ID; a lost challenge had no bounded retry; Velocity could reject the
+selected new backend before `getCurrentServer()` changed; and a late logout from
+the old same-UUID backend connection could delete the replacement auth session.
+LibreLogin remains the sole route owner, Velocity now tracks a bounded exact
+handoff target, and TensaProxy uses retry plus session-scoped connection cleanup
+without weakening fail-closed validation.
 
 No deployment, proxy reload, proxy restart, or backend restart was performed.
 Real guild permissions, Discord reconnect behavior and mixed premium/offline
@@ -85,6 +88,10 @@ is instance-owned and closed during replacement.
 | High | Backend advancement text depended on whichever component title happened to be visible at runtime. | TDE2 carries locale, localized title and optional description. TensaProxy embeds SHA-1-verified `uk_ua`/`en_us` vanilla catalogs and loads bounded mod language catalogs; TensaPlugin accepts strict TDE1 and TDE2 frames for rolling compatibility. |
 | Critical | Auth route suppression treated two Velocity routes sharing a backend ID as the same route. Offline-auth players could remain attached to a gameplay backend while its gate stayed locked. | The alias-route mutation was removed. LibreLogin owns auth/gameplay routing. A signed backend ID is cryptographic identity, not route identity; exact physical endpoint aliases require a distinct auth endpoint. |
 | High | A dropped initial or lease-renewal challenge left a backend player locked until timeout. | TensaProxy retries unanswered challenges at a bounded interval no faster than five seconds. Session/challenge identity is retained, while each retry has a fresh message ID, nonce, timestamps and signature. Any valid bound `AUTH_STATE` stops retries; exact replay remains rejected. |
+| Critical | During auth-to-gameplay handoff, a valid challenge could arrive from the selected target before Velocity updated `Player.getCurrentServer()`, so strict current-connection identity rejected it. | The receiver records the final pre-connect target for one frame-TTL window, rejects the previous connection during that window, accepts only the selected target, and clears the handoff at post-connect/disconnect. UUID, signed backend identity, challenge, session, expiry and replay checks remain mandatory. |
+| Critical | Backend logout cleanup was keyed only by UUID. With overlapping same-UUID connections, late logout of the old connection removed the replacement session; its response then failed as `no_active_session`, and no session remained to own timeout cleanup. | Core disconnect now supports expected-session compare-and-remove. Paper and NeoForge track session IDs by concrete connection identity and clear the physical auth gate only when that connection still owns the active session. |
+| High | Chat payloads were silently truncated at 256 characters on Minecraft paths and 1000 characters on Discord paths, sometimes in two stages. | Chat normalization no longer truncates. Discord-bound rendered text is split at safe code-point/escape boundaries into ordered messages of at most 2000 code points. Multi-part admission is atomic, so queue pressure cannot deliver only the first half. Discord ingress preserves the full normalized API payload. |
+| High | `/tensareload scheduler` returned `Module is disabled` when root config enabled Scheduler but an earlier startup had failed, making recovery require a broader reload or restart. | Targeted reload re-reads root config, reconciles only the requested module, retries enable for a configured disabled runtime, and reports a genuine failure if validation/startup still fails. Other modules, players and auth sessions are untouched. |
 | High | Blocking I/O and unbounded executors/queues existed in event or command paths. | Core user/storage operations, Discord work, command queue, text reader, HTTP and RCON work use plugin schedulers or bounded executors with explicit rejection. Socket, HTTP, JDA shutdown and executor waits have finite bounds. |
 | Medium | Minecraft text had separate Message, chat and placeholder parsers, so ordering and escaping differed by route and valid click tags could be diagnosed only at a shallow renderer seam. | `TextPipeline` is now the single component boundary for contextual placeholders, curly/percent interpolation, legacy colors, MiniMessage, operator payloads and safe player-chat insertion. Player input is inserted as a Component, URL actions are explicit, and quoted tag arguments use a separate encoder. Discord Markdown continues to use its destination sanitizer but shares the same raw interpolation engine. Logs contain transitions, safe failure classes and counters, never message bodies, tokens, webhook URLs, Discord IDs, signatures or keys. |
 | Medium | `/tensainfo communications` existed only behind the shorter `/tinfo` primary command. | `/tensainfo` is now primary and `/tinfo` remains its compatibility alias; both are reserved against chat-command collisions. The snapshot contains only state, backend type, queue/counter metrics, latency and a safe failure class. |
@@ -95,7 +102,10 @@ is instance-owned and closed during replacement.
 Premium accounts appeared less affected because they can bypass or complete a
 different LibreLogin path; this was not evidence that the backend freeze guard
 itself was account-type aware. The actual fault was route ownership combined
-with fail-closed backend state. The fixes retain the intended security model:
+with fail-closed backend state and overlapping connection lifecycle. Live
+read-only logs additionally showed `duplicate_login` during `aero-auth` to
+`aeronautics` movement and 25-second authentication expiry for affected
+connections. The fixes retain the intended security model:
 
 - a backend locks a player immediately and unlocks only after a valid, bound,
   signed `AUTHORIZED` state;
@@ -104,8 +114,17 @@ with fail-closed backend state. The fixes retain the intended security model:
 - authorization remains a renewable lease;
 - authentication reload validates changes but deliberately does not replace
   active sessions or move/kick connected players;
+- a pre-connect handoff can authorize only its selected new route, never the
+  old or an arbitrary allowlisted connection;
+- a stale backend logout cannot delete a newer same-UUID session or clear the
+  newer connection's freeze state;
 - security/timing changes to the auth runtime require the next controlled proxy
   start and are reported as such.
+
+The premium/offline distinction is not encoded in the bridge protocol. Both
+paths require the backend-forwarded UUID to match Velocity's transport UUID.
+Modern forwarding should make those identities equal; a mismatch is treated as
+a forwarding configuration error and remains fail-closed.
 
 The remaining topology rule is operationally important: if `auth` and a
 gameplay server are merely two names for the same physical listener, Velocity
@@ -139,8 +158,9 @@ Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MI
 
 ## Reload, concurrency and delivery audit
 
-- `/tensareload <module-id>` targets exactly one enabled module;
-  `/tensareload all` handles all enabled modules. No argument remains a
+- `/tensareload <module-id>` re-reads the target's root flag and targets exactly
+  one module, including recovery of a configured module after failed startup;
+  `/tensareload all` reconciles all modules. No argument remains a
   compatibility alias for `all`.
 - Permissions are `tensa.reload` and `tensa.reload.<module-id>`, including tab
   completion filtering.
@@ -164,7 +184,7 @@ Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MI
 Final local gates:
 
 - TensaPlugin with Java 25: `mvn -B clean test`,
-  `mvn -B dependency:analyze`, and `mvn -B clean package`: 186 tests,
+  `mvn -B dependency:analyze`, and `mvn -B clean package`: 193 tests,
   0 failures/errors/skips, and no dependency problems.
 - A clean Velocity 4 smoke profile binds only to localhost,
   strips Discord credentials from the child environment and disables telemetry.
@@ -174,7 +194,7 @@ Final local gates:
   template, Scheduler execution, five targeted Scheduler reloads without
   duplicate ticks, and clean module/storage/process shutdown.
 - TensaProxy with its Java 21 toolchain: `gradlew.bat clean test build`.
-  45 tests, 0 failures/errors/skips across testkit and NeoForge.
+  46 tests, 0 failures/errors/skips across testkit and NeoForge.
 - Focused tests cover schema reset/archive failure/future rejection, H2 schema
   and conflicts, restart persistence, non-import of JSON, role reconciliation,
   strict webhook-only delivery, webhook binding/provisioning/revocation, route
@@ -194,8 +214,10 @@ Final local gates:
    this chooses duplicate avoidance over guaranteed delivery.
 4. Schema v2 intentionally discards old links and communications values after
    backup. Operators must configure v2 and plan a relink window.
-5. Authentication topology cannot make two Velocity aliases of one physical
-   endpoint behave like distinct transfer destinations.
+5. Session-scoped cleanup contains the stale-logout failure, but it cannot make
+   two Velocity aliases of one physical endpoint behave like truly distinct
+   transfer destinations or prevent the backend's own `duplicate_login` event.
+   A distinct auth endpoint remains the safest production topology.
 6. Auth runtime settings are restart-required by design; targeted reload only
    validates them so live player sessions remain untouched.
 7. Managed webhook creation requires `MANAGE_WEBHOOKS`. Without an explicit

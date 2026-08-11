@@ -1,6 +1,6 @@
 # Communications v2 implementation checklist
 
-Status date: 2026-08-09. This replaces the obsolete value-preserving migration
+Status date: 2026-08-11. This replaces the obsolete value-preserving migration
 proposal. The approved v2 contract is a verified archive followed by clean
 defaults and user relinking.
 
@@ -77,6 +77,14 @@ defaults and user relinking.
 - [x] Add strict TDE1/TDE2 receiver with localized optional descriptions.
 - [x] Audit and fix auth alias-transfer freezes and stale route binding.
 - [x] Preserve fail-closed auth while accepting bounded fresh challenge retries.
+- [x] Accept only the selected new backend during the bounded Velocity handoff
+  window, then restore exact current-connection binding after post-connect.
+- [x] Make TensaProxy disconnect cleanup session-scoped so a stale same-UUID
+  logout cannot delete a replacement auth session or clear its freeze guard.
+- [x] Remove silent 256/1000-character chat truncation; split Discord-bound text
+  into atomic ordered 2000-code-point batches without losing message content.
+- [x] Allow targeted reload to recover a root-enabled module after failed startup
+  while keeping unrelated runtimes and auth sessions untouched.
 - [x] Document findings, migration, rollout and rollback.
 
 ## TensaProxy
@@ -92,9 +100,9 @@ defaults and user relinking.
 
 ## Final gates
 
-- [x] TensaPlugin Java 25: clean test (168/168), dependency analysis without
-  problems and clean package.
-- [x] TensaProxy Java 21 toolchain: clean test build (45/45).
+- [x] TensaPlugin Java 25: full test (193/193), with clean package and dependency
+  analysis repeated as the final release gate.
+- [x] TensaProxy Java 21 toolchain: clean test build (46/46).
 - [x] Secret scan of the final diff and implementation commit range.
 - [x] Record final test totals and artifact SHA-256 values in the handoff.
 - [ ] Live rollout/canary — intentionally blocked until separate operator
