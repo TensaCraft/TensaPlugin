@@ -30,7 +30,14 @@ public final class DiscordSanitizer {
     }
 
     public static String forDiscord(String input, int maxCodePoints) {
-        String plain = truncate(normalize(input), maxCodePoints);
+        return escapeDiscord(truncate(normalize(input), maxCodePoints));
+    }
+
+    public static String forDiscord(String input) {
+        return escapeDiscord(normalize(input));
+    }
+
+    private static String escapeDiscord(String plain) {
         StringBuilder safe = new StringBuilder(plain.length() + 16);
         plain.codePoints().forEach(codePoint -> {
             if (codePoint == '@') {

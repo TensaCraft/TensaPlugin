@@ -57,7 +57,6 @@ public final class DiscordSettings {
     private final DiscordEmbedTemplate backendUnavailableEmbed;
     private final DiscordEmbedTemplate backendRecoveredEmbed;
     private final String avatarUrlTemplate;
-    private final int maxMinecraftMessageLength;
     private final int maxDiscordMessageLength;
     private final int queueCapacity;
     private final int eventRatePerMinute;
@@ -118,8 +117,7 @@ public final class DiscordSettings {
         this.backendRecoveredFormat = backendRecoveredEmbed.description();
         this.advancementFormat = advancementEmbed.description();
         this.avatarUrlTemplate = PLAYER_AVATAR_URL;
-        this.maxMinecraftMessageLength = 256;
-        this.maxDiscordMessageLength = 1_000;
+        this.maxDiscordMessageLength = 2_000;
         this.queueCapacity = 256;
         this.eventRatePerMinute = 60;
         this.eventStateCapacity = 4_096;
@@ -179,7 +177,6 @@ public final class DiscordSettings {
     DiscordEmbedTemplate backendUnavailableEmbed() { return backendUnavailableEmbed; }
     DiscordEmbedTemplate backendRecoveredEmbed() { return backendRecoveredEmbed; }
     public String avatarUrlTemplate() { return avatarUrlTemplate; }
-    public int maxMinecraftMessageLength() { return maxMinecraftMessageLength; }
     public int maxDiscordMessageLength() { return maxDiscordMessageLength; }
     public int queueCapacity() { return queueCapacity; }
     public int eventRatePerMinute() { return eventRatePerMinute; }

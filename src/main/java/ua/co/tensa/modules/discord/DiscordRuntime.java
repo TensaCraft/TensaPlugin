@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import ua.co.tensa.modules.runtime.ModuleScheduler;
 
 final class DiscordRuntime implements AutoCloseable {
+    private static final int DISCORD_MESSAGE_LIMIT = 2_000;
     private final DiscordSettings settings;
     private final DiscordGateway gateway;
     private final DiscordLinkService links;
@@ -123,18 +124,16 @@ final class DiscordRuntime implements AutoCloseable {
             return ProxyChatRelay.Result.DISABLED;
         }
         String player = DiscordSanitizer.forDiscord(message.playerName(), 80);
-        String content = DiscordSanitizer.forDiscord(message.message(), settings.maxDiscordMessageLength());
+        String content = DiscordSanitizer.forDiscord(message.message());
         if (content.isBlank()) {
             return ProxyChatRelay.Result.DISABLED;
         }
-        String webhookContent = DiscordSanitizer.truncate(
-                DiscordMessages.render(settings.minecraftToDiscordFormat(), java.util.Map.of(
+        String webhookContent = DiscordMessages.render(
+                settings.minecraftToDiscordFormat(), java.util.Map.of(
                         "player", player,
                         "server", DiscordSanitizer.forDiscord(message.server(), 80),
                         "message", content
-                )),
-                settings.maxDiscordMessageLength()
-        );
+                ));
         String avatar = ua.co.tensa.text.TextPipeline.interpolate(
                 settings.avatarUrlTemplate(),
                 java.util.Map.of(
@@ -142,11 +141,13 @@ final class DiscordRuntime implements AutoCloseable {
                         "player", URLEncoder.encode(message.playerName(), StandardCharsets.UTF_8)
                 )
         );
-        boolean accepted = outboundQueue.offer(DiscordOutboundMessage.chat(
-                webhookContent,
-                DiscordSanitizer.webhookUsername(message.playerName()),
-                avatar
-        ));
+        String webhookUsername = DiscordSanitizer.webhookUsername(message.playerName());
+        java.util.List<DiscordOutboundMessage> outbound = DiscordMessageChunks
+                .split(webhookContent, DISCORD_MESSAGE_LIMIT)
+                .stream()
+                .map(chunk -> DiscordOutboundMessage.chat(chunk, webhookUsername, avatar))
+                .toList();
+        boolean accepted = outboundQueue.offerAll(outbound);
         if (!accepted) {
             metrics.dropped();
             warnRateLimited("Discord outbound relay queue is full; dropping a new message");
@@ -261,10 +262,7 @@ final class DiscordRuntime implements AutoCloseable {
 
     private void deliverToMinecraft(DiscordInboundMessage message) {
         String author = DiscordSanitizer.truncate(DiscordSanitizer.normalize(message.authorName()), 80);
-        String content = DiscordSanitizer.truncate(
-                DiscordSanitizer.normalize(message.content()),
-                settings.maxMinecraftMessageLength()
-        );
+        String content = DiscordSanitizer.normalize(message.content());
         if (content.isBlank()) {
             return;
         }

@@ -280,7 +280,7 @@ public class ChatCommands implements SimpleCommand {
                 " ",
                 Arrays.copyOfRange(invocation.arguments(), messageOffset, invocation.arguments().length)
         );
-        String msg = ProxyChatText.sanitize(rawMessage, 256);
+        String msg = ProxyChatText.normalize(rawMessage);
         if (msg.isBlank()) {
             return;
         }
@@ -323,7 +323,7 @@ public class ChatCommands implements SimpleCommand {
         String perm = secString(sec, "permission", "");
         boolean seeAll = secBool(sec, "see_all", false);
 
-        String msg = ProxyChatText.sanitize(String.join(" ", invocation.arguments()), 256);
+        String msg = ProxyChatText.normalize(String.join(" ", invocation.arguments()));
         if (msg.isBlank()) {
             return;
         }

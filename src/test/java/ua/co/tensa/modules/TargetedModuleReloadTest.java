@@ -38,6 +38,19 @@ class TargetedModuleReloadTest {
     }
 
     @Test
+    void configuredModuleCanRecoverFromAFailedOrPreviouslyDisabledRuntime() {
+        CountingModule scheduler = new CountingModule("scheduler", false, 0, 0);
+
+        assertThat(Modules.reloadModule(
+                Map.of(scheduler.id(), scheduler), scheduler.id(), ignored -> true
+        )).isEqualTo(Modules.ReloadResult.RELOADED);
+
+        assertThat(scheduler.isEnabled()).isTrue();
+        assertThat(scheduler.enables.get()).isEqualTo(1);
+        assertThat(scheduler.reloads.get()).isZero();
+    }
+
+    @Test
     void restartRequiredModuleDoesNotReportAppliedReload() {
         CountingModule authentication = new CountingModule(
                 "librelogin-auth-bridge", true, 7, 12, true
@@ -52,7 +65,8 @@ class TargetedModuleReloadTest {
 
     private static final class CountingModule implements ModuleEntry {
         private final String id;
-        private final boolean enabled;
+        private boolean enabled;
+        private final AtomicInteger enables = new AtomicInteger();
         private final AtomicInteger reloads = new AtomicInteger();
         private final AtomicInteger activeSessions;
         private final AtomicInteger connectedPlayers;
@@ -78,8 +92,8 @@ class TargetedModuleReloadTest {
 
         @Override public String id() { return id; }
         @Override public String title() { return id; }
-        @Override public void enable() { }
-        @Override public void disable() { }
+        @Override public void enable() { enables.incrementAndGet(); enabled = true; }
+        @Override public void disable() { enabled = false; }
         @Override public void reload() {
             reloads.incrementAndGet();
             activeSessions.set(0);

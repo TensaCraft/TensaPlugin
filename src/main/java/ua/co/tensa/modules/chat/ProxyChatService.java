@@ -31,7 +31,6 @@ public final class ProxyChatService {
             Map<String, String> serverAliases,
             boolean relayToDiscord,
             Set<String> relayChannels,
-            int maxLength,
             String discordFormat
     ) {
     }
@@ -94,7 +93,6 @@ public final class ProxyChatService {
                 Map.copyOf(serverAliases),
                 config.getBoolean("relay.minecraft_to_discord.enabled", true),
                 Set.copyOf(relayChannels),
-                256,
                 config.getString("proxy_chat.discord_format", "<color:#5865f2>[Discord]</color> <white>{player}: {message}</white>")
         );
     }
@@ -132,7 +130,7 @@ public final class ProxyChatService {
         if (!definition.enabled()) {
             return false;
         }
-        String message = ProxyChatText.sanitize(rawMessage, current.maxLength());
+        String message = ProxyChatText.normalize(rawMessage);
         if (message.isEmpty()) {
             return false;
         }
@@ -159,8 +157,8 @@ public final class ProxyChatService {
 
     public void publishExternal(String source, String author, String rawMessage) {
         Settings current = settings;
-        String message = ProxyChatText.sanitize(rawMessage, current.maxLength());
-        String player = ProxyChatText.sanitize(author, 64);
+        String message = ProxyChatText.normalize(rawMessage);
+        String player = ProxyChatText.boundedIdentity(author, 80);
         if (message.isEmpty() || player.isEmpty()) {
             return;
         }

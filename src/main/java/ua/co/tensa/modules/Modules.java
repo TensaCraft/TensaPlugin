@@ -6,6 +6,7 @@ import ua.co.tensa.commands.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 public class Modules {
     private static final Map<String, ModuleEntry> REGISTRY = new LinkedHashMap<>();
@@ -71,20 +72,57 @@ public class Modules {
 
     public static ReloadResult reloadModule(String moduleId) {
         synchronized (RELOAD_LOCK) {
-            return reloadModule(REGISTRY, moduleId);
+            try {
+                if (Tensa.config == null) {
+                    Tensa.config = new ua.co.tensa.config.Config();
+                } else {
+                    Tensa.config.reload();
+                }
+            } catch (Throwable throwable) {
+                ua.co.tensa.Message.warn("Targeted module reload rejected by root config validation: "
+                        + throwable.getClass().getSimpleName());
+                return ReloadResult.FAILED;
+            }
+            return reloadModule(REGISTRY, moduleId, Tensa.config::isModuleEnabled);
         }
     }
 
-    static ReloadResult reloadModule(Map<String, ModuleEntry> registry, String moduleId) {
+    static ReloadResult reloadModule(Map<String, ? extends ModuleEntry> registry, String moduleId) {
+        return reloadModule(registry, moduleId, id -> {
+            ModuleEntry module = registry.get(id);
+            return module != null && module.isEnabled();
+        });
+    }
+
+    static ReloadResult reloadModule(
+            Map<String, ? extends ModuleEntry> registry,
+            String moduleId,
+            Predicate<String> desiredEnabled
+    ) {
         if (moduleId == null || moduleId.isBlank()) {
             return ReloadResult.NOT_FOUND;
         }
-        ModuleEntry module = registry.get(moduleId.trim().toLowerCase(java.util.Locale.ROOT));
+        String normalizedId = moduleId.trim().toLowerCase(java.util.Locale.ROOT);
+        ModuleEntry module = registry.get(normalizedId);
         if (module == null) {
             return ReloadResult.NOT_FOUND;
         }
-        if (!module.isEnabled()) {
+        boolean desired = module.required() || desiredEnabled.test(normalizedId);
+        if (!desired) {
+            if (module.isEnabled()) {
+                module.disable();
+            }
             return ReloadResult.DISABLED;
+        }
+        if (!module.isEnabled()) {
+            try {
+                module.enable();
+                return module.isEnabled() ? ReloadResult.RELOADED : ReloadResult.FAILED;
+            } catch (Throwable throwable) {
+                ua.co.tensa.Message.warn("Module enable failed during targeted reload: "
+                        + module.id() + " - " + throwable.getClass().getSimpleName());
+                return ReloadResult.FAILED;
+            }
         }
         try {
             if (!module.tryReload()) {

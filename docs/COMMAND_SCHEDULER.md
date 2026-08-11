@@ -87,5 +87,12 @@ before lifecycle replacement. Invalid configuration leaves the previous runtime
 and its jobs active. A successful reload closes every old timer/worker before the
 new set starts, so repeated reloads do not duplicate executions.
 
+The command first re-reads the root `modules.scheduler` flag. If the flag is
+`true` while the runtime is currently disabled because an earlier startup or
+validation failed, targeted reload validates `scheduler/config.yml` and attempts
+to enable it. If the flag is `false`, only Scheduler is disabled and reported as
+disabled. A failed enable leaves the module disabled and reports failure instead
+of claiming that configuration was applied.
+
 This targeted reload does not reload Communications, Discord, authentication,
 storage, connected players or auth sessions.

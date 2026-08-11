@@ -8,18 +8,18 @@ class ProxyChatTextTest {
 
     @Test
     void stripsControlCharactersWithoutModeratingRepeatedCharacters() {
-        assertThat(ProxyChatText.sanitize("  he\u0000llooooooo!!!  ", 256))
+        assertThat(ProxyChatText.normalize("  he\u0000llooooooo!!!  "))
                 .isEqualTo("hellooooooo!!!");
     }
 
     @Test
-    void appliesAConservativeLengthLimit() {
-        assertThat(ProxyChatText.sanitize("123456789", 5))
-                .isEqualTo("12345");
+    void doesNotSilentlyTruncateChatMessages() {
+        assertThat(ProxyChatText.normalize("123456789"))
+                .isEqualTo("123456789");
     }
 
     @Test
     void rejectsBlankInput() {
-        assertThat(ProxyChatText.sanitize(" \n\t ", 256)).isEmpty();
+        assertThat(ProxyChatText.normalize(" \n\t ")).isEmpty();
     }
 }

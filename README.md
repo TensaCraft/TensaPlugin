@@ -50,14 +50,15 @@ public class UserMetaConfig extends ConfigModelBase {
 
 Usage:
 - Instantiate once (singleton) and use typed fields: `UserMetaConfig.get().storageType`.
-- Reload one module with `/tensareload <module-id>` or all enabled modules with
-  `/tensareload all`.
+- Reload one module with `/tensareload <module-id>` or reconcile all modules with
+  `/tensareload all`. A targeted reload re-reads the root module flag and can
+  recover a configured module whose previous startup failed.
 - Root config accessors: `Tensa.config.isModuleEnabled("communications")`,
   `getLang()`, database getters, etc.
 
 ## Commands
 - `/tensa`: Help command to display all available commands.
-- `/tensareload <module-id>|all`: Validates and reloads one module or all enabled modules.
+- `/tensareload <module-id>|all`: Validates and reconciles one module or all modules.
 - `/tensainfo communications`: Shows a secret-free communications runtime snapshot (`/tinfo` is an alias).
 - `/tensamodules`: Displays a list of all available modules.
 - `/tpl -v`: Display plugin list.
@@ -70,6 +71,8 @@ The `scheduler` module runs named Velocity console-command schedules from
 modes: `all`, `random`, `shuffle`, and `round_robin`. Reload only this module with
 `/tensareload scheduler`; the candidate file is completely validated before the
 active jobs are replaced. See [`docs/COMMAND_SCHEDULER.md`](docs/COMMAND_SCHEDULER.md).
+If the scheduler is enabled in root `config.yml` but its previous startup failed,
+the same command retries only that module after validating the current files.
 
 Internal reconnect/retry jobs use a separate lifecycle scheduler and do not
 depend on whether the public command scheduler module is enabled.

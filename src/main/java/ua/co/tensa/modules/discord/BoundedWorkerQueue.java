@@ -1,6 +1,7 @@
 package ua.co.tensa.modules.discord;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +18,7 @@ final class BoundedWorkerQueue<T> implements AutoCloseable {
     private final Handler<T> handler;
     private final BiConsumer<T, Exception> failureHandler;
     private final AtomicBoolean running = new AtomicBoolean();
+    private final Object admissionLock = new Object();
     private final Thread worker;
 
     BoundedWorkerQueue(String threadName, int capacity, Handler<T> handler, BiConsumer<T, Exception> failureHandler) {
@@ -33,7 +35,21 @@ final class BoundedWorkerQueue<T> implements AutoCloseable {
     }
 
     boolean offer(T item) {
-        return item != null && running.get() && queue.offer(item);
+        synchronized (admissionLock) {
+            return item != null && running.get() && queue.offer(item);
+        }
+    }
+
+    boolean offerAll(Collection<? extends T> items) {
+        if (items == null || items.isEmpty() || items.stream().anyMatch(Objects::isNull)) {
+            return false;
+        }
+        synchronized (admissionLock) {
+            if (!running.get() || queue.remainingCapacity() < items.size()) {
+                return false;
+            }
+            return queue.addAll(items);
+        }
     }
 
     boolean isRunning() {

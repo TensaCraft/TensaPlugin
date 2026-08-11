@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +107,37 @@ class DiscordRuntimeLifecycleTest {
         assertThat(publishedToMinecraft).hasValue(2);
         runtime.close();
         assertThat(gateway.closed).isTrue();
+    }
+
+    @Test
+    void discordIngressPreservesACompleteNormalizedMessage() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(tempDir);
+        InMemoryDiscordLinkRepository store = new InMemoryDiscordLinkRepository();
+        store.initialize();
+        FakeGateway gateway = new FakeGateway();
+        DiscordLinkService links = new DiscordLinkService(
+                store, new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()), gateway, settings);
+        AtomicReference<String> published = new AtomicReference<>();
+        DiscordRuntime runtime = new DiscordRuntime(
+                settings,
+                gateway,
+                links,
+                new DiscordDelivery(gateway, new FakeWebhook()),
+                (source, author, content) -> published.set(content)
+        );
+        runtime.start();
+        String complete = "x".repeat(600);
+
+        gateway.inbound.accept(new DiscordInboundMessage(
+                settings.guildId(), settings.channelId(), "52345678901234567", "Guest",
+                complete, false, false, "long-1"));
+
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+        while (published.get() == null && System.nanoTime() < deadline) {
+            Thread.sleep(10L);
+        }
+        assertThat(published.get()).isEqualTo(complete);
+        runtime.close();
     }
 
     @Test
