@@ -6,6 +6,7 @@ import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
@@ -35,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 final class AuthBridgeRuntime implements AutoCloseable {
@@ -60,6 +62,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
     private final Consumer<String> transitionLogger;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong lastWarningAt = new AtomicLong();
+    private final Map<UUID, ExpectedServerConnection> expectedConnections = new ConcurrentHashMap<>();
 
     AuthBridgeRuntime(
             ProxyServer server,
@@ -126,8 +129,17 @@ final class AuthBridgeRuntime implements AutoCloseable {
         synchronizeAfterLogin(event.getPlayer());
     }
 
+    @Subscribe(priority = Short.MIN_VALUE)
+    public void onServerPreConnect(ServerPreConnectEvent event) {
+        event.getResult().getServer().ifPresentOrElse(
+                target -> expectServerConnection(event.getPlayer(), target.getServerInfo().getName()),
+                () -> expectedConnections.remove(event.getPlayer().getUniqueId())
+        );
+    }
+
     @Subscribe
     public void onServerPostConnect(ServerPostConnectEvent event) {
+        expectedConnections.remove(event.getPlayer().getUniqueId());
         resendToCurrentServer(event.getPlayer());
     }
 
@@ -138,6 +150,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
 
     void beginSession(Player player) {
         if (!closed.get()) {
+            expectedConnections.remove(player.getUniqueId());
             forget(sessions.begin(player));
         }
     }
@@ -155,7 +168,22 @@ final class AuthBridgeRuntime implements AutoCloseable {
     }
 
     void cleanupSession(Player player) {
+        expectedConnections.remove(player.getUniqueId());
         forget(sessions.remove(player));
+    }
+
+    void expectServerConnection(Player player, String targetServer) {
+        if (closed.get() || player == null || targetServer == null || targetServer.isBlank()) {
+            return;
+        }
+        expectedConnections.put(
+                player.getUniqueId(),
+                new ExpectedServerConnection(
+                        normalizeServerName(targetServer),
+                        player.getCurrentServer().orElse(null),
+                        saturatedAdd(clock.millis(), messageTtlMillis)
+                )
+        );
     }
 
     @Subscribe
@@ -402,6 +430,17 @@ final class AuthBridgeRuntime implements AutoCloseable {
         if (!challenge.playerId().equals(player.getUniqueId())) {
             throw new AuthProtocolException("Player UUID does not match the server connection");
         }
+        ExpectedServerConnection expected = expectedConnections.get(player.getUniqueId());
+        if (expected != null && expected.expiresAtMillis() < clock.millis()) {
+            expectedConnections.remove(player.getUniqueId(), expected);
+            expected = null;
+        }
+        if (expected != null) {
+            if (!expected.serverName().equals(sourceServer) || expected.previousConnection() == connection) {
+                throw new AuthProtocolException("Challenge source is not the expected transfer target");
+            }
+            return;
+        }
         if (player.getCurrentServer().orElse(null) != connection) {
             throw new AuthProtocolException("Challenge source is not the player's current backend connection");
         }
@@ -426,6 +465,7 @@ final class AuthBridgeRuntime implements AutoCloseable {
             forget(binding);
         }
         replayWindow.clear();
+        expectedConnections.clear();
         authenticator.close();
     }
 
@@ -533,6 +573,13 @@ final class AuthBridgeRuntime implements AutoCloseable {
             throw new IllegalArgumentException(name + " must not be negative");
         }
         return value;
+    }
+
+    private record ExpectedServerConnection(
+            String serverName,
+            ServerConnection previousConnection,
+            long expiresAtMillis
+    ) {
     }
 
     private static long requireHeartbeatInterval(

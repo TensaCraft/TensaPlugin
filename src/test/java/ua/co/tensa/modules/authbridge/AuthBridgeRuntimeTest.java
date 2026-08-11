@@ -1,12 +1,15 @@
 package ua.co.tensa.modules.authbridge;
 
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.ServerInfo;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.junit.jupiter.api.Test;
 import ua.co.tensa.authbridge.protocol.AuthFrame;
 import ua.co.tensa.authbridge.protocol.AuthMessageType;
@@ -441,6 +444,74 @@ class AuthBridgeRuntimeTest {
     }
 
     @Test
+    void acceptsChallengeFromExpectedTransferTargetBeforeVelocitySwitchesCurrentConnection() {
+        List<String> allowedServers = List.of("aero-auth", "aeronautics");
+        Map<String, String> sourceBindings = Map.of(
+                "aero-auth", "aero",
+                "aeronautics", "aero"
+        );
+        Harness harness = harness("aero-auth", allowedServers, sourceBindings);
+        harness.runtime.start();
+        harness.scheduler.runAll();
+        List<byte[]> gameplayPayloads = new ArrayList<>();
+        ServerConnection gameplay = connection("aeronautics", harness.player, gameplayPayloads);
+        harness.source.state = AuthState.AUTHORIZED;
+        RegisteredServer authServer = registeredServer("aero-auth");
+        RegisteredServer gameplayServer = registeredServer("aeronautics");
+        harness.runtime.onServerPreConnect(new ServerPreConnectEvent(
+                harness.player, gameplayServer, authServer
+        ));
+
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge(
+                        harness.playerId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "aero",
+                        bytes(ProtocolConstants.NONCE_BYTES, 122),
+                        bytes(ProtocolConstants.CHALLENGE_BYTES, 152)
+                ))
+        ));
+        assertThat(harness.payloads).isEmpty();
+
+        harness.runtime.onPluginMessage(pluginMessage(
+                gameplay,
+                harness.player,
+                signAndEncode(challenge(
+                        harness.playerId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "aero",
+                        bytes(ProtocolConstants.NONCE_BYTES, 123),
+                        bytes(ProtocolConstants.CHALLENGE_BYTES, 153)
+                ))
+        ));
+
+        assertThat(gameplayPayloads).hasSize(1);
+        assertThat(codec.decode(gameplayPayloads.getFirst()).authState()).isEqualTo(AuthState.AUTHORIZED);
+        assertThat(harness.currentConnection.get()).isSameAs(harness.connection);
+
+        harness.currentConnection.set(gameplay);
+        harness.runtime.onServerPostConnect(new ServerPostConnectEvent(harness.player, authServer));
+        harness.runtime.onPluginMessage(pluginMessage(
+                harness.connection,
+                harness.player,
+                signAndEncode(challenge(
+                        harness.playerId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "aero",
+                        bytes(ProtocolConstants.NONCE_BYTES, 124),
+                        bytes(ProtocolConstants.CHALLENGE_BYTES, 154)
+                ))
+        ));
+        assertThat(harness.payloads).isEmpty();
+        harness.runtime.close();
+    }
+
+    @Test
     void disallowedBackendCannotQueryOrReceiveStateAndCloseCleansUp() {
         Harness harness = harness("other");
         harness.runtime.beginSession(harness.player);
@@ -665,6 +736,14 @@ class AuthBridgeRuntimeTest {
                 }
                 yield true;
             }
+            default -> defaultValue(method.getReturnType());
+        });
+    }
+
+    private RegisteredServer registeredServer(String name) {
+        ServerInfo info = new ServerInfo(name, new InetSocketAddress("127.0.0.1", 25565));
+        return proxy(RegisteredServer.class, (method, args) -> switch (method.getName()) {
+            case "getServerInfo" -> info;
             default -> defaultValue(method.getReturnType());
         });
     }

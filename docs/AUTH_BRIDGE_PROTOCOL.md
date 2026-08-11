@@ -58,6 +58,21 @@ must be solved by assigning distinct actual backend endpoints or by LibreLogin's
 own routing configuration, never by overriding an explicit authentication
 route.
 
+Velocity records the final `ServerPreConnectEvent` target for a bounded handoff
+window. During that window it accepts a valid challenge only from the selected
+new route and rejects the previous connection, even if Velocity has not yet
+updated `Player.getCurrentServer()`. After `ServerPostConnectEvent`, the handoff
+record is removed and exact current-connection binding resumes. This closes the
+auth-to-gameplay race without treating aliases as interchangeable or weakening
+UUID, HMAC, expiry, replay, backend-ID, session, or challenge validation.
+
+Backend adapters bind logout cleanup to the concrete auth session created for
+that player connection. A late logout from a replaced connection cannot remove
+the replacement session or clear its freeze state. This is required when a
+same-endpoint alias transition produces `duplicate_login`: UUID-only cleanup can
+otherwise delete the new session after its challenge was already issued and
+leave the new player permanently locked with no session timeout owner.
+
 The backend creates the session UUID and 32-byte challenge. A valid challenge
 uses sequence `0`, state `PENDING`, and an empty reason. Velocity replies with
 the same player UUID, session UUID, challenge, and backend ID, plus a fresh
@@ -146,6 +161,12 @@ LibreLogin state maps as follows:
 
 Lookup failures and null results remain fail-closed as `PENDING`; they never
 reuse a previously authorized state for a heartbeat response.
+
+Premium and offline players use the same protocol binding. TensaProxy signs the
+UUID visible on the backend and Velocity requires it to equal the transport
+player UUID. With Velocity modern forwarding these UUIDs must already match;
+an observed mismatch is a forwarding/identity configuration failure and is
+rejected rather than papered over with a premium/offline exception.
 
 ## Golden Vector
 
