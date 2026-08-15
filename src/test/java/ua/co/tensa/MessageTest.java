@@ -6,6 +6,11 @@ import net.kyori.adventure.text.event.ClickEvent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MessageTest {
+    @Test
+    void legacyNamedColorsMapToTheSharedDesignPalette() {
+        assertThat(Message.applyDesignPalette("<red>Error</red> <gold>Title</gold> <gray>Text</gray>"))
+                .isEqualTo("<#FF6B81>Error</#FF6B81> <#F4C15D>Title</#F4C15D> <#AAB4CC>Text</#AAB4CC>");
+    }
 
     @Test
     void escapeMiniMessageEscapesTagsButKeepsLegacyAmpersands() {

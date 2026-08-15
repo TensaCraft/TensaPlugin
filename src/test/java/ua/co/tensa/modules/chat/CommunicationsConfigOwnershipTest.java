@@ -56,7 +56,7 @@ class CommunicationsConfigOwnershipTest {
 
         assertThat(reloaded.getString("private.to_format", ""))
                 .contains("copy_to_clipboard:'{message_payload}'")
-                .contains("<aqua>{message}</aqua>");
+                .contains("<#F4F7FF>{message}</#F4F7FF>");
         assertThat(reloaded.getString("reply.to_format", ""))
                 .isEqualTo("<gray>custom {message}</gray>");
     }
@@ -73,7 +73,7 @@ class CommunicationsConfigOwnershipTest {
         ChatConfig reloaded = new ChatConfig();
         reloaded.reloadCfg();
 
-        assertThat(reloaded.getString("private.command", "")).isEqualTo("pm,msg,tell,w");
+        assertThat(reloaded.getString("private.command", "")).isEqualTo("pm,msg,tell,w,m");
         assertThat(reloaded.getString("reply.command", "")).isEqualTo("customreply");
     }
 }

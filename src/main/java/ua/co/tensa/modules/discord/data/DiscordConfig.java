@@ -26,7 +26,7 @@ public final class DiscordConfig extends ConfigBase {
                     entry("aeronautics", "Aeronautics"),
                     entry("creative", "Creative")
             )),
-            entry("discord_format", "<dark_gray>[</dark_gray><color:#5865f2>Discord</color><dark_gray>]</dark_gray> <color:#7fd7ff>{player}</color> <dark_gray>></dark_gray> <white>{message}</white>")
+            entry("discord_format", "<gradient:#55FFFF:#C792EA>✦ Discord</gradient> <#667085>•</#667085> <#F4C15D>{player}</#F4C15D> <#667085>›</#667085> <#F4F7FF>{message}</#F4F7FF>")
     );
 
     @CfgKey(value = "embeds", comment = "Validated Discord event presentation templates")

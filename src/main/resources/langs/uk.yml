@@ -1,6 +1,6 @@
 # UK localization file (MiniMessage)
 
-prefix: "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>"
+prefix: ''
 no_perms: "<red>Ви не маєте дозволу на використання цієї команди</red>"
 unknown_error: "<red>Невідома помилка</red>"
 unknown_request: "<red>Невідомий запит</red>"
@@ -53,12 +53,12 @@ help_empty: "<yellow>Зареєстрованих команд не знайде
 help_command_format: "<gold>{usage}</gold>{aliases} <gray>-</gray> <green>{description}</green>"
 help_alias_format: " <dark_gray>(</dark_gray><gray>аліаси:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>"
 help_desc_tensa: "Показати довідку."
+help_desc_info: "Показати інформацію про плагін."
 help_desc_tensareload: "Перезавантажити всі конфігурації плагіна."
 help_desc_tensamodules: "Показати всі налаштовані модулі."
 help_desc_tpl: "Показати встановлені плагіни проксі."
 help_desc_psend: "Відправити гравця на інший сервер."
 help_desc_tparse: "Розпарсити плейсхолдери в тексті."
-help_desc_tinfo: "Показати інформацію про плагін, модулі та команди."
 help_desc_tptime: "Показати час гри для себе або іншого гравця."
 help_desc_tptop: "Показати топ гравців за часом гри."
 help_desc_rcon: "Виконати RCON-команду на одному або кількох серверах."

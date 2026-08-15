@@ -50,17 +50,18 @@ public class UserMetaConfig extends ConfigModelBase {
 
 Usage:
 - Instantiate once (singleton) and use typed fields: `UserMetaConfig.get().storageType`.
-- Reload one module with `/tensareload <module-id>` or reconcile all modules with
-  `/tensareload all`. A targeted reload re-reads the root module flag and can
+- Reload one module with `/tensa reload <module-id>` or reconcile all modules with
+  `/tensa reload all`. A targeted reload re-reads the root module flag and can
   recover a configured module whose previous startup failed.
 - Root config accessors: `Tensa.config.isModuleEnabled("communications")`,
   `getLang()`, database getters, etc.
 
 ## Commands
 - `/tensa`: Help command to display all available commands.
-- `/tensareload <module-id>|all`: Validates and reconciles one module or all modules.
-- `/tensainfo communications`: Shows a secret-free communications runtime snapshot (`/tinfo` is an alias).
-- `/tensamodules`: Displays a list of all available modules.
+- `/tensa help`: Displays command help.
+- `/tensa info`: Displays the plugin name and version without module-specific arguments.
+- `/tensa modules`: Displays all available modules.
+- `/tensa reload <module-id>|all`: Validates and reconciles one module or all modules.
 - `/tpl -v`: Display plugin list.
 - `/psend <player/all> <server>`: Sends the specified player to the specified server.
 
@@ -69,7 +70,7 @@ Usage:
 The `scheduler` module runs named Velocity console-command schedules from
 `scheduler/config.yml`. It supports fixed or random intervals and four execution
 modes: `all`, `random`, `shuffle`, and `round_robin`. Reload only this module with
-`/tensareload scheduler`; the candidate file is completely validated before the
+`/tensa reload scheduler`; the candidate file is completely validated before the
 active jobs are replaced. See [`docs/COMMAND_SCHEDULER.md`](docs/COMMAND_SCHEDULER.md).
 If the scheduler is enabled in root `config.yml` but its previous startup failed,
 the same command retries only that module after validating the current files.
@@ -275,7 +276,7 @@ Owns Minecraft chat channels, Discord linking/role reconciliation, webhook-only
 chat relay, announcements and delivery as one reloadable runtime. `chats.yml` contains Minecraft channel
 routes, permissions and formats; `discord.yml` contains Discord and shared relay settings, including the
 logical channels forwarded to Discord. Both live in
-the `communications/` module directory. `/tensainfo communications` exposes a
+the `communications/` module directory. Runtime transitions and failures are
 secret-safe lifecycle, chat-transport, queue, scheduler, resource and URL-component snapshot. See
 [`docs/COMMUNICATIONS_V2_MIGRATION.md`](docs/COMMUNICATIONS_V2_MIGRATION.md)
 before upgrading an existing installation.

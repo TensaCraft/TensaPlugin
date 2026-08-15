@@ -78,7 +78,7 @@ console.
 Use:
 
 ```text
-/tensareload scheduler
+/tensa reload scheduler
 ```
 
 The permission is `tensa.reload.scheduler` or the broader `tensa.reload`. YAML

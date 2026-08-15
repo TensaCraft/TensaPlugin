@@ -55,8 +55,12 @@ public class LangYAML extends YamlBackedFile {
     protected void populateConfigFile() {
         setHeader(getLangFile().toUpperCase() + " localization file (MiniMessage)");
 
+        // Bundled catalogs are the authoritative visual defaults. Existing
+        // administrator translations still win because only missing keys merge.
+        mergeBundledDefaults();
+
         // Common
-        setConfigValue("prefix", "<white>[<dark_aqua><bold>Tensa</bold></dark_aqua>]</white> <gray>");
+        setConfigValue("prefix", "");
         setLocalizedConfigValue("no_perms",
                 "<red>You do not have permission to use this command</red>",
                 "<red>У вас немає дозволу на використання цієї команди</red>");
@@ -211,12 +215,12 @@ public class LangYAML extends YamlBackedFile {
                 " <dark_gray>(</dark_gray><gray>aliases:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>",
                 " <dark_gray>(</dark_gray><gray>аліаси:</gray> <yellow>{aliases}</yellow><dark_gray>)</dark_gray>");
         setLocalizedConfigValue("help_desc_tensa", "Show help.", "Показати довідку.");
+        setLocalizedConfigValue("help_desc_info", "Show plugin information.", "Показати інформацію про плагін.");
         setLocalizedConfigValue("help_desc_tensareload", "Reload all plugin configurations.", "Перезавантажити всі конфігурації плагіна.");
         setLocalizedConfigValue("help_desc_tensamodules", "Show all configured modules.", "Показати всі налаштовані модулі.");
         setLocalizedConfigValue("help_desc_tpl", "Show installed proxy plugins.", "Показати встановлені плагіни проксі.");
         setLocalizedConfigValue("help_desc_psend", "Send a player to another server.", "Відправити гравця на інший сервер.");
         setLocalizedConfigValue("help_desc_tparse", "Parse placeholders in text.", "Розпарсити плейсхолдери в тексті.");
-        setLocalizedConfigValue("help_desc_tinfo", "Show plugin information, modules, and commands.", "Показати інформацію про плагін, модулі та команди.");
         setLocalizedConfigValue("help_desc_tptime", "Show playing time for yourself or another player.", "Показати час гри для себе або іншого гравця.");
         setLocalizedConfigValue("help_desc_tptop", "Show the top players by playing time.", "Показати топ гравців за часом гри.");
         setLocalizedConfigValue("help_desc_rcon", "Execute an RCON command on one or more servers.", "Виконати RCON-команду на одному або кількох серверах.");
@@ -278,13 +282,10 @@ public class LangYAML extends YamlBackedFile {
                 "<gold>Queue stats:</gold> <gray>total=</gray><white>{total}</white> <gray>due=</gray><white>{due}</white> <gray>online=</gray><white>{online}</white>",
                 "<gold>Статистика черги:</gold> <gray>усього=</gray><white>{total}</white> <gray>готово=</gray><white>{due}</white> <gray>онлайн=</gray><white>{online}</white>");
 
-        // Bundled translations can add module-specific keys without replacing
-        // established defaults above or administrator-maintained values on disk.
-        mergeBundledDefaults();
     }
 
     private void setLocalizedConfigValue(String path, String englishDefault, String ukrainianDefault) {
-        String localizedValue = isUkrainianLang() ? ukrainianDefault : englishDefault;
+        String localizedValue = applyDesignPalette(isUkrainianLang() ? ukrainianDefault : englishDefault);
         if (!contains(path)) {
             setNodeValue(node(path), localizedValue);
             markDirty();
@@ -329,7 +330,8 @@ public class LangYAML extends YamlBackedFile {
             }
             CommentedConfigurationNode targetNode = node(target, key);
             if (targetNode.virtual() || targetNode.raw() == null) {
-                targetNode.set(templateNode.raw());
+                Object value = templateNode.raw();
+                targetNode.set(value instanceof String text ? applyDesignPalette(text) : value);
                 if (templateNode.comment() != null) {
                     targetNode.comment(templateNode.comment());
                 }
@@ -356,6 +358,20 @@ public class LangYAML extends YamlBackedFile {
 
     private boolean isUkrainianLang() {
         return "uk".equalsIgnoreCase(getLangFile());
+    }
+
+    private static String applyDesignPalette(String text) {
+        if (text == null || text.isEmpty()) return text;
+        return text
+                .replace("<red>", "<#FF6B81>").replace("</red>", "</#FF6B81>")
+                .replace("<green>", "<#7AE6B2>").replace("</green>", "</#7AE6B2>")
+                .replace("<gold>", "<#F4C15D>").replace("</gold>", "</#F4C15D>")
+                .replace("<yellow>", "<#F4C15D>").replace("</yellow>", "</#F4C15D>")
+                .replace("<aqua>", "<#55FFFF>").replace("</aqua>", "</#55FFFF>")
+                .replace("<dark_aqua>", "<#55FFFF>").replace("</dark_aqua>", "</#55FFFF>")
+                .replace("<white>", "<#F4F7FF>").replace("</white>", "</#F4F7FF>")
+                .replace("<gray>", "<#AAB4CC>").replace("</gray>", "</#AAB4CC>")
+                .replace("<dark_gray>", "<#667085>").replace("</dark_gray>", "</#667085>");
     }
 
     private static String getLangFile() {

@@ -36,7 +36,7 @@ public class Message {
         if (message == null) {
             return;
         }
-        TextPipeline.renderAsync(recipient, message).thenAccept(component -> sendResolved(recipient, component))
+        TextPipeline.renderAsync(recipient, applyDesignPalette(message)).thenAccept(component -> sendResolved(recipient, component))
                 .exceptionally(throwable -> {
             warn("Message delivery failed: " + throwable.getMessage());
             return null;
@@ -87,7 +87,7 @@ public class Message {
     }
 
     private static void sendMessageWithPrefix(String prefixStr, String message) {
-        message = prefixStr + message;
+        message = applyDesignPalette(prefixStr + message);
         if (Tensa.server == null) return; // test environment/no server
         for (String string : message.split("\\R", -1)) {
             Tensa.server.getConsoleCommandSource().sendMessage(render(Tensa.server.getConsoleCommandSource(), string));
@@ -96,6 +96,7 @@ public class Message {
 
     private static void send(String message) {
         if (Tensa.server == null) return; // test environment/no server
+        message = applyDesignPalette(message);
         for (String string : message.split("\\R", -1)) {
             Tensa.server.getConsoleCommandSource().sendMessage(render(Tensa.server.getConsoleCommandSource(), string));
         }
@@ -188,6 +189,23 @@ public class Message {
         info(version);
         info(author);
         info(headerLine);
+    }
+
+    /** Maps legacy named colors to the single public Tensa design palette. */
+    static String applyDesignPalette(String text) {
+        if (text == null || text.isEmpty()) return text;
+        return text
+                .replace("<red>", "<#FF6B81>").replace("</red>", "</#FF6B81>")
+                .replace("<dark_red>", "<#FF6B81>").replace("</dark_red>", "</#FF6B81>")
+                .replace("<green>", "<#7AE6B2>").replace("</green>", "</#7AE6B2>")
+                .replace("<gold>", "<#F4C15D>").replace("</gold>", "</#F4C15D>")
+                .replace("<yellow>", "<#F4C15D>").replace("</yellow>", "</#F4C15D>")
+                .replace("<aqua>", "<#55FFFF>").replace("</aqua>", "</#55FFFF>")
+                .replace("<dark_aqua>", "<#55FFFF>").replace("</dark_aqua>", "</#55FFFF>")
+                .replace("<white>", "<#F4F7FF>").replace("</white>", "</#F4F7FF>")
+                .replace("<gray>", "<#AAB4CC>").replace("</gray>", "</#AAB4CC>")
+                .replace("<dark_gray>", "<#667085>").replace("</dark_gray>", "</#667085>")
+                .replace("<light_purple>", "<#C792EA>").replace("</light_purple>", "</#C792EA>");
     }
 
 }

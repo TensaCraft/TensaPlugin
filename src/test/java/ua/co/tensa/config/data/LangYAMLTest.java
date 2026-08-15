@@ -39,6 +39,10 @@ class LangYAMLTest {
         assertThat(lang.getString("queue_usage", ""))
                 .contains("[player|uuid] [command...]")
                 .doesNotContain("<player|uuid>", "<command...>");
+        assertThat(lang.getString("no_perms", "")).contains("<#FF6B81>").doesNotContain("<red>");
+        assertThat(lang.getString("help_command_format", ""))
+                .contains("<#F4C15D>", "<#7AE6B2>", "<#AAB4CC>");
+        assertThat(lang.contains("help_desc_tinfo")).isFalse();
     }
 
     @Test
@@ -60,7 +64,7 @@ class LangYAMLTest {
         assertThat(lang.getString("rcon_usage", "")).contains("Usage");
         assertThat(lang.getString("reload", "")).contains("перезавантажено").doesNotContain("reloaded");
         assertThat(lang.getString("player_time", "")).contains("Ваш час гри").doesNotContain("Your game time");
-        assertThat(lang.getString("send_success", "")).contains("відправлено").doesNotContain("sent to server");
+        assertThat(lang.getString("send_success", "")).contains("надіслано").doesNotContain("sent to server");
     }
 
     @Test

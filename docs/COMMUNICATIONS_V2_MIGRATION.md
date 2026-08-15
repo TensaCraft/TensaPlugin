@@ -66,7 +66,7 @@ backend. Do not manually copy legacy JSON rows into the database.
   only for rollback/audit, not import.
 - Validate `/discord link`, the clipboard button, Discord `/link`, JDBC
   persistence, role reconciliation, webhook identity/avatar and
-  `/tensainfo communications` before enabling announcements. The safe
+  verify the structured transition logs before enabling announcements. The safe
   `chat_transport` state must be `explicit` or `managed`. A rising
   `clickable_urls` count proves that the plugin
   emitted URL click actions; remaining non-clickable behavior is client-side.
