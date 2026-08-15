@@ -104,12 +104,28 @@ public class AppConfig extends ConfigBase {
         super.reloadCfg();
         Map<String, Object> supportedDefaults = discoverModuleDefaults();
         boolean migrated = migrateLegacyCommunicationsFlag();
+        migrated |= migrateModuleId("request-module", "requests");
         boolean changed = migrated;
         changed |= addMissingSupportedModuleKeys(supportedDefaults);
         changed |= removeUnsupportedModuleKeys(supportedDefaults.keySet());
         if (changed) {
             save();
         }
+    }
+
+    private boolean migrateModuleId(String legacyId, String currentId) {
+        if (modules == null || !modules.containsKey(legacyId)) {
+            return false;
+        }
+        if (!modules.containsKey(currentId)) {
+            Object value = modules.get(legacyId);
+            modules.put(currentId, value);
+            setNodeValue(node("modules." + currentId), value);
+        }
+        modules.remove(legacyId);
+        setNodeValue(node("modules." + legacyId), null);
+        ua.co.tensa.Message.info("Migrated module id " + legacyId + " to " + currentId);
+        return true;
     }
 
     private boolean migrateLegacyCommunicationsFlag() {
@@ -165,6 +181,13 @@ public class AppConfig extends ConfigBase {
     @Override
     protected boolean shouldWriteDefault(String basePath, Object defaultValue,
                                          org.spongepowered.configurate.CommentedConfigurationNode yaml) {
+        if ("modules".equals(basePath)
+                && defaultValue instanceof Map<?, ?> defaults
+                && defaults.containsKey("requests")
+                && yaml.node("modules", "requests").virtual()
+                && !yaml.node("modules", "request-module").virtual()) {
+            return false;
+        }
         if (!"modules".equals(basePath)
                 || !yaml.node("modules", "communications").virtual()) {
             return true;

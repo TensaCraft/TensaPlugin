@@ -70,4 +70,37 @@ class AppConfigCommunicationsMigrationTest {
         assertThat(saved.node("modules", "chat-manager").virtual()).isTrue();
         assertThat(saved.node("modules", "discord").virtual()).isTrue();
     }
+
+    @Test
+    void migratesLegacyRequestsIdWithoutChangingItsValue() throws Exception {
+        Tensa.pluginPath = tempDir;
+        Files.writeString(tempDir.resolve("config.yml"), """
+                modules:
+                  request-module: false
+                """);
+
+        Config config = new Config();
+
+        assertThat(config.isModuleEnabled("requests")).isFalse();
+        var saved = YamlConfigurationLoader.builder().path(tempDir.resolve("config.yml")).build().load();
+        assertThat(saved.node("modules", "requests").getBoolean()).isFalse();
+        assertThat(saved.node("modules", "request-module").virtual()).isTrue();
+    }
+
+    @Test
+    void explicitRequestsIdWinsWhenBothIdsExist() throws Exception {
+        Tensa.pluginPath = tempDir;
+        Files.writeString(tempDir.resolve("config.yml"), """
+                modules:
+                  request-module: true
+                  requests: false
+                """);
+
+        Config config = new Config();
+
+        assertThat(config.isModuleEnabled("requests")).isFalse();
+        var saved = YamlConfigurationLoader.builder().path(tempDir.resolve("config.yml")).build().load();
+        assertThat(saved.node("modules", "requests").getBoolean()).isFalse();
+        assertThat(saved.node("modules", "request-module").virtual()).isTrue();
+    }
 }

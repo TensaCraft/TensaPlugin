@@ -5,7 +5,7 @@ modules:
   chat: true
   rcon-manager: true
   rcon-server: false
-  request-module: true
+  requests: true
   player-time: true
   command-queue: true
   text-reader: true

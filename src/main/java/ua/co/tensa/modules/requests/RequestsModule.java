@@ -26,7 +26,7 @@ public class RequestsModule {
             new AtomicRuntimeSlot<>(RequestsModule::activate, RequestsModule::deactivate);
 
     private static final ModuleEntry IMPL = new AbstractModule(
-            "request-module", "Requests") {
+            "requests", "Requests") {
         @Override protected void onEnable() { RUNTIME.start(prepare()); }
         @Override protected void onDisable() {
             RUNTIME.close();

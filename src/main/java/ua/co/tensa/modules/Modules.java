@@ -152,14 +152,10 @@ public class Modules {
     // no-op: modules are applied via applyConfig()
 
     private void registerCommands() {
-        Util.registerCommand("tensareload", "treload", new ReloadCommand());
-        Util.registerCommand("tensa", "", new HelpCommand());
-        Util.registerCommand("tensahelp", "", new HelpCommand());
-        Util.registerCommand("tensamodules", "tmodules", new ModulesCommand());
+        Util.registerCommand("tensa", "", new TensaCommand());
         Util.registerCommand("tpl", "tplugins", new PluginsCommand());
         Util.registerCommand("psend", "tpsend", new PlayerSendCommand());
         Util.registerCommand("tparse", "tph", new PlaceholderParseCommand());
-        Util.registerCommand("tensainfo", "tinfo", new TensaInfoCommand());
     }
 
     private static java.util.List<String> synchronizeModules(boolean reloadEnabled) {

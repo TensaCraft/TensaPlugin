@@ -30,6 +30,13 @@ public final class CommandHelpCatalog {
     public static List<HelpEntry> entries() {
         List<HelpEntry> entries = new ArrayList<>();
         for (Util.RegisteredCommand command : Util.getRegisteredCommands()) {
+            if (command != null && command.handler() instanceof TensaCommand) {
+                entries.add(new HelpEntry("/tensa help", text("help_desc_tensa", "Show help."), "", 10));
+                entries.add(new HelpEntry("/tensa info", text("help_desc_info", "Show plugin information."), "", 20));
+                entries.add(new HelpEntry("/tensa modules", text("help_desc_tensamodules", "Show all modules."), "", 30));
+                entries.add(new HelpEntry("/tensa reload [all|module]", text("help_desc_tensareload", "Reload plugin configurations."), "", 40));
+                continue;
+            }
             HelpEntry entry = describe(command);
             if (entry != null) {
                 entries.add(entry);
@@ -56,9 +63,6 @@ public final class CommandHelpCatalog {
         }
 
         SimpleCommand handler = command.handler();
-        if (handler instanceof HelpCommand && "tensahelp".equalsIgnoreCase(normalize(command.primary()))) {
-            return null;
-        }
         String display = displayName(command);
         String aliases = alternateNames(command, display);
         Map<String, String> placeholders = new LinkedHashMap<>();
@@ -96,10 +100,6 @@ public final class CommandHelpCatalog {
             descriptionKey = "help_desc_tparse";
             descriptionFallback = "Parse placeholders in text.";
             sortOrder = 60;
-        } else if (handler instanceof TensaInfoCommand) {
-            descriptionKey = "help_desc_tinfo";
-            descriptionFallback = "Show plugin information, modules, and commands.";
-            sortOrder = 70;
         } else if (handler instanceof PlayerTimeCommand) {
             usageTemplate = "/{command} [player]";
             descriptionKey = "help_desc_tptime";
@@ -186,9 +186,6 @@ public final class CommandHelpCatalog {
         List<String> names = new ArrayList<>();
         addAlternate(names, command.primary(), display);
         addAlternate(names, command.alias(), display);
-        if (command.handler() instanceof HelpCommand && "tensa".equalsIgnoreCase(display)) {
-            addAlternate(names, "tensahelp", display);
-        }
         return String.join(", ", names);
     }
 

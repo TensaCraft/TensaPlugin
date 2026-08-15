@@ -23,7 +23,7 @@ class LiveConfigFixturesTest {
         assertThat(config.node("storage", "type").getString()).isEqualTo("auto");
         assertThat(config.node("database", "table_prefix").getString()).isEqualTo("tpl_");
         assertThat(config.node("user_meta", "default_persist").getBoolean()).isTrue();
-        assertThat(config.node("modules", "request-module").getBoolean()).isTrue();
+        assertThat(config.node("modules", "requests").getBoolean()).isTrue();
         assertThat(config.node("modules", "proxy-bridge").getBoolean()).isTrue();
         assertThat(config.node("modules", "pm" + "-bridge").virtual()).isTrue();
         assertThat(config.node("modules", "user-meta").virtual()).isTrue();

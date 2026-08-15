@@ -296,8 +296,8 @@ public final class CommunicationsModule extends AbstractModule {
     static void validateChat(YamlAdapter config) {
         Set<String> aliases = new HashSet<>();
         Set<String> reserved = Set.of(
-                "tensa", "tensahelp", "tensareload", "tensamodules", "tpl", "psend", "tparse",
-                "tensainfo", "tinfo", "discord"
+                "tensa", "tpl", "psend", "tparse",
+                "discord"
         );
         for (String section : config.getKeys(false)) {
             Map<String, Object> values = config.getSection(section);
