@@ -47,8 +47,7 @@ public final class YamlFileIO {
             }
 
             if (Files.exists(target)) {
-                Path backup = target.resolveSibling(target.getFileName() + ".bak." + System.currentTimeMillis());
-                Files.copy(target, backup, StandardCopyOption.REPLACE_EXISTING);
+                ConfigBackupStore.copyLatest(target);
             }
 
             moveIntoPlace(temp, target);

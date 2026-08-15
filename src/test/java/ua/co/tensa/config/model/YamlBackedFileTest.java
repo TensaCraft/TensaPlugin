@@ -43,9 +43,7 @@ class YamlBackedFileTest {
 
         assertThat(file).exists();
         assertThat(Files.readString(file, StandardCharsets.UTF_8)).contains("new_key:");
-        assertThat(Files.list(tempDir)
-                .filter(path -> path.getFileName().toString().startsWith("config.yml.corrupt."))
-                .toList()).hasSize(1);
+        assertThat(tempDir.resolve("backups/corrupt/config.yml.corrupt")).exists();
     }
 
     @Test
@@ -57,9 +55,26 @@ class YamlBackedFileTest {
         new BrokenYamlFile("config.yml");
 
         assertThat(Files.readString(file, StandardCharsets.UTF_8)).contains("<green>Hello</green>");
-        assertThat(Files.list(tempDir)
-                .filter(path -> path.getFileName().toString().startsWith("config.yml.corrupt."))
-                .toList()).isEmpty();
+        assertThat(tempDir.resolve("backups/corrupt/config.yml.corrupt")).doesNotExist();
+    }
+
+    @Test
+    void repeatedUpdatesKeepOnlyOneBackupPerConfig() throws IOException {
+        Tensa.pluginPath = tempDir;
+        Path file = tempDir.resolve("nested/settings.yml");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "existing: first\n", StandardCharsets.UTF_8);
+
+        new TestYamlFile("nested/settings.yml");
+        Files.writeString(file, "existing: second\n", StandardCharsets.UTF_8);
+        new TestYamlFile("nested/settings.yml");
+
+        Path backup = tempDir.resolve("backups/configs/nested/settings.yml.bak");
+        assertThat(backup).exists();
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).contains("existing: second");
+        try (var files = Files.walk(tempDir.resolve("backups/configs"))) {
+            assertThat(files.filter(Files::isRegularFile).toList()).containsExactly(backup);
+        }
     }
 
     private static final class TestYamlFile extends YamlBackedFile {

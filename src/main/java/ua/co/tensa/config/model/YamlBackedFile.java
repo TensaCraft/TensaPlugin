@@ -9,7 +9,6 @@ import ua.co.tensa.Tensa;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -98,9 +97,9 @@ public abstract class YamlBackedFile {
     private void recover(Exception cause) {
         try {
             if (Files.exists(filePath)) {
-                Path backup = filePath.resolveSibling(filePath.getFileName() + ".corrupt." + System.currentTimeMillis());
-                Files.move(filePath, backup, StandardCopyOption.REPLACE_EXISTING);
-                Message.warn("Config parse error for " + FILE_PATH + ": " + cause.getMessage() + ". Backed up to " + backup.getFileName());
+                Path backup = ConfigBackupStore.moveCorrupt(filePath);
+                Message.warn("Config parse error for " + FILE_PATH + ": " + cause.getMessage()
+                        + ". Latest invalid copy saved under backups/corrupt at " + backup.getFileName());
             }
 
             ensureFileExists();
