@@ -277,6 +277,25 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
     }
 
     @Override
+    public CompletableFuture<NicknameSyncResult> syncNickname(String discordUserId, String nickname) {
+        Guild configuredGuild = guild;
+        if (!ready.get() || configuredGuild == null) {
+            return CompletableFuture.completedFuture(NicknameSyncResult.GUILD_UNAVAILABLE);
+        }
+        String safeNickname = DiscordSanitizer.truncate(
+                DiscordSanitizer.normalize(nickname == null ? "" : nickname), 32);
+        if (safeNickname.isBlank()) {
+            return CompletableFuture.completedFuture(NicknameSyncResult.INVALID_NAME);
+        }
+        return configuredGuild.retrieveMemberById(discordUserId)
+                .submit()
+                .thenCompose(member -> member.modifyNickname(safeNickname).submit())
+                .handle((ignored, error) -> error == null
+                        ? NicknameSyncResult.SUCCESS
+                        : classifyNicknameFailure(error));
+    }
+
+    @Override
     public CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
             DiscordRoute route,
             String name,
@@ -417,6 +436,34 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                             ? configuredGuild.addRoleToMember(member, role).submit()
                             : configuredGuild.removeRoleFromMember(member, role).submit();
                 });
+    }
+
+    private static NicknameSyncResult classifyNicknameFailure(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null && (cause instanceof java.util.concurrent.CompletionException
+                || cause instanceof java.util.concurrent.ExecutionException)) {
+            cause = cause.getCause();
+        }
+        if (cause instanceof net.dv8tion.jda.api.exceptions.InsufficientPermissionException
+                || cause instanceof net.dv8tion.jda.api.exceptions.HierarchyException) {
+            return NicknameSyncResult.MISSING_PERMISSION;
+        }
+        if (cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response) {
+            return switch (response.getErrorCode()) {
+                case 10007 -> NicknameSyncResult.MEMBER_NOT_FOUND;
+                case 50013 -> NicknameSyncResult.MISSING_PERMISSION;
+                case 50035 -> NicknameSyncResult.INVALID_NAME;
+                default -> response.getErrorCode() >= 50000
+                        ? NicknameSyncResult.FAILED
+                        : NicknameSyncResult.TRANSIENT_FAILURE;
+            };
+        }
+        String type = cause.getClass().getSimpleName();
+        if (type.contains("RateLimit")) return NicknameSyncResult.RATE_LIMITED;
+        if (cause instanceof java.io.IOException || cause instanceof java.util.concurrent.TimeoutException) {
+            return NicknameSyncResult.TRANSIENT_FAILURE;
+        }
+        return NicknameSyncResult.FAILED;
     }
 
     private boolean ownedByCurrentBot(Webhook webhook, Guild configuredGuild) {

@@ -19,6 +19,10 @@ interface DiscordGateway extends AutoCloseable {
 
     CompletableFuture<Void> removeLinkedRole(String discordUserId);
 
+    default CompletableFuture<NicknameSyncResult> syncNickname(String discordUserId, String nickname) {
+        return CompletableFuture.completedFuture(NicknameSyncResult.UNSUPPORTED);
+    }
+
     default CompletableFuture<ManagedDiscordWebhook> ensureManagedWebhook(
             DiscordRoute route,
             String name,
@@ -57,5 +61,21 @@ interface DiscordGateway extends AutoCloseable {
     @FunctionalInterface
     interface SlashLinkHandler {
         CompletableFuture<DiscordEmbedMessage> link(String code, String discordUserId, String discordUserName);
+    }
+
+    enum NicknameSyncResult {
+        SUCCESS,
+        UNSUPPORTED,
+        MISSING_PERMISSION,
+        MEMBER_NOT_FOUND,
+        GUILD_UNAVAILABLE,
+        INVALID_NAME,
+        RATE_LIMITED,
+        TRANSIENT_FAILURE,
+        FAILED;
+
+        boolean succeeded() {
+            return this == SUCCESS || this == UNSUPPORTED;
+        }
     }
 }

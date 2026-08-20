@@ -98,6 +98,7 @@ final class DiscordCommand implements SimpleCommand {
                 );
                 return;
             }
+            runtime.reconcileLinkedRole(player.getUniqueId());
             DiscordMessages.send(
                     player,
                     "discord_status_linked",

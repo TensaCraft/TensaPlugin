@@ -109,7 +109,7 @@ final class DiscordLinkService implements AutoCloseable {
     }
 
     void reconcileRoles() {
-        if (settings.linkedRoleId().isBlank() || closed.get() || roleReconciliation.get() != null) {
+        if (closed.get() || roleReconciliation.get() != null) {
             return;
         }
         CompletableFuture<Void> promise = new CompletableFuture<>();
@@ -125,7 +125,7 @@ final class DiscordLinkService implements AutoCloseable {
     }
 
     void reconcileRole(UUID playerUuid) {
-        if (playerUuid == null || settings.linkedRoleId().isBlank() || closed.get()) {
+        if (playerUuid == null || closed.get()) {
             return;
         }
         CompletableFuture<Void> marker = new CompletableFuture<>();
@@ -135,8 +135,12 @@ final class DiscordLinkService implements AutoCloseable {
         CompletableFuture<Void> check = submit(() -> {
             Optional<LinkedAccount> account = store.findByPlayer(playerUuid);
             if (account.isPresent()) {
-                awaitGatewayReadyForRole();
-                await(gateway.assignLinkedRole(account.orElseThrow().discordUserId()));
+                LinkedAccount linked = account.orElseThrow();
+                if (!settings.linkedRoleId().isBlank()) {
+                    awaitGatewayReadyForRole();
+                    await(gateway.assignLinkedRole(linked.discordUserId()));
+                }
+                syncNickname(linked);
             }
             return null;
         });
@@ -158,13 +162,26 @@ final class DiscordLinkService implements AutoCloseable {
         AtomicInteger failures = new AtomicInteger();
         CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
         for (LinkedAccount account : store.all()) {
-            chain = chain.thenCompose(ignored -> closed.get()
-                    ? CompletableFuture.completedFuture(null)
-                    : gateway.assignLinkedRole(account.discordUserId())
-                            .exceptionally(error -> {
-                                failures.incrementAndGet();
-                                return null;
-                            }));
+            chain = chain.thenCompose(ignored -> {
+                if (closed.get()) return CompletableFuture.completedFuture(null);
+                CompletableFuture<Void> role = settings.linkedRoleId().isBlank()
+                        ? CompletableFuture.completedFuture(null)
+                        : gateway.assignLinkedRole(account.discordUserId());
+                return role.handle((value, error) -> {
+                            if (error != null) failures.incrementAndGet();
+                            return null;
+                        })
+                        .thenCompose(value -> gateway.syncNickname(account.discordUserId(), account.playerName()))
+                        .handle((result, error) -> {
+                            if (error != null) {
+                                Message.warn("Discord nickname sync failed result=FAILED failure="
+                                        + safeFailureClass(error));
+                            } else {
+                                logNicknameResult(result);
+                            }
+                            return null;
+                        });
+            });
         }
         chain.whenComplete((ignored, error) -> {
             if (error == null) {
@@ -208,13 +225,50 @@ final class DiscordLinkService implements AutoCloseable {
             try {
                 assignConfiguredRole(discordUserId);
             } catch (Exception roleFailure) {
+                Message.warn("Discord link role assignment failed failure=" + safeFailureClass(roleFailure));
                 store.unlink(account.playerUuid());
                 return Result.of(ResultType.ROLE_FAILED);
             }
+            scheduleNicknameSync(account);
             return new Result(ResultType.LINKED, account);
         } catch (IOException e) {
             return Result.of(ResultType.FAILED);
         }
+    }
+
+    private void scheduleNicknameSync(LinkedAccount account) {
+        try {
+            executor.execute(() -> syncNickname(account));
+        } catch (RejectedExecutionException rejected) {
+            Message.warn("Discord nickname sync dropped result=BUSY");
+        }
+    }
+
+    private void syncNickname(LinkedAccount account) {
+        try {
+            DiscordGateway.NicknameSyncResult result = gateway
+                    .syncNickname(account.discordUserId(), account.playerName())
+                    .get(settings.deliveryTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            logNicknameResult(result);
+        } catch (Exception error) {
+            Message.warn("Discord nickname sync failed result=FAILED failure=" + safeFailureClass(error));
+        }
+    }
+
+    private static void logNicknameResult(DiscordGateway.NicknameSyncResult result) {
+        if (result != null && !result.succeeded()) {
+            Message.warn("Discord nickname sync failed result=" + result.name());
+        }
+    }
+
+    private static String safeFailureClass(Throwable error) {
+        Throwable current = error;
+        while ((current instanceof java.util.concurrent.CompletionException
+                || current instanceof java.util.concurrent.ExecutionException)
+                && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current == null ? "Unknown" : current.getClass().getSimpleName();
     }
 
     private Result unlinkBlocking(UUID playerUuid) {

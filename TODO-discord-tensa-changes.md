@@ -1,6 +1,6 @@
 # Communications v2 implementation checklist
 
-Status date: 2026-08-11. This replaces the obsolete value-preserving migration
+Status date: 2026-08-20. This replaces the obsolete value-preserving migration
 proposal. The approved v2 contract is a verified archive followed by clean
 defaults and user relinking.
 
@@ -10,7 +10,7 @@ defaults and user relinking.
   `communications`, title `Communications`.
 - [x] Remove runtime `chat-manager`/`chat`/`discord` module entries and safely
   fold their root enable flags into `modules.communications`.
-- [x] Add `/tensareload <module-id>|all`, completion and module-scoped
+- [x] Add `/tensa reload <module-id>|all`, completion and module-scoped
   permissions without replacing auth sessions or connected players.
 - [x] Validate communications candidates before atomic replacement; retain the
   old runtime when validation or activation fails.
@@ -29,8 +29,8 @@ defaults and user relinking.
   import legacy `links.json`.
 - [x] Store links transactionally through `CoreStorageService` in
   `<prefix>discord_links`, with bounded two-way index and specific conflicts.
-- [x] Add bounded once-only post-link announcement and best-effort nickname
-  synchronization without link rollback.
+- [x] Add bounded best-effort nickname synchronization after durable link,
+  on player lifecycle reconciliation and `/discord status`, without link rollback.
 - [x] Restore Minecraft→Discord chat formatting to webhook-based delivery
   (with player avatar + in-game name display) as the preferred path.
 - [x] Investigate why chat formatting is sometimes bypassed (example `pm`):
@@ -45,8 +45,8 @@ defaults and user relinking.
   - verify no stripping/escaping of link-like tokens occurs before send;
   - check whether plugin changes message style components affecting `Component` URL click actions;
   - add diagnostics to distinguish plugin formatting issues from upstream modpack chat behavior.
-- [x] Add `proxy_chat.webhook.auto_create` with safe runtime checks for
-  `MANAGE_WEBHOOKS` and fallback rules when auto-create is unavailable.
+- [x] Keep webhook auto-provisioning internal, with safe runtime checks for
+  `MANAGE_WEBHOOKS`; do not expose redundant auto-create tuning in public YAML.
 - [x] Add webhook provisioning flow: create/fetch webhook on startup or first use,
   rotate ID/token binding in storage and recover from revoked/invalidated tokens.
 - [x] Add minimal Discord webhook config contract and remove non-essential/system
@@ -60,18 +60,18 @@ defaults and user relinking.
   - check for listener/task retention and stale scheduled jobs;
   - add guarded object caps/TTL and close leaking channels/services;
   - add periodic resource-usage telemetry with alert thresholds.
-- [x] Add dedicated modular scheduler service:
-  - support job definitions with condition predicates (online, channel, link status,
-    command/route availability, cooldown checks);
-  - support per-job delay, interval, retry count, max attempts, backoff, timeout,
-    jitter and dead-letter behavior;
-  - support pause/resume, cancellation, idempotent dedupe keys and scoped queues;
-  - expose admin-configured runtime defaults + per-command overrides;
-  - reuse scheduler for Discord link tasks, announcements, cleanup and recovery jobs.
+- [x] Add a bounded recurring console-command scheduler with validated named
+  tasks, initial delay, fixed/random intervals and `all|random|shuffle|round_robin`
+  selection. Internal lifecycle/retry jobs remain owned by the module scheduler.
 - [x] Move shared relay ownership to `discord.yml` `proxy_chat`; leave only
   Minecraft channel definitions in `chats.yml`.
-- [x] Add bidirectional link guard (`only|except`), local Minecraft delivery,
-  rate-limited Discord feedback/deletion and echo prevention.
+- [x] Remove link-required relay blocking; linking owns role and nickname
+  synchronization only, while relay echo prevention remains active.
+- [x] Re-verify Discord link flow and linked nickname sync:
+  - validate `/discord link` completion and durable persistence;
+  - trigger nickname sync after successful link and on player/status reconciliation;
+  - classify safe nickname failures without logging Discord IDs or secrets;
+  - document the one-step `/discord status` reconciliation and operator checklist.
 - [x] Add validated typed embeds, bounded delivery pipelines, definite-only
   fallback/retry rules and safe communications diagnostics.
 - [x] Add strict TDE1/TDE2 receiver with localized optional descriptions.
@@ -100,7 +100,7 @@ defaults and user relinking.
 
 ## Final gates
 
-- [x] TensaPlugin Java 25: full test (193/193), with clean package and dependency
+- [x] TensaPlugin Java 25: full test, with clean package and dependency
   analysis repeated as the final release gate.
 - [x] TensaProxy Java 21 toolchain: clean test build (46/46).
 - [x] Secret scan of the final diff and implementation commit range.
