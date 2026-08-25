@@ -11,6 +11,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EventManagerTest {
 
     @Test
+    void velocity41LoadedWorldEventIsExposedAsConfigurableLifecycleHook() {
+        assertThat(EventsModule.Events.on_player_loaded_world.key())
+                .isEqualTo("on_player_loaded_world");
+    }
+
+    @Test
     void renderCommandsReplacesExtendedEventPlaceholders() {
         Map<String, String> placeholders = new LinkedHashMap<>();
         placeholders.put("event", "on_server_pre_connect");

@@ -1,8 +1,7 @@
 package ua.co.tensa.modules.queue;
 
 import com.velocitypowered.api.event.Subscribe;
-import com.velocitypowered.api.event.connection.PostLoginEvent;
-import com.velocitypowered.api.event.player.ServerPostConnectEvent;
+import com.velocitypowered.api.event.player.PlayerClientLoadedWorldEvent;
 import ua.co.tensa.Tensa;
 
 public final class CommandQueueListener {
@@ -13,12 +12,7 @@ public final class CommandQueueListener {
     }
 
     @Subscribe
-    public void onPostLogin(PostLoginEvent event) {
-        dispatchOffEventLoop(event.getPlayer());
-    }
-
-    @Subscribe
-    public void onServerPostConnect(ServerPostConnectEvent event) {
+    public void onClientLoadedWorld(PlayerClientLoadedWorldEvent event) {
         dispatchOffEventLoop(event.getPlayer());
     }
 

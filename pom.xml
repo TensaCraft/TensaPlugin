@@ -21,7 +21,7 @@
 
         <skipTests>false</skipTests>
 
-        <velocity.api.version>4.0.0</velocity.api.version>
+        <velocity.api.version>4.1.0</velocity.api.version>
         <papiproxybridge.version>1.8.4</papiproxybridge.version>
         <luckperms.api.version>5.5</luckperms.api.version>
         <librelogin.api.version>0.24.0</librelogin.api.version>

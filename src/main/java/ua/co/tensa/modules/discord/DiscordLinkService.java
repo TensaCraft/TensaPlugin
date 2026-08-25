@@ -50,6 +50,8 @@ final class DiscordLinkService implements AutoCloseable {
     private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
     private final java.util.concurrent.ConcurrentHashMap<UUID, CompletableFuture<Void>> playerRoleChecks =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<DiscordGateway.NicknameSyncResult> loggedNicknameFailures =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     DiscordLinkService(DiscordLinkRepository store, LinkCodeRegistry codes, DiscordGateway gateway, DiscordSettings settings) {
         this.store = store;
@@ -255,8 +257,8 @@ final class DiscordLinkService implements AutoCloseable {
         }
     }
 
-    private static void logNicknameResult(DiscordGateway.NicknameSyncResult result) {
-        if (result != null && !result.succeeded()) {
+    private void logNicknameResult(DiscordGateway.NicknameSyncResult result) {
+        if (result != null && !result.succeeded() && loggedNicknameFailures.add(result)) {
             Message.warn("Discord nickname sync failed result=" + result.name());
         }
     }

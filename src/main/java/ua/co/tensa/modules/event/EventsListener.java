@@ -6,6 +6,7 @@ import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.player.KickedFromServerEvent;
+import com.velocitypowered.api.event.player.PlayerClientLoadedWorldEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
@@ -66,6 +67,11 @@ public final class EventsListener {
     @Subscribe
     public void onServerPostConnect(ServerPostConnectEvent event) {
         EventManager.onServerPostConnect(event);
+    }
+
+    @Subscribe
+    public void onPlayerClientLoadedWorld(PlayerClientLoadedWorldEvent event) {
+        EventManager.onPlayerClientLoadedWorld(event);
     }
 
     @Subscribe

@@ -225,6 +225,25 @@ Final local gates:
    relay is unavailable; it never falls back to bot identity. Diagnostics/logs
    expose only safe state/failure classes.
 
+## Velocity 4.1 compatibility audit
+
+- The compile-time and runtime minimum is Velocity 4.1.0. The release's packet
+  decompression, reference-counting and plugin-message copy fixes are inherited
+  from the proxy runtime and do not need duplicate plugin workarounds.
+- `PlayerClientLoadedWorldEvent` is exposed as the opt-in
+  `events.on_player_loaded_world` lifecycle hook. The persistent command queue
+  also requires `ServerConnection.isClientLoaded()` before dispatching commands
+  that require a backend connection, preventing delivery during terrain load.
+- Authentication routing intentionally remains on pre-connect/post-connect and
+  signed backend challenges. Client-loaded state is not an authentication proof
+  and is therefore not allowed to authorize a player or extend a lease.
+- Velocity's plugin `provides` metadata is not used: Tensa modules are internal
+  runtime components, not substitute plugin IDs. Advertising them as plugins
+  would create misleading dependency resolution without improving isolation.
+- The local smoke harness now runs the current `/tensa` command tree against an
+  isolated Velocity 4.1 runtime and validates clean shutdown and repeated
+  targeted reloads.
+
 ## Safe rollout and rollback
 
 This procedure was not executed.

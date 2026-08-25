@@ -6,6 +6,7 @@ import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.player.KickedFromServerEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
+import com.velocitypowered.api.event.player.PlayerClientLoadedWorldEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
@@ -308,6 +309,16 @@ public class EventManager {
                 previousServer
         ).build();
         execute(on_server_post_connect, context);
+    }
+
+    public static void onPlayerClientLoadedWorld(PlayerClientLoadedWorldEvent event) {
+        String currentServer = getCurrentServerName(event.getPlayer());
+        EventContext context = withServerNames(
+                withPlayer(context(on_player_loaded_world.name()), event.getPlayer()),
+                currentServer,
+                EMPTY
+        ).build();
+        execute(on_player_loaded_world, context);
     }
 
     public static void onListenerBound(com.velocitypowered.api.event.proxy.ListenerBoundEvent event) {

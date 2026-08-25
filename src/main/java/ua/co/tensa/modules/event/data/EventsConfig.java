@@ -62,6 +62,11 @@ public class EventsConfig extends ConfigBase {
     @CfgKey(value = "events.on_server_post_connect.commands", comment = COMMANDS_COMMENT)
     public List<String> onServerPostConnectCommands = new ArrayList<>();
 
+    @CfgKey(value = "events.on_player_loaded_world.enabled", comment = "Runs after the client has loaded the backend world and can safely receive player-facing commands. " + SERVER_PLACEHOLDERS)
+    public boolean onPlayerLoadedWorldEnabled = false;
+    @CfgKey(value = "events.on_player_loaded_world.commands", comment = COMMANDS_COMMENT)
+    public List<String> onPlayerLoadedWorldCommands = new ArrayList<>();
+
     @CfgKey(value = "events.on_server_kick.enabled", comment = "Runs when a player is kicked from a backend server. " + SERVER_PLACEHOLDERS)
     public boolean onServerKickEnabled = false;
     @CfgKey(value = "events.on_server_kick.commands", comment = COMMANDS_COMMENT)

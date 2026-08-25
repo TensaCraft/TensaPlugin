@@ -299,7 +299,12 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     private boolean isPlayerReady(Player player) {
-        return player != null && (!config.requireServerConnection() || player.getCurrentServer().isPresent());
+        if (player == null || !config.requireServerConnection()) {
+            return player != null;
+        }
+        return player.getCurrentServer()
+                .map(com.velocitypowered.api.proxy.ServerConnection::isClientLoaded)
+                .orElse(false);
     }
 
     private void ensureOpen() {

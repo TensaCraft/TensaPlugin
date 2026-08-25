@@ -20,6 +20,7 @@ public final class EventsModule {
         on_server_pre_connect("on_server_pre_connect", c -> c.onServerPreConnectEnabled, c -> c.onServerPreConnectCommands),
         on_server_switch("on_server_switch", c -> c.onServerSwitchEnabled, c -> c.onServerSwitchCommands),
         on_server_post_connect("on_server_post_connect", c -> c.onServerPostConnectEnabled, c -> c.onServerPostConnectCommands),
+        on_player_loaded_world("on_player_loaded_world", c -> c.onPlayerLoadedWorldEnabled, c -> c.onPlayerLoadedWorldCommands),
         on_server_kick("on_server_kick", c -> c.onServerKickEnabled, c -> c.onServerKickCommands),
         on_server_running("on_server_running", c -> c.onServerRunningEnabled, c -> c.onServerRunningCommands),
         on_proxy_reload("on_proxy_reload", c -> c.onProxyReloadEnabled, c -> c.onProxyReloadCommands),

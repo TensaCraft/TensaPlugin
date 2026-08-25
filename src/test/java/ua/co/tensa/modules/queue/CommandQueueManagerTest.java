@@ -5,6 +5,8 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.ServerConnection;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -16,6 +18,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -117,6 +121,36 @@ class CommandQueueManagerTest {
         }
     }
 
+    @Test
+    void connectedPlayerBecomesEligibleOnlyAfterClientLoadsWorld() throws Exception {
+        Tensa.pluginPath = tempDir;
+        List<String> executed = new ArrayList<>();
+        UUID playerId = UUID.randomUUID();
+        AtomicBoolean clientLoaded = new AtomicBoolean();
+        ServerInfo serverInfo = new ServerInfo("hub", InetSocketAddress.createUnresolved("127.0.0.1", 25566));
+        ServerConnection connection = proxy(ServerConnection.class, (method, args) -> switch (method.getName()) {
+            case "isClientLoaded" -> clientLoaded.get();
+            case "getServerInfo" -> serverInfo;
+            default -> defaultValue(method.getReturnType());
+        });
+        Player player = fakePlayer("Steve", playerId, Optional.of(connection));
+        Tensa.server = fakeServer(List.of(player), executed);
+        CommandQueueConfig config = newConfig();
+
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("storage").resolve("queue"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
+            manager.enqueue(playerId.toString(), "say ready {player}", 0L, "console");
+
+            assertThat(manager.dispatchDue()).isZero();
+            assertThat(executed).isEmpty();
+
+            clientLoaded.set(true);
+
+            assertThat(manager.dispatchDue()).isEqualTo(1);
+            assertThat(executed).containsExactly("say ready Steve");
+        }
+    }
+
     private CommandQueueConfig newConfig() throws Exception {
         Constructor<CommandQueueConfig> constructor = CommandQueueConfig.class.getDeclaredConstructor();
         constructor.setAccessible(true);
@@ -151,10 +185,14 @@ class CommandQueueManagerTest {
     }
 
     private Player fakePlayer(String username, UUID uuid) {
+        return fakePlayer(username, uuid, Optional.empty());
+    }
+
+    private Player fakePlayer(String username, UUID uuid, Optional<ServerConnection> currentServer) {
         return proxy(Player.class, (method, args) -> switch (method.getName()) {
             case "getUsername" -> username;
             case "getUniqueId" -> uuid;
-            case "getCurrentServer" -> Optional.empty();
+            case "getCurrentServer" -> currentServer;
             default -> defaultValue(method.getReturnType());
         });
     }

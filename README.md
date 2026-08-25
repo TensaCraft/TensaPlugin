@@ -3,13 +3,15 @@
 
 Tensa Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
 
+Runtime requirement: Velocity 4.1.0 or newer and Java 25.
+
 ## Dev Server
 - Run the local Velocity dev server from the project root with `.\.run\run-velocity.cmd`.
 - The script builds `target/Tensa.jar`, downloads the matching Velocity runtime from Fill v3, copies the plugin into `.run/velocity/plugins/`, and starts the proxy.
 - Optional flags:
   - `.\.run\run-velocity.cmd -WithTests` to build and run tests before launch
   - `.\.run\run-velocity.cmd -SkipBuild` to restart the proxy with the already-built jar
-  - `.\.run\run-velocity.cmd -VelocityVersion 4.0.0` to pin a specific Velocity 4 runtime
+  - `.\.run\run-velocity.cmd -VelocityVersion 4.1.0` to pin the minimum supported Velocity runtime
 
 For an isolated, non-interactive runtime check, run
 `.\.run\smoke-velocity.cmd -WithTests`. It recreates `.run/velocity-smoke`,

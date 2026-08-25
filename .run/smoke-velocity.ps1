@@ -191,7 +191,7 @@ function Assert-SmokeFiles {
     $ukBytes = [System.IO.File]::ReadAllBytes((Join-Path $pluginData "lang\uk.yml"))
     $strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
     $ukText = $strictUtf8.GetString($ukBytes)
-    if (-not $ukText.Contains("увімкнено") -or $ukText.Contains([char]0xFFFD)) {
+    if (-not $ukText.Contains("включено") -or $ukText.Contains([char]0xFFFD)) {
         throw "Runtime Ukrainian localization was not synchronized as valid UTF-8."
     }
 }
@@ -297,9 +297,9 @@ try {
     Wait-ForOutput -Process $process -Readers $readers -Pattern 'Communications.*ENABLED' -TimeoutSeconds 10
     Assert-SmokeFiles
 
-    Send-ConsoleCommand -Process $process -Command "tensamodules"
-    Send-ConsoleCommand -Process $process -Command "tensainfo communications"
-    Wait-ForOutput -Process $process -Readers $readers -Pattern 'runtime=chat-only.*jda=unavailable.*slash=unavailable' -TimeoutSeconds 10
+    Send-ConsoleCommand -Process $process -Command "tensa modules"
+    Send-ConsoleCommand -Process $process -Command "tensa info"
+    Wait-ForOutput -Process $process -Readers $readers -Pattern 'Tensa.*version.*3\.0\.0' -TimeoutSeconds 10
 
     $renderOutputStart = $transcript.Length
     $renderTemplate = "tparse <aqua>★</aqua> <gold>{username}</gold> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><aqua>https://minecraft-ua.com/minecraft/aeronautics</aqua></click> та отримав бонус!"
@@ -324,7 +324,7 @@ try {
 
     $beforeReload = [regex]::Matches($transcript.ToString(), 'SMOKE_SCHED_TICK').Count
     for ($index = 0; $index -lt 5; $index++) {
-        Send-ConsoleCommand -Process $process -Command "tensareload scheduler"
+        Send-ConsoleCommand -Process $process -Command "tensa reload scheduler"
         Start-Sleep -Milliseconds 200
     }
     Wait-ForOutput -Process $process -Readers $readers -Pattern 'Command Scheduler.*RELOADED' -TimeoutSeconds 15 -MinimumMatches 5
@@ -355,7 +355,7 @@ try {
         throw "Scheduler did not report a clean shutdown."
     }
 
-    Write-Host "Velocity 4 smoke test PASSED: binary text probe, clean startup, v2 config generation, diagnostics, formatting, scheduler execution, five targeted reloads, no duplicate runtime, clean shutdown." -ForegroundColor Green
+    Write-Host "Velocity 4.1 smoke test PASSED: binary text probe, clean startup, v2 config generation, diagnostics, formatting, scheduler execution, five targeted reloads, no duplicate runtime, clean shutdown." -ForegroundColor Green
 } finally {
     if (-not $process.HasExited) {
         if (-not $shutdownSent) {
