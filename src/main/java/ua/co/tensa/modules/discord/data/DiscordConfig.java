@@ -35,6 +35,7 @@ public final class DiscordConfig extends ConfigBase {
             entry("quit", embed(false, "Гравець вийшов", "⚪ {player} вийшов із «{server}».", "#95A5A6")),
             entry("server_switch", embed(false, "Перехід між серверами", "🔄 {player}: «{from}» → «{to}».", "#5865F2")),
             entry("advancement", embed(false, "Нове досягнення", "🏆 {player} отримав досягнення «{advancement}» на «{server}».", "#FEE75C")),
+            entry("death", embed(false, "Смерть гравця", "💀 {message}", "#ED4245")),
             entry("link_success", embed(true, "Прив'язку завершено", "Акаунт успішно прив'язано до {player}.", "#57F287")),
             entry("link_error", embed(true, "Не вдалося прив'язати акаунт", "{message}", "#ED4245")),
             entry("backend_unavailable", embed(false, "Сервер недоступний", "🔴 «{server}» тимчасово недоступний.", "#ED4245")),
@@ -159,7 +160,7 @@ public final class DiscordConfig extends ConfigBase {
             }
         }
         for (String embed : List.of(
-                "join", "quit", "server_switch", "advancement", "link_success", "link_error",
+                "join", "quit", "server_switch", "advancement", "death", "link_success", "link_error",
                 "backend_unavailable", "backend_recovered")) {
             for (String obsolete : List.of("thumbnail_url", "image_url")) {
                 String path = "embeds." + embed + "." + obsolete;

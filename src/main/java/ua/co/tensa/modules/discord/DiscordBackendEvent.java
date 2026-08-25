@@ -20,4 +20,12 @@ public sealed interface DiscordBackendEvent {
             this(playerUuid, playerName, advancementKey, "", title, "");
         }
     }
+
+    record Death(
+            UUID playerUuid,
+            String playerName,
+            String locale,
+            String message
+    ) implements DiscordBackendEvent {
+    }
 }

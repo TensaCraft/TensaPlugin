@@ -22,7 +22,7 @@ class DiscordRuntimeLifecycleTest {
 
     @Test
     void startsRelaysMinecraftLogicalChannelsAndClosesAllWorkers() throws Exception {
-        DiscordSettings settings = DiscordTestSettings.create(tempDir, DiscordRuntimeLifecycleTest::enableJoinEmbed);
+        DiscordSettings settings = DiscordTestSettings.create(tempDir, DiscordRuntimeLifecycleTest::enableEventEmbeds);
         DiscordLinkRepository store = new InMemoryDiscordLinkRepository();
         store.initialize();
         FakeGateway gateway = new FakeGateway();
@@ -58,7 +58,16 @@ class DiscordRuntimeLifecycleTest {
                     assertThat(embed.title()).isEqualTo("Гравець приєднався");
                     assertThat(embed.color()).isEqualTo(DiscordEmbedMessage.GREEN);
                     assertThat(embed.description()).contains("Pilot");
-                    assertThat(embed.thumbnailUrl()).isEqualTo("https://mc-heads.net/avatar/Pilot/128");
+                    assertThat(embed.footerIconUrl()).isEqualTo("https://mc-heads.net/avatar/Pilot/128");
+                });
+        runtime.announceDeath("Pilot", "Aero", "Pilot був підірваний Кріпером");
+        awaitCount(gateway.sentMessages, 2);
+        assertThat(gateway.embeds)
+                .element(1)
+                .satisfies(embed -> {
+                    assertThat(embed.title()).isEqualTo("Смерть гравця");
+                    assertThat(embed.description()).contains("Pilot був підірваний Кріпером");
+                    assertThat(embed.footerIconUrl()).isEqualTo("https://mc-heads.net/avatar/Pilot/128");
                 });
 
         runtime.close();
@@ -173,8 +182,13 @@ class DiscordRuntimeLifecycleTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static void enableJoinEmbed(ua.co.tensa.modules.discord.data.DiscordConfig config) {
-        ((java.util.Map<String, Object>) config.embeds.get("join")).put("enabled", true);
+    private static void enableEventEmbeds(ua.co.tensa.modules.discord.data.DiscordConfig config) {
+        java.util.Map<String, Object> join = (java.util.Map<String, Object>) config.embeds.get("join");
+        join.put("enabled", true);
+        join.put("footer", "Aeronautics");
+        java.util.Map<String, Object> death = (java.util.Map<String, Object>) config.embeds.get("death");
+        death.put("enabled", true);
+        death.put("footer", "Aeronautics");
     }
 
     private static void awaitCount(AtomicInteger count, int expected) throws InterruptedException {

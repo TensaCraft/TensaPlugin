@@ -62,6 +62,21 @@ final class VelocityDiscordBackendBridge implements AutoCloseable {
                             advancement.description()
                     );
                 }
+            } else if (decoded instanceof DiscordBackendEvent.Death death) {
+                if (!death.playerUuid().equals(connection.getPlayer().getUniqueId())
+                        || !death.playerName().equalsIgnoreCase(connection.getPlayer().getUsername())) {
+                    return;
+                }
+                String key = serverName.toLowerCase(Locale.ROOT)
+                        + ':' + death.playerUuid()
+                        + ":death:" + Integer.toUnsignedString(death.message().hashCode());
+                if (deduplicator.firstOccurrence(key, Instant.now())) {
+                    runtime.announceDeath(
+                            connection.getPlayer().getUsername(),
+                            serverName,
+                            death.message()
+                    );
+                }
             }
         } catch (IllegalArgumentException ignored) {
             // Malformed backend packets are handled and dropped without reaching Discord.

@@ -1,14 +1,15 @@
 # Discord backend event bridge
 
-Velocity does not expose player advancement events. TensaPlugin therefore does
-not synthesize them from proxy events. A backend plugin such as TensaProxy must
-publish a typed plugin message after the backend has accepted the advancement.
+Velocity does not expose backend advancement or death events. TensaPlugin
+therefore does not synthesize them from proxy events. A backend plugin such as
+TensaProxy must publish a typed plugin message after the backend confirms the
+event.
 
 ## Channel and trust boundary
 
 - Default channel: `tensa:discord_events`
-- Configure it with `announcements.backend_bridge.channel` in
-  `communications/discord.yml`.
+- The channel and transport bounds are internal protocol constants rather than
+  public Discord configuration.
 - The proxy accepts packets only when Velocity identifies the source as a
   `ServerConnection`.
 - The backend name is taken from that connection. It is not accepted from the
@@ -63,8 +64,29 @@ optional flags, truncation, unknown event types, and trailing bytes are rejected
 The localized description is passed to the typed advancement embed; TDE1 uses
 an empty description.
 
+## Death packet v2 (TDE2)
+
+Death events use the same TDE2 envelope and channel. TDE1 remains advancement
+only.
+
+| Field | Type | Limit |
+| --- | --- | --- |
+| Magic | `int32` | `0x54444532` (`TDE2`) |
+| Event type | `uint8` | `2` for player death |
+| Player UUID MSB | `int64` | |
+| Player UUID LSB | `int64` | |
+| Player name | length + UTF-8 | 64 bytes; Minecraft name syntax |
+| Locale | length + UTF-8 | 16 bytes; lowercase `ll_cc` syntax |
+| Localized death message | length + UTF-8 | 2048 bytes and 1000 Unicode code points |
+
+The producer must send Minecraft's final localized death component rather than
+reconstructing combat text. This preserves modded messages, killer names and
+item context. `DiscordBackendEventCodec.encodeDeathV2(...)` is the receiver's
+reference layout. Empty messages, malformed UTF-8, invalid identity, truncation,
+unknown types and trailing bytes are rejected.
+
 The proxy strips control characters, escapes Discord mentions and Markdown,
-deduplicates the same backend/player/advancement key for the configured window,
+deduplicates the same backend/player/event identity for a bounded window,
 and applies the shared bounded event queue and rate limit. The bridge registers
-only while `announcements.advancements` is enabled and unregisters on module
-disable or reload.
+while advancement or death embeds are active and unregisters on module disable
+or reload. Death announcements are enabled with `embeds.death.enabled`.

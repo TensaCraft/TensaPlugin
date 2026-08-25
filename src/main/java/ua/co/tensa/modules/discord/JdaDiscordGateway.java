@@ -251,8 +251,12 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         if (!ready.get() || target == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Discord gateway is not ready"));
         }
-        var icon = embed.thumbnailUrl().isBlank() ? ServerIconAsset.path() : java.util.Optional.<java.nio.file.Path>empty();
-        DiscordEmbedMessage prepared = icon.isPresent() ? embed.withThumbnail(ServerIconAsset.ATTACHMENT_URL) : embed;
+        var icon = !embed.footer().isBlank() && embed.footerIconUrl().isBlank()
+                ? ServerIconAsset.path()
+                : java.util.Optional.<java.nio.file.Path>empty();
+        DiscordEmbedMessage prepared = icon.isPresent()
+                ? embed.withFooterIcon(ServerIconAsset.ATTACHMENT_URL)
+                : embed;
         var action = target.sendMessageEmbeds(toMessageEmbed(prepared)).setAllowedMentions(List.of());
         if (icon.isPresent()) {
             action = action.addFiles(FileUpload.fromData(icon.orElseThrow(), ServerIconAsset.FILE_NAME));
@@ -559,11 +563,8 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                 .setDescription(embed.description())
                 .setColor(embed.color())
                 .setTimestamp(embed.timestamp());
-        if (!embed.thumbnailUrl().isBlank()) {
-            builder.setThumbnail(embed.thumbnailUrl());
-        }
         if (!embed.footer().isBlank()) {
-            builder.setFooter(embed.footer());
+            builder.setFooter(embed.footer(), embed.footerIconUrl().isBlank() ? null : embed.footerIconUrl());
         }
         return builder.build();
     }

@@ -58,11 +58,13 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
         body.put("description", embed.description());
         body.put("color", embed.color());
         body.put("timestamp", embed.timestamp().toString());
-        if (!embed.thumbnailUrl().isBlank()) {
-            body.put("thumbnail", Map.of("url", embed.thumbnailUrl()));
-        }
         if (!embed.footer().isBlank()) {
-            body.put("footer", Map.of("text", embed.footer()));
+            Map<String, Object> footer = new LinkedHashMap<>();
+            footer.put("text", embed.footer());
+            if (!embed.footerIconUrl().isBlank()) {
+                footer.put("icon_url", embed.footerIconUrl());
+            }
+            body.put("footer", footer);
         }
         return sendPayload(route, new LinkedHashMap<>(Map.of("embeds", List.of(body))));
     }

@@ -120,6 +120,45 @@ class DiscordBackendEventCodecTest {
     }
 
     @Test
+    void roundTripsLocalizedDeathAndCleansControlCharacters() {
+        byte[] packet = DiscordBackendEventCodec.encodeDeathV2(
+                PLAYER,
+                "Pilot",
+                "uk_ua",
+                "Pilot\u0000 був підірваний Кріпером"
+        );
+
+        assertThat(DiscordBackendEventCodec.decode(packet)).isEqualTo(
+                new DiscordBackendEvent.Death(
+                        PLAYER,
+                        "Pilot",
+                        "uk_ua",
+                        "Pilot був підірваний Кріпером"
+                )
+        );
+    }
+
+    @Test
+    void rejectsInvalidOrMalformedDeathPackets() {
+        byte[] valid = DiscordBackendEventCodec.encodeDeathV2(
+                PLAYER, "Pilot", "en_us", "Pilot fell from a high place");
+
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(Arrays.copyOf(valid, valid.length - 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.decode(Arrays.copyOf(valid, valid.length + 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.encodeDeathV2(
+                PLAYER, "Pilot", "en-US", "Pilot died"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.encodeDeathV2(
+                PLAYER, "Pilot", "en_us", ""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DiscordBackendEventCodec.encodeDeathV2(
+                PLAYER, "Pilot", "en_us", "x".repeat(2_100)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void advancementDedupIsBoundedAndExpires() {
         RecentEventDeduplicator dedup = new RecentEventDeduplicator(Duration.ofSeconds(10), 2);
         Instant now = Instant.parse("2026-08-02T09:00:00Z");

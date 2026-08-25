@@ -193,7 +193,7 @@ public final class CommunicationsModule extends AbstractModule {
                     .onDeadLetter(metrics::recordFailure)
                     .build());
         }
-        if (settings.advancementMessages()) {
+        if (settings.advancementMessages() || settings.deathMessages()) {
             VelocityDiscordBackendBridge bridge = new VelocityDiscordBackendBridge(settings, discord);
             active.backendEventBridge = bridge;
             active.backendEventChannel = bridge.channel();

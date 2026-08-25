@@ -201,6 +201,16 @@ final class DiscordRuntime implements AutoCloseable {
         }
     }
 
+    void announceDeath(String playerName, String serverName, String message) {
+        if (settings.deathMessages()) {
+            announce(settings.deathEmbed(), java.util.Map.of(
+                    "player", eventValue(playerName, 80),
+                    "server", serverValue(serverName),
+                    "message", eventValue(message, 1_000)
+            ));
+        }
+    }
+
     DiscordServerPolicy serverPolicy() {
         return serverPolicy;
     }
@@ -394,8 +404,8 @@ final class DiscordRuntime implements AutoCloseable {
         try {
             DiscordEmbedMessage embed = template.render(values);
             String player = values.getOrDefault("player", "");
-            if (!player.isBlank()) {
-                embed = embed.withThumbnail(playerAvatar(player));
+            if (!player.isBlank() && !embed.footer().isBlank()) {
+                embed = embed.withFooterIcon(playerAvatar(player));
             }
             outbound = DiscordOutboundMessage.announcement(embed);
         } catch (IllegalArgumentException localValidationFailure) {
@@ -416,7 +426,7 @@ final class DiscordRuntime implements AutoCloseable {
         try {
             String player = eventValue(playerName, 80);
             return settings.linkSuccessEmbed().render(java.util.Map.of("player", player))
-                    .withThumbnail(playerAvatar(player));
+                    .withFooterIcon(playerAvatar(player));
         } catch (IllegalArgumentException invalid) {
             metrics.recordFailure(invalid);
             return DiscordEmbedMessage.success("Акаунт успішно прив'язано.");

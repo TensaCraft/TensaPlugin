@@ -21,9 +21,18 @@ class DiscordEmbedTemplateTest {
 
         assertThat(rendered.title()).isEqualTo("Welcome Pilot");
         assertThat(rendered.description()).isEqualTo("Pilot joined Aero");
-        assertThat(rendered.thumbnailUrl()).isEmpty();
         assertThat(rendered.footer()).isEqualTo("Server Aero");
+        assertThat(rendered.footerIconUrl()).isEmpty();
         assertThat(rendered.color()).isEqualTo(0x57F287);
+    }
+
+    @Test
+    void dropsFooterIconWhenFooterTextIsMissing() {
+        DiscordEmbedMessage embed = DiscordEmbedMessage.of("Title", "Description", 0x123456)
+                .withFooterIcon("https://example.com/icon.png");
+
+        assertThat(embed.footer()).isEmpty();
+        assertThat(embed.footerIconUrl()).isEmpty();
     }
 
     @Test

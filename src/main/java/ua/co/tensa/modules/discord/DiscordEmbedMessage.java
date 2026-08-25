@@ -7,8 +7,8 @@ record DiscordEmbedMessage(
         String description,
         int color,
         Instant timestamp,
-        String thumbnailUrl,
-        String footer
+        String footer,
+        String footerIconUrl
 ) {
     static final int BLURPLE = 0x5865F2;
     static final int GREEN = 0x57F287;
@@ -19,8 +19,8 @@ record DiscordEmbedMessage(
     DiscordEmbedMessage {
         title = DiscordSanitizer.truncate(DiscordSanitizer.normalize(title), 256);
         description = DiscordSanitizer.truncate(DiscordSanitizer.normalize(description), 4_096);
-        thumbnailUrl = normalizeOptional(thumbnailUrl, 2_048);
         footer = normalizeOptional(footer, 2_048);
+        footerIconUrl = footer.isBlank() ? "" : normalizeOptional(footerIconUrl, 2_048);
         timestamp = timestamp == null ? Instant.now() : timestamp;
         if (title.isBlank() || description.isBlank()) {
             throw new IllegalArgumentException("Discord embed title and description must not be blank");
@@ -43,8 +43,8 @@ record DiscordEmbedMessage(
         return of("Не вдалося прив'язати акаунт", description, RED);
     }
 
-    DiscordEmbedMessage withThumbnail(String url) {
-        return new DiscordEmbedMessage(title, description, color, timestamp, url, footer);
+    DiscordEmbedMessage withFooterIcon(String url) {
+        return new DiscordEmbedMessage(title, description, color, timestamp, footer, url);
     }
 
     private static String normalizeOptional(String value, int maximum) {

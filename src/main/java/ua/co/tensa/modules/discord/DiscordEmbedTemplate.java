@@ -40,8 +40,8 @@ record DiscordEmbedTemplate(
                 DiscordMessages.render(description, values),
                 color,
                 java.time.Instant.now(),
-                "",
-                DiscordMessages.render(footer, values)
+                DiscordMessages.render(footer, values),
+                ""
         );
     }
 

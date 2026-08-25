@@ -36,7 +36,8 @@ class DiscordConfigTest {
                 "announcements:",
                 "achievements:",
                 "proxy_chat:",
-                "embeds:"
+                "embeds:",
+                "death:"
         );
         assertThat(yaml).doesNotContain(
                 "delivery:", "limits:", "gateway:", "diagnostics:", "scheduler:", "backend_status:",

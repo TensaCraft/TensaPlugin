@@ -38,6 +38,7 @@ public final class DiscordSettings {
     private final boolean serverSwitchMessages;
     private final boolean backendStatusMessages;
     private final boolean advancementMessages;
+    private final boolean deathMessages;
     private final List<String> includedServers;
     private final Set<String> excludedServers;
     private final Map<String, String> serverLabels;
@@ -52,6 +53,7 @@ public final class DiscordSettings {
     private final DiscordEmbedTemplate quitEmbed;
     private final DiscordEmbedTemplate serverSwitchEmbed;
     private final DiscordEmbedTemplate advancementEmbed;
+    private final DiscordEmbedTemplate deathEmbed;
     private final DiscordEmbedTemplate linkSuccessEmbed;
     private final DiscordEmbedTemplate linkErrorEmbed;
     private final DiscordEmbedTemplate backendUnavailableEmbed;
@@ -97,6 +99,7 @@ public final class DiscordSettings {
         this.serverSwitchEmbed = embed(config.embeds, "server_switch", Set.of("player", "from", "to"));
         this.advancementEmbed = embed(config.embeds, "advancement", Set.of(
                 "player", "server", "advancement", "description"));
+        this.deathEmbed = embed(config.embeds, "death", Set.of("player", "server", "message"));
         this.linkSuccessEmbed = embed(config.embeds, "link_success", Set.of("player"));
         this.linkErrorEmbed = embed(config.embeds, "link_error", Set.of("message"));
         this.backendUnavailableEmbed = embed(config.embeds, "backend_unavailable", Set.of("server"));
@@ -106,6 +109,7 @@ public final class DiscordSettings {
         this.serverSwitchMessages = serverSwitchEmbed.enabled();
         this.backendStatusMessages = backendUnavailableEmbed.enabled() || backendRecoveredEmbed.enabled();
         this.advancementMessages = config.advancementMessages;
+        this.deathMessages = deathEmbed.enabled();
         this.includedServers = normalizeServerList(config.includedServers, "announcements.servers.include");
         this.excludedServers = Set.copyOf(normalizeServerList(config.excludedServers, "announcements.servers.exclude"));
         this.serverLabels = validateServerLabels(config.serverLabels);
@@ -158,6 +162,7 @@ public final class DiscordSettings {
     public boolean serverSwitchMessages() { return serverSwitchMessages; }
     public boolean backendStatusMessages() { return backendStatusMessages; }
     public boolean advancementMessages() { return advancementMessages; }
+    public boolean deathMessages() { return deathMessages; }
     public List<String> includedServers() { return includedServers; }
     public Set<String> excludedServers() { return excludedServers; }
     public Map<String, String> serverLabels() { return serverLabels; }
@@ -172,6 +177,7 @@ public final class DiscordSettings {
     DiscordEmbedTemplate quitEmbed() { return quitEmbed; }
     DiscordEmbedTemplate serverSwitchEmbed() { return serverSwitchEmbed; }
     DiscordEmbedTemplate advancementEmbed() { return advancementEmbed; }
+    DiscordEmbedTemplate deathEmbed() { return deathEmbed; }
     DiscordEmbedTemplate linkSuccessEmbed() { return linkSuccessEmbed; }
     DiscordEmbedTemplate linkErrorEmbed() { return linkErrorEmbed; }
     DiscordEmbedTemplate backendUnavailableEmbed() { return backendUnavailableEmbed; }
