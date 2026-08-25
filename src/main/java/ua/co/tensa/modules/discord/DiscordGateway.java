@@ -67,6 +67,7 @@ interface DiscordGateway extends AutoCloseable {
         SUCCESS,
         UNSUPPORTED,
         MISSING_PERMISSION,
+        HIERARCHY_BLOCKED,
         MEMBER_NOT_FOUND,
         GUILD_UNAVAILABLE,
         INVALID_NAME,

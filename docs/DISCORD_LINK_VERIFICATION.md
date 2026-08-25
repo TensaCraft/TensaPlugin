@@ -16,8 +16,9 @@ proxy restart beyond the separately approved deployment procedure.
 
 Safe failure logs use a bounded reason instead of credentials or account IDs:
 
-- `MISSING_PERMISSION`: the bot lacks nickname permission or is below the member
-  in the Discord role hierarchy;
+- `MISSING_PERMISSION`: the bot lacks Discord's Manage Nicknames permission;
+- `HIERARCHY_BLOCKED`: the member owns the guild or has a highest role that the
+  bot cannot interact with;
 - `MEMBER_NOT_FOUND`: the linked Discord account is not a member of the
   configured guild or the member cache/API scope is stale;
 - `GUILD_UNAVAILABLE`: JDA is not ready for the configured guild;

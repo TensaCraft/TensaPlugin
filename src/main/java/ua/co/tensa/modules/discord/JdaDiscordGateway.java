@@ -444,8 +444,10 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
                 || cause instanceof java.util.concurrent.ExecutionException)) {
             cause = cause.getCause();
         }
-        if (cause instanceof net.dv8tion.jda.api.exceptions.InsufficientPermissionException
-                || cause instanceof net.dv8tion.jda.api.exceptions.HierarchyException) {
+        if (cause instanceof net.dv8tion.jda.api.exceptions.HierarchyException) {
+            return NicknameSyncResult.HIERARCHY_BLOCKED;
+        }
+        if (cause instanceof net.dv8tion.jda.api.exceptions.InsufficientPermissionException) {
             return NicknameSyncResult.MISSING_PERMISSION;
         }
         if (cause instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException response) {
