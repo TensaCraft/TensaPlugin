@@ -1,2 +1,5 @@
 velocity/
 velocity-smoke/
+audit-*.log
+hs_err_pid*.log
+replay_pid*.log

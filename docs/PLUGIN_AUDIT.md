@@ -1,274 +1,167 @@
-# TensaPlugin architecture, stability, and security audit
+# TensaPlugin 3.1 stability audit
 
-Audit date: 2026-08-11
+Audit date: **2026-10-03**. Baseline: `715dfe3`, **205 tests passed**
+on Java 25.0.2 before changes.
 
-Scope: TensaPlugin (Java 25 / Velocity 4 API) and the relevant TensaProxy
-authentication and NeoForge advancement producer (Java 21 toolchain).
+This pass reviewed every runtime module plus core lifecycle, storage, events,
+metadata, placeholders, configuration, text rendering, command ownership,
+dependencies and packaging. Findings below distinguish regression-tested fixes
+from operational limitations. It is not a claim of zero defects or a live
+Discord/production acceptance test.
 
-## Executive result
+## Platform and removed integration
 
-Chat and Discord now have one lifecycle owner, the neutral `communications`
-module. Discord account links use `CoreStorageService` through JDBC instead of a
-module-owned JSON file. Configuration schema v2 intentionally resets legacy
-communications settings and links after a verified backup; it does not silently
-carry unsafe or ambiguous old values forward.
+- Compile API: **Velocity 4.2.0**. Java **25** remains required.
+- Provided Netty **4.2.18.Final**, Gson **2.14.0**, Adventure **5.2.0** and
+  Configurate **4.2.0** match the released proxy's dependency catalog.
+- Runtime verification targets release **4.2.0 build 30** and current
+  **4.2.1-SNAPSHOT build 36**, resolved from PaperMC on the audit date.
+- LibreLogin Auth Bridge, its service provider, API dependency, authentication
+  protocol and obsolete tests/fixture are removed. The root flag is pruned;
+  existing user-owned `auth-bridge/` files remain untouched and unread.
+- Discord linking, chat, achievements/deaths and opt-in `proxy-bridge` command
+  compatibility are independent and remain supported.
+- LuckPerms is declared as an optional plugin dependency so its API is available
+  before the existing placeholder provider initializes.
 
-Discord startup may degrade without disabling Minecraft chat. Targeted reload
-validates a complete candidate before replacing the active runtime, and a failed
-replacement restores the previous validated plan. The communications metrics
-object survives that replacement, while JDA, listeners, queues, workers and
-scheduled tasks belong to exactly one active runtime.
+Primary platform references:
+[PaperMC build catalog](https://fill.papermc.io/v3/projects/velocity),
+[Velocity plugin development](https://docs.papermc.io/velocity/dev/creating-your-first-plugin/),
+[4.2.0 runtime dependencies](https://github.com/PaperMC/Velocity/blob/c10b49255447694ad42c3c189d7a3f4ee3e73e5e/gradle/libs.versions.toml).
 
-The follow-up chat/resource audit made player chat strictly webhook-delivered,
-eliminated command-route formatting bypasses and chat moderation, emits real URL
-click components, and separates internal lifecycle scheduling from the optional
-configurable `scheduler` command module. Operational communications files now
-live under `communications/`.
+## Confirmed issues and corrections
 
-The authentication investigation confirmed four interacting causes consistent
-with offline players becoming frozen or being kicked after transfers: route
-aliases were incorrectly treated as equivalent when they shared a signed
-backend ID; a lost challenge had no bounded retry; Velocity could reject the
-selected new backend before `getCurrentServer()` changed; and a late logout from
-the old same-UUID backend connection could delete the replacement auth session.
-LibreLogin remains the sole route owner, Velocity now tracks a bounded exact
-handoff target, and TensaProxy uses retry plus session-scoped connection cleanup
-without weakening fail-closed validation.
-
-No deployment, proxy reload, proxy restart, or backend restart was performed.
-Real guild permissions, Discord reconnect behavior and mixed premium/offline
-player routing remain canary gates.
-
-## Resulting architecture
-
-```mermaid
-flowchart LR
-    CY["communications/chats.yml: Minecraft channel formats"] --> CM["communications runtime"]
-    DY["communications/discord.yml: Discord, relay and embeds"] --> CM
-    CM --> CHAT["Minecraft chat runtime"]
-    CM --> DR["Discord runtime"]
-    DR --> GW["single leased JDA gateway/listener"]
-    DR --> PIPE["bounded delivery pipelines"]
-    DR --> IRS["internal owned bounded runtime scheduler"]
-    DR --> WH["managed webhook provisioning"]
-    DR --> REPO["DiscordLinkRepository"]
-    REPO --> CORE["CoreStorageService: MariaDB/MySQL or local H2"]
-    SCY["scheduler/config.yml"] --> SCM["command scheduler module"]
-    SCM --> VC["Velocity console commands"]
-    GW --> SLASH["guild-scoped /link reconciliation"]
-```
-
-There is no static relay sink between separately managed modules. Runtime state
-is instance-owned and closed during replacement.
-
-## Confirmed findings and resolutions
-
-| Severity | Confirmed issue | Resolution |
+| Area / severity | Reproducible problem | Correction |
 | --- | --- | --- |
-| Critical | Guild `/link` registration depended on relay-channel readiness, causing Discord to report that the command was unavailable. | Registration is guild-scoped and independent from relay availability. Ready, Resume and recreated connections run one coalesced, idempotent reconciliation that verifies the resulting command and reports safe failure classes. |
-| High | Slow acknowledgement and duplicate JDA listeners could produce Discord error 10062. | Matching interactions are deferred ephemerally before storage/role work. A process-local token-fingerprint lease permits one JDA runtime per bot, and close rejects new events, removes the listener, shuts JDA down with a deadline and releases the lease. Tokens are never logged. |
-| High | `links.json` was module-local, bounded only at file load and disconnected from configured core storage. | `DiscordLinkRepository` uses `<prefix>discord_links` through `CoreStorageService`. UUID and Discord user ID uniqueness is transactional; conflict results remain `PLAYER_ALREADY_LINKED` and `DISCORD_ALREADY_LINKED`. A bounded bidirectional index is updated only after commit. Link codes remain short-lived in-memory state. |
-| High | Legacy communications values could be ambiguous and could preserve unsafe routing assumptions. | Schema v2 archives `discord.yml`, `chats.yml` and legacy `links.json`, verifies every copied SHA-256, then atomically writes clean defaults. No old communications value or link is imported. Future schema versions fail without changing files. |
-| High | `chat-manager`/`chat` and `discord` were separate lifecycle owners. | They are replaced by one `communications` module. Root module flags migrate once with destination-wins semantics; if the destination is absent, legacy booleans are OR-combined before old keys are removed. |
-| High | A syntactically valid YAML value with the wrong type could silently fall back to a Java default during reload. | `chats.yml` and `discord.yml` now receive strict annotated-field type validation before missing defaults are written. A type error aborts the candidate and leaves the old runtime active. |
-| High | Reload could duplicate listeners, JDA sessions, slash registration, tasks or workers. | A serialized atomic runtime slot validates first, closes the old runtime, starts the candidate and rolls back from its previous validated plan on failure. Five consecutive replacement tests assert one instance of every owned resource. |
-| High | Existing `lang/uk.yml` did not gain new bundled keys. | Runtime localization merges only missing bundled keys and preserves manual values. The real `discord_link_code` template and its MiniMessage `COPY_TO_CLIPBOARD` action are tested; the click payload is exactly the raw code. |
-| High | Relay guard and chat moderation were outside the plugin's responsibility and bloated Discord configuration. | Link-required relay blocking, reply deletion/cooldowns, duplicate suppression, repeated-character filtering and their state/tasks were removed. Channel access belongs to Discord roles and Minecraft permissions. `discord.yml` owns the relay direction, logical channel list and presentation; `chats.yml` owns Minecraft channel routes and formats without Discord keys. |
-| High | `/pm` was absent from the default private aliases, malformed nested YAML could stringify as `{}`, and console commands inherited player wrappers. | The known old alias set migrates to `pm,msg,tell,w` without replacing manual aliases. Nested route types are validated before activation. Every route uses the same typed resolver: players receive configured public or private wrappers, while console invocations send only the trusted MiniMessage payload, including explicit-target `/r`. |
-| High | Plain HTTP/HTTPS text had no Adventure click action, so the client could not open it even though the text was preserved. | `TextPipeline` detects bounded HTTP/HTTPS tokens after sanitization and inserts `OPEN_URL` plus hover actions while keeping all other user input literal. Structured diagnostics count URL actions without exposing message content. |
-| High | Minecraft-to-Discord identity formatting depended on a manually configured webhook and silently fell back to bot identity when it was absent or revoked. | Chat is webhook-only. The configured global webhook is used automatically; otherwise one bot-owned `ServerChat` webhook is recovered or created idempotently. Every message overrides username/avatar with the Minecraft identity. HTTP 400/401/404, timeout and 5xx never cross-fallback to bot chat; revoked credentials trigger coalesced recovery. |
-| High | Persisting a generated webhook URL would have stored a live secret, while storing only an ID could not detect token rotation. | `<prefix>discord_webhook_bindings` stores route, webhook ID and a SHA-256 token fingerprint only. The token/URL exists only in the active runtime, is never rendered by `toString` or logs, and is re-fetched from Discord after startup/reconnect. |
-| High | Root-level communications files did not follow module ownership and could diverge from newly generated defaults. | Existing schema-v2 root files are backed up, hash-verified and atomically relocated byte-for-byte to `communications/`. Destination-wins handling archives and removes obsolete root copies. Schema reset/future-version guarantees remain unchanged. |
-| High | Reconnect, status polling, webhook recovery and cleanup had separate scheduling/executor behavior, while the public `scheduler` id misleadingly exposed only that infrastructure and had no command configuration. | Internal consumers now create lifecycle-owned `ModuleScheduler` instances through a non-module factory. The optional `scheduler` module independently owns validated recurring console-command tasks in `scheduler/config.yml`; disabling or reloading it cannot affect Communications. Fixed/random intervals and all/random/shuffle/round-robin modes remain bounded and reload without duplicate jobs. |
-| High | Expired link codes were removed only when queried or reissued, allowing stale entries to accumulate across many disconnected players. | The registry has a hard capacity, purges expiry on issue and receives a lifecycle-owned periodic cleanup. Link indexes, queues, event state and scheduler work are all bounded. |
-| Medium | Public `discord.yml` exposed implementation tuning that normal operators should not need. | `limits`, `delivery`, `gateway`, `scheduler`, `backend_status`, link timing, avatar URL, webhook creation/name and moderation keys were removed from schema and parser. Existing v2 files prune these known obsolete keys idempotently; fixed conservative bounds remain in code. |
-| Medium | There was no live evidence for heap regression or retained Communications state. | Runtime-only telemetry records startup-to-live heap delta, heap percentage, chat/reply/link state, scheduler jobs/queue/rejections, transport state and queue depths. Heap warnings are transition-only with recovery hysteresis, avoiding periodic log spam. |
-| High | Discord delivery had duplicate-delivery risks and insufficient backpressure. | Ingress, normalization, formatting and delivery use bounded queues. Backoff with jitter is limited to definite retryable failures. Timeout/I/O does not trigger a second transport. Announcement embeds may fall back to bot plain text only after local validation or definite invalid-form rejection; player chat never changes transport. |
-| High | Linking accumulated unrelated nickname and announcement effects. | Linking now owns only codes, durable association and configured linked-role assignment/removal. Role assignment is idempotent; the configured role is reconciled for all linked accounts on JDA Ready/reconnect and per linked player on connect/server-switch. With no role configured, no role API call occurs. |
-| High | Backend advancement text depended on whichever component title happened to be visible at runtime. | TDE2 carries locale, localized title and optional description. TensaProxy embeds SHA-1-verified `uk_ua`/`en_us` vanilla catalogs and loads bounded mod language catalogs; TensaPlugin accepts strict TDE1 and TDE2 frames for rolling compatibility. |
-| Medium | Player deaths existed only on backend servers and could not be observed reliably by Velocity. | TDE2 event type 2 carries the producer-localized final death message with strict identity, UTF-8, packet and code-point bounds. The receiver verifies the owning `ServerConnection`, deduplicates events and publishes through the existing bounded announcement pipeline. |
-| Critical | Auth route suppression treated two Velocity routes sharing a backend ID as the same route. Offline-auth players could remain attached to a gameplay backend while its gate stayed locked. | The alias-route mutation was removed. LibreLogin owns auth/gameplay routing. A signed backend ID is cryptographic identity, not route identity; exact physical endpoint aliases require a distinct auth endpoint. |
-| High | A dropped initial or lease-renewal challenge left a backend player locked until timeout. | TensaProxy retries unanswered challenges at a bounded interval no faster than five seconds. Session/challenge identity is retained, while each retry has a fresh message ID, nonce, timestamps and signature. Any valid bound `AUTH_STATE` stops retries; exact replay remains rejected. |
-| Critical | During auth-to-gameplay handoff, a valid challenge could arrive from the selected target before Velocity updated `Player.getCurrentServer()`, so strict current-connection identity rejected it. | The receiver records the final pre-connect target for one frame-TTL window, rejects the previous connection during that window, accepts only the selected target, and clears the handoff at post-connect/disconnect. UUID, signed backend identity, challenge, session, expiry and replay checks remain mandatory. |
-| Critical | Backend logout cleanup was keyed only by UUID. With overlapping same-UUID connections, late logout of the old connection removed the replacement session; its response then failed as `no_active_session`, and no session remained to own timeout cleanup. | Core disconnect now supports expected-session compare-and-remove. Paper and NeoForge track session IDs by concrete connection identity and clear the physical auth gate only when that connection still owns the active session. |
-| High | Chat payloads were silently truncated at 256 characters on Minecraft paths and 1000 characters on Discord paths, sometimes in two stages. | Chat normalization no longer truncates. Discord-bound rendered text is split at safe code-point/escape boundaries into ordered messages of at most 2000 code points. Multi-part admission is atomic, so queue pressure cannot deliver only the first half. Discord ingress preserves the full normalized API payload. |
-| High | `/tensa reload scheduler` returned `Module is disabled` when root config enabled Scheduler but an earlier startup had failed, making recovery require a broader reload or restart. | Targeted reload re-reads root config, reconciles only the requested module, retries enable for a configured disabled runtime, and reports a genuine failure if validation/startup still fails. Other modules, players and auth sessions are untouched. |
-| High | Blocking I/O and unbounded executors/queues existed in event or command paths. | Core user/storage operations, Discord work, command queue, text reader, HTTP and RCON work use plugin schedulers or bounded executors with explicit rejection. Socket, HTTP, JDA shutdown and executor waits have finite bounds. |
-| Medium | Minecraft text had separate Message, chat and placeholder parsers, so ordering and escaping differed by route and valid click tags could be diagnosed only at a shallow renderer seam. | `TextPipeline` is now the single component boundary for contextual placeholders, curly/percent interpolation, legacy colors, MiniMessage, operator payloads and safe player-chat insertion. Player input is inserted as a Component, URL actions are explicit, and quoted tag arguments use a separate encoder. Discord Markdown continues to use its destination sanitizer but shares the same raw interpolation engine. Logs contain transitions, safe failure classes and counters, never message bodies, tokens, webhook URLs, Discord IDs, signatures or keys. |
-| Medium | Core administration commands used several concatenated roots and `info` exposed a single module-specific argument. | One `/tensa` command tree now owns `help`, `info`, `modules`, and `reload`; `info` has no module-specific arguments. |
-| Medium | NeoForge `sourcesJar` consumed the generated language catalog without a Gradle task dependency, so clean builds could fail based on task order. | `sourcesJar` now explicitly depends on catalog generation, matching `processResources`; the full clean multi-project build is deterministic. |
+| Root config — high | Invalid YAML was recovered into another file during reload; invalid module flags silently changed behavior. | Read-only preflight, strict scalar/flag validation, separately loaded candidate and volatile publication. Rejected input and previous in-memory settings remain intact. |
+| Lifecycle — high | Full reload, targeted reload and shutdown did not share the same coordination lock. Late queued reload could recreate resources after shutdown. | One lifecycle lock covers these paths; shutdown rejects subsequent reloads. Concurrent lifecycle regression uses real public entry points. |
+| Command ownership — high | Registration overwrote another plugin's alias; cleanup could remove an alias that a different plugin had since taken over. | Check all aliases before registering; unregister only metadata still owned by this registration. |
+| Database — high | A connection exception replayed arbitrary SQL, including writes that might already have committed, and replaced the pool borrowed by core storage. | No ambiguous SQL replay or pool replacement; Hikari handles broken connections. Closed databases reject late queued work. |
+| User persistence — high | Multi-worker execution reordered login, disconnect and metadata operations. | Bounded FIFO execution preserves submission order. Existing JDBC mutation serialization means extra writer threads gave no useful write parallelism. |
+| User metadata — high | Pending loads overwrote newer sets/deletes, treated partial maps as complete and revived caches after disconnect. | Explicit loaded state, pending mutations and identity-checked publication; forgotten/closed loads cannot restore a cache. |
+| Connection events — high | Old login completions or disconnects acted on a replacement connection with the same UUID. | Track the actual Player connection; stale callbacks cannot preload metadata, run first-join commands or clear current-session state. |
+| Worker shutdown — high | Accepted operations discarded by forced shutdown left callers' futures pending forever. | Resolve/cancel outstanding operations and reject work after retirement; scoped worker tests cover forced shutdown. |
+| Scheduler — high | Cancellation did not interrupt an active worker; timeout could start another attempt while an interruption-ignoring task still ran. | Publish worker/timeout handles together, cancel queued/active work and retain the execution slot until the real task exits. Conditions run on the bounded worker and failures are contained. |
+| HTTP — high | Blocking send and HttpClient callbacks shared a saturated fixed pool, preventing network progress. | Separate transport execution from the bounded request workers; terminate the owned HttpClient during shutdown. |
+| Request callbacks — high | Responses from a retired configuration could execute its console commands after reload. | Generation checks at request admission, completion and scheduled response handling. |
+| Queue persistence — high | In-memory deletion preceded durable deletion; failed SQL lost entries until restart. | Persist deletion before publishing the mutation and serialize admissions/dispatch. Capacity is enforced by the manager, delay arithmetic is checked, UUID targets cannot fall back to a namesake account. |
+| RCON — high | An empty pre-auth response was accepted as authentication, leaving the actual auth response to corrupt the next command result. | Consume and validate both auth packets, including failure and request IDs. Idle sockets are closed by the handler. |
+| Discord linking — high | Startup reconciliation could re-grant a role after unlink. A JDBC cleanup exception after commit reported failure and could trigger wrong role compensation. | Serialize reconciliation with link mutations; preserve committed link/unlink outcomes and cache state after cleanup failure. |
+| Discord lifetime — high | Recovery could publish a runtime after deactivation; reconnect/registration callbacks could overwrite closed state; failed storage initialization leaked a webhook transport. | Coordinate shutdown with recovery and gateway activation, reject stale callbacks, initialize storage before allocating transports, terminate owned HTTP resources. |
+| Chat policy — medium | Native relay ignored denied/filtered events and the configured send permission. | Observe the final allowed message and channel permission at late listener priority without cancelling signed chat. |
+| Playtime — medium | Immediately completed/rejected lookups removed their own ConcurrentHashMap entry while it was still being computed, leaving futures unresolved. | Publish pending lookups before attaching completion callbacks. |
+| Metadata permissions — medium | Tab completion disclosed another user's metadata key names without admin permission. | Apply the same target permission to completion as command execution. |
+| Legacy command bridge — high | Closing the bridge zeroed its secret but a captured callback could authenticate against the now-zero token. | Closed state rejects every subsequent message. |
+| Placeholders — medium | Registered resolvers were evaluated for unrelated text and could run twice for one template. | Lazy, one-pass resolution for actual tokens; preserves async provider fallback. |
+| Storage validation — medium | SQL prefixes were unchecked and read failures became empty results that were cached as valid data. | Validate identifiers before creating pools; propagate safe failures without raw SQL/values. |
+| Localization — medium | Language changes retained the old singleton file; English synchronization filled Ukrainian keys with English text. | Rebind by locale/path, fill supported catalogs with their own defaults, preserve manual values and reject corrupt translations without replacement. |
+| Diagnostics/build — medium | Generic exception text could carry configuration or command values; package pruned test reports. | Safe failure-class diagnostics; preserve build/test evidence and bound local test JVM memory. |
 
-## Authentication audit details
+New behavior is covered by failing-before/passing-after tests where a defect was
+reproduced. Broader permission, migration, content-preservation and shutdown
+checks are retained as acceptance tests rather than presented as bug reproductions.
 
-Premium accounts appeared less affected because they can bypass or complete a
-different LibreLogin path; this was not evidence that the backend freeze guard
-itself was account-type aware. The actual fault was route ownership combined
-with fail-closed backend state and overlapping connection lifecycle. Live
-read-only logs additionally showed `duplicate_login` during `aero-auth` to
-`aeronautics` movement and 25-second authentication expiry for affected
-connections. The fixes retain the intended security model:
+## Performance and resource ownership
 
-- a backend locks a player immediately and unlocks only after a valid, bound,
-  signed `AUTHORIZED` state;
-- malformed, expired, cross-player, cross-session and replayed frames cannot
-  unlock a player;
-- authorization remains a renewable lease;
-- authentication reload validates changes but deliberately does not replace
-  active sessions or move/kick connected players;
-- a pre-connect handoff can authorize only its selected new route, never the
-  old or an arbitrary allowlisted connection;
-- a stale backend logout cannot delete a newer same-UUID session or clear the
-  newer connection's freeze state;
-- security/timing changes to the auth runtime require the next controlled proxy
-  start and are reported as such.
+- No new periodic production jobs or configuration knobs were introduced.
+- Internal scheduled work, HTTP requests, user-data writes, Discord work and
+  RCON execution keep bounded admission. Cancellation does not create parallel
+  replacement work for a task that has ignored interruption.
+- Root configuration publishes a complete candidate rather than modifying
+  live fields one by one. Reload serialization also prevents overlapping I/O
+  bursts and resource replacement.
+- Localization refresh and config validation occur on startup/reload paths.
+  Minecraft text continues to use the single `TextPipeline`.
+- Core user data uses a single bounded FIFO worker to preserve mutation order.
+  This is a correctness tradeoff, not a throughput benchmark claim.
+- SQL, Discord REST and network/socket work retain finite timeouts. No network
+  credentials or message bodies are added to diagnostics.
+- Maven tests and local smoke processes have explicit memory bounds; this pass
+  observed a Windows native-memory allocation failure before tests, then reran
+  the checks under bounded JVM settings.
 
-The premium/offline distinction is not encoded in the bridge protocol. Both
-paths require the backend-forwarded UUID to match Velocity's transport UUID.
-Modern forwarding should make those identities equal; a mismatch is treated as
-a forwarding configuration error and remains fail-closed.
+## Verification record
 
-The remaining topology rule is operationally important: if `auth` and a
-gameplay server are merely two names for the same physical listener, Velocity
-cannot perform a meaningful transfer between them. Configure a genuinely
-distinct auth endpoint instead of restoring alias suppression.
+- Java **25.0.2**, Maven **3.9.14**: `mvn -B clean verify dependency:analyze`
+  completed successfully: **239 tests, 0 failures, 0 errors, 0 skipped**.
+  Dependency analysis reported **No dependency problems found**.
+  This change adds **61 regression/acceptance tests** and removes **27 tests**
+  for the retired auth bridge (baseline 205, final 239).
+- `.run/smoke-velocity.ps1 -SkipBuild -VelocityVersion 4.2.0` — **passed**
+  with the official release build **30**.
+- `.run/smoke-velocity.ps1 -SkipBuild -VelocityVersion 4.2.1-SNAPSHOT` — **passed**
+  with official build **36** (`7fc49913`). Both used Java 25.0.2.
+- Packaged `Tensa.jar`: **19,899,096 bytes**, plugin version **3.1.0**.
+  SHA-256: `280b7a2f3f7fe9422619555428559d393a3af4e5680d139ed0187c6a974d5508`.
+- JAR inspection confirmed no retired auth classes/LibreLogin dependency and no
+  bundled Velocity API, Adventure or Netty classes. Test reports remain under
+  `target/surefire-reports`; local verification logs use `.run/audit-*.log`.
+- Changed source and staged diff passed credential-pattern checks without printing
+  secret values. This is a targeted scan, not proof that every possible secret
+  format is detectable.
+- An independent read-only review of `715dfe3..161c92d` found no concrete
+  introduced correctness/security regressions in the root lifecycle, config,
+  localization, database and command-ownership changes or checked cross-module
+  lock paths. Deferred operational limitations below remain explicit.
+- Verified artifact staged on Finland as
+  `/var/lib/calagopus/codex/Aeronautics/mainMods/TensaPlugin-3.1.0-161c92d.jar`.
+  Remote SHA-256 and byte size match the above; mode is `0644`; the temporary
+  upload file is absent. No live JAR/config replacement, reload or restart.
 
-## Configuration and storage contract
+The smoke harness uses localhost, strips Discord credentials, disables telemetry,
+loads local modules, checks MiniMessage components and configuration generation,
+performs five Scheduler and five Communications reloads plus a full reload, checks
+for duplicated scheduler ticks and retired auth artifacts, and verifies shutdown.
 
-Both `communications/discord.yml` and `communications/chats.yml` require
-`config_version: 2`.
+## Remaining operational limits
 
-- Version `<2` or a missing version triggers verified archival followed by
-  clean v2 defaults. Existing values are not merged.
-- Version `>2` fails fast and leaves every source file untouched.
-- A partial archive failure leaves every original in place and does not write
-  the replacement files.
-- Legacy `links.json` is removed only after its verified copy exists and is
-  never imported into JDBC storage. Users must link again.
-- Secrets have no generated defaults. Environment overrides remain available.
-- Root schema-v2 files are verified and relocated into `communications/`; if a
-  destination already exists it wins and the obsolete root file is archived.
-- Managed webhook storage contains only IDs and token fingerprints, never URLs
-  or tokens. Global chat webhook recovery/creation is automatic when no explicit
-  webhook is configured.
-- Link persistence follows `storage.type`: configured MariaDB/MySQL when
-  selected and available, otherwise local H2 according to core-storage rules.
-- Manual runtime language translations are preserved while missing bundled
-  keys are added.
-
-Full operator notes are in [COMMUNICATIONS_V2_MIGRATION.md](COMMUNICATIONS_V2_MIGRATION.md).
-
-## Reload, concurrency and delivery audit
-
-- `/tensa reload <module-id>` re-reads the target's root flag and targets exactly
-  one module, including recovery of a configured module after failed startup;
-  `/tensa reload all` reconciles all modules. No argument remains a
-  compatibility alias for `all`.
-- Permissions are `tensa.reload` and `tensa.reload.<module-id>`, including tab
-  completion filtering.
-- Communications config parsing, type validation, MiniMessage parsing, Discord
-  IDs, webhook URLs, placeholders and embed limits are validated before runtime
-  replacement. Technical queue/timing bounds are immutable code policy.
-- Chat can stay active while initial Discord startup is degraded. Targeted
-  communications reload is stricter: an operational activation failure restores
-  the previous runtime rather than accepting a new degraded candidate.
-- Inbound relay rejects bot/webhook/self and wrong guild/channel traffic. It
-  does not require an account link; Discord roles own channel access policy.
-- Metrics are module-owned, in-memory and monotonic across targeted reload;
-  queues and workers are runtime-owned.
-- Resource telemetry is safe and runtime-only. It reports counts and heap
-  pressure transitions, never player/Discord identities or message bodies.
-- Core authentication sessions, connected players and core storage are outside
-  the communications replacement boundary.
-
-## Verification
-
-Final local gates:
-
-- TensaPlugin with Java 25: `mvn -B clean test`,
-  `mvn -B dependency:analyze`, and `mvn -B clean package`: 193 tests,
-  0 failures/errors/skips, and no dependency problems.
-- A clean Velocity 4 smoke profile binds only to localhost,
-  strips Discord credentials from the child environment and disables telemetry.
-  It verifies the built JAR against Velocity 4/Adventure 5 click-event bytecode,
-  v2 config generation without secret defaults, UTF-8 Ukrainian localization
-  sync, Communications degraded startup, the real MiniMessage URL
-  template, Scheduler execution, five targeted Scheduler reloads without
-  duplicate ticks, and clean module/storage/process shutdown.
-- TensaProxy with its Java 21 toolchain: `gradlew.bat clean test build`.
-  46 tests, 0 failures/errors/skips across testkit and NeoForge.
-- Focused tests cover schema reset/archive failure/future rejection, H2 schema
-  and conflicts, restart persistence, non-import of JSON, role reconciliation,
-  strict webhook-only delivery, webhook binding/provisioning/revocation, route
-  formatting and nested type rejection, the unified placeholder/text pipeline,
-  URL components, command scheduler config/random modes/range/reload lifecycle, internal scheduler runtime
-  lifecycle, server-icon fallback, resource thresholds, embeds, metrics, five runtime replacements, auth transfer/retry/replay,
-  MiniMessage clipboard behavior, and strict TDE1/TDE2 codecs/localization.
-- Artifact hashes are recorded in the implementation handoff.
-
-## Residual risks
-
-1. Guild command permissions, role hierarchy, actual Discord rate limits and a
-   real Ready/Resume cycle require a credential-safe canary.
-2. The bot lease is process-local. Operations must guarantee that no second JVM
-   or external service uses the same bot token.
-3. Ambiguous network failures are intentionally not retried across transports;
-   this chooses duplicate avoidance over guaranteed delivery.
-4. Schema v2 intentionally discards old links and communications values after
-   backup. Operators must configure v2 and plan a relink window.
-5. Session-scoped cleanup contains the stale-logout failure, but it cannot make
-   two Velocity aliases of one physical endpoint behave like truly distinct
-   transfer destinations or prevent the backend's own `duplicate_login` event.
-   A distinct auth endpoint remains the safest production topology.
-6. Auth runtime settings are restart-required by design; targeted reload only
-   validates them so live player sessions remain untouched.
-7. Managed webhook creation requires `MANAGE_WEBHOOKS`. Without an explicit
-   webhook or that permission, Minecraft chat remains local but Discord chat
-   relay is unavailable; it never falls back to bot identity. Diagnostics/logs
-   expose only safe state/failure classes.
-
-## Velocity 4.1 compatibility audit
-
-- The compile-time and runtime minimum is Velocity 4.1.0. The release's packet
-  decompression, reference-counting and plugin-message copy fixes are inherited
-  from the proxy runtime and do not need duplicate plugin workarounds.
-- `PlayerClientLoadedWorldEvent` is exposed as the opt-in
-  `events.on_player_loaded_world` lifecycle hook. The persistent command queue
-  also requires `ServerConnection.isClientLoaded()` before dispatching commands
-  that require a backend connection, preventing delivery during terrain load.
-- Authentication routing intentionally remains on pre-connect/post-connect and
-  signed backend challenges. Client-loaded state is not an authentication proof
-  and is therefore not allowed to authorize a player or extend a lease.
-- Velocity's plugin `provides` metadata is not used: Tensa modules are internal
-  runtime components, not substitute plugin IDs. Advertising them as plugins
-  would create misleading dependency resolution without improving isolation.
-- The local smoke harness now runs the current `/tensa` command tree against an
-  isolated Velocity 4.1 runtime and validates clean shutdown and repeated
-  targeted reloads.
+1. Live Discord credentials were not used. Guild permissions, role hierarchy,
+   reconnect and real delivery still need an operator canary. Discord REST role
+   changes and SQL cannot form a single atomic transaction; ambiguous network
+   outcomes remain observable failures rather than a guarantee of delivery.
+2. The Discord bot lease and link cache are process-local. One runtime must own
+   the bot; multiple proxies sharing mutable link state are not a supported
+   distributed-cache consistency model.
+3. Command queue delivery remains at-most-once: durable removal precedes external
+   command acceptance. A crash or command failure in that interval can lose work.
+   Cross-proxy exactly-once execution requires a separate durable claim/ack design.
+   `tensa.queue` authorizes console-command execution and must be trusted.
+4. Thread interruption is cooperative. A job that ignores interruption can occupy
+   its bounded worker until it returns; the plugin must not forcibly kill JVM threads.
+5. RCON multipart response heuristics cannot promise arbitrary remote-server
+   protocol behavior. Real remote RCON servers need a canary beyond the local
+   socket/authentication regressions.
+6. After an unclean proxy crash, persisted online-session timestamps can include
+   downtime in playtime. Blindly resetting all rows could affect another proxy
+   sharing the database; a session-owner/lease migration is a separate change.
+7. Database/storage connection configuration changes still require a controlled
+   proxy restart. Full reload is ordered, not one distributed transaction across
+   every independent module and external service.
+8. HTTP response bodies and text-reader files have no byte-size cap. Treat their
+   configured endpoints/files as trusted. Text-reader work still uses Velocity's
+   scheduler rather than an owned bounded worker; bounded streaming reads would
+   be a separate resource-hardening change.
+9. Metadata loaded for offline administrative queries has no TTL/size cap;
+   disconnects clear normal online-session caches. Optimistic metadata writes are
+   not durability acknowledgements. Safe outer SQL messages retain original
+   exception causes for debugging, so do not publish raw driver stack traces.
 
 ## Safe rollout and rollback
 
-This procedure was not executed.
+1. Keep the tested JAR in Finland
+   `/var/lib/calagopus/codex/Aeronautics/mainMods` with its SHA-256. Uploading there
+   does not install it or restart a game/proxy process.
+2. Verify no backend still depends on the retired signed auth lease. If one does,
+   disable/remove its TensaProxy auth guard first. See
+   [auth retirement notes](AUTH_BRIDGE_PROTOCOL.md).
+3. Back up the installed Tensa JAR and plugin data. In an explicitly authorized
+   maintenance window, stop the actual Velocity process, replace only the
+   receiver JAR, then start it. Do not hot-swap the JAR.
+4. Confirm module status, enabled commands, storage, Discord role/link operations,
+   chat permissions, backend achievements/deaths and normal player server changes.
+5. Roll back by stopping the proxy and restoring the previous JAR and configuration
+   backup. User auth files are retained; no auth database/player records are deleted
+   by this release. No database schema migration was required for these audit fixes.
 
-1. Archive the current receiver JAR and plugin data outside the live directory;
-   record artifact hashes without printing config contents.
-2. Confirm one process owns the Discord bot identity and prepare clean v2
-   `communications/discord.yml` and `communications/chats.yml` values through a secure channel.
-3. In a maintenance window, stop AeroProxy once, install the new TensaPlugin
-   receiver, and start it once. Do not hot-swap the old JAR.
-4. Verify the generated archive and SHA-256 manifest, core storage backend,
-   `communications` diagnostics, guild-scoped `/link`, copy button, and TDE1
-   reception. Keep announcements disabled for the first canary.
-5. Test premium and offline accounts through login, auth-to-game transfer,
-   gameplay server switch and lease renewal. No player may stay frozen after a
-   completed transfer.
-6. Open the relink window. Confirm new links and the optional linked role survive
-   a targeted communications reload and a controlled proxy restart.
-7. Canary relay in both directions and typed embeds. Repeat communications reload five times and verify one JDA/listener/
-   command/task set, scheduler counts and URL-component diagnostics via
-   structured transition logs.
-8. Only after the receiver is stable, install TensaProxy TDE2 on one backend,
-   verify Ukrainian/local mod advancement text, then roll it out to the others.
-9. Roll back in reverse order: restore TensaProxy to TDE1 first, then stop the
-   proxy and restore the previous TensaPlugin JAR plus its archived old configs.
-   The new `discord_links` table may remain unused. Do not feed a v2 config to an
-   older receiver.
+Production installation/restart is outside this source-audit turn. Historical
+Communications-v2 and auth implementation findings are retained in Git history.

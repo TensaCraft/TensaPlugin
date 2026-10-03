@@ -3,7 +3,16 @@
 
 Tensa Velocity Plugin - This one offers a variety of modules for detailed server management and monitoring. Each module can be turned on or off as needed. The plugin is designed to be as flexible as possible, allowing you to customize your server's functionality to your specific needs.
 
-Runtime requirement: Velocity 4.1.0 or newer and Java 25.
+Runtime requirement: Velocity 4.2.0 or newer and Java 25. The release is also
+smoke-tested against the current 4.2.1-SNAPSHOT build from PaperMC.
+
+Tensa 3.1 removes LibreLogin Auth Bridge, its API dependency and the `tensa:auth`
+protocol. Existing `auth-bridge/` files are left untouched and ignored; the retired
+module flag is removed during normal root config reconciliation. If a backend
+still has the old TensaProxy auth guard enabled, retire that guard before updating
+the proxy. Tensa no longer supplies its signed authorization leases. Discord
+linking, chat, achievements/deaths and the opt-in command bridge are independent.
+See [the current audit and rollout notes](docs/PLUGIN_AUDIT.md).
 
 ## Dev Server
 - Run the local Velocity dev server from the project root with `.\.run\run-velocity.cmd`.
@@ -11,13 +20,15 @@ Runtime requirement: Velocity 4.1.0 or newer and Java 25.
 - Optional flags:
   - `.\.run\run-velocity.cmd -WithTests` to build and run tests before launch
   - `.\.run\run-velocity.cmd -SkipBuild` to restart the proxy with the already-built jar
-  - `.\.run\run-velocity.cmd -VelocityVersion 4.1.0` to pin the minimum supported Velocity runtime
+  - `.\.run\run-velocity.cmd -VelocityVersion 4.2.0` to pin the supported release
+  - `.\.run\smoke-velocity.cmd -SkipBuild -VelocityVersion 4.2.1-SNAPSHOT` to check the latest development build
 
 For an isolated, non-interactive runtime check, run
 `.\.run\smoke-velocity.cmd -WithTests`. It recreates `.run/velocity-smoke`,
 starts a localhost-only Velocity process without Discord credentials or third-party
-plugins, verifies Communications and Scheduler startup, performs five targeted
-Scheduler reloads, checks for duplicate ticks and shuts the process down. This
+plugins, verifies the enabled local modules, performs five targeted Scheduler
+and Communications reloads plus a full reload, checks for duplicate ticks and
+absence of the retired auth bridge, and shuts the process down. This
 profile never reads `.run/velocity` or a production server directory. Tensa is
 built and tested exclusively for Velocity 4; the runner rejects Velocity 3.
 
@@ -43,15 +54,19 @@ velocity:
 Quick example:
 ```java
 // Create a config model bound to user_meta/config.yml
-public class UserMetaConfig extends ConfigModelBase {
+public class UserMetaConfig extends ConfigBase {
   @CfgKey("storage.type") public String storageType = "database";
   @CfgKey("default_persist") public boolean defaultPersist = true;
-  public UserMetaConfig() { super("user_meta/config.yml"); }
+  public UserMetaConfig() {
+    super("user_meta/config.yml");
+    reloadCfg(); // Bind after field initializers have supplied defaults.
+  }
 }
 ```
 
 Usage:
-- Instantiate once (singleton) and use typed fields: `UserMetaConfig.get().storageType`.
+- Keep an instance (for example, `var userMeta = new UserMetaConfig()`) and read
+  its typed fields, such as `userMeta.storageType`.
 - Reload one module with `/tensa reload <module-id>` or reconcile all modules with
   `/tensa reload all`. A targeted reload re-reads the root module flag and can
   recover a configured module whose previous startup failed.

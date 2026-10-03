@@ -1,8 +1,8 @@
 # ProxyBridge Compatibility Mode
 
 `proxy-bridge` preserves the legacy `token:command` plugin-message protocol for
-explicit compatibility only. It is not the authentication bridge and does not
-use the canonical `tensa:auth` wire format.
+explicit compatibility only. It does not provide authentication. The former
+LibreLogin `tensa:auth` bridge was removed in Tensa 3.1.
 
 The module is disabled by default. Enabling it also requires an explicit,
 validated configuration:
@@ -28,5 +28,6 @@ Security requirements:
 - The token comparison is constant-time.
 
 The payload remains the legacy UTF-8 `token:command` format. This compatibility
-module intentionally does not add another wire protocol. Use the separate
-LibreLogin auth bridge for signed authentication state synchronization.
+module intentionally does not add another wire protocol. Keep it disabled unless
+a trusted backend needs console-command execution. Closing the runtime revokes
+its token immediately, including for previously captured message callbacks.

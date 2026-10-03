@@ -1,6 +1,19 @@
 # Communications v2 implementation checklist
 
-Status date: 2026-08-20. This replaces the obsolete value-preserving migration
+## Current follow-up: 2026-10-03
+
+- [x] Remove LibreLogin Auth Bridge provider, runtime, protocol, dependency and obsolete tests.
+- [x] Preserve retired user files while pruning the unsupported root module flag.
+- [x] Audit core storage, metadata, events, placeholders, reload, module workers,
+  Discord/chat, requests, RCON, playertime and command queue; add regressions for confirmed defects.
+- [x] Target the released Velocity 4.2.0 API and matching provided dependencies.
+- [x] Final clean Java 25 build: 239/239 tests, dependency analysis, package and isolated Velocity 4.2.0/4.2.1 smoke runs.
+- [x] Upload verified `TensaPlugin-3.1.0-161c92d.jar` to Finland `mainMods` (staging only; matching SHA-256/size, mode 0644).
+
+## Historical Communications v2 checklist
+
+Historical status date: 2026-08-20. Auth-related entries below describe the removed
+implementation, not current supported features. This replaced the obsolete value-preserving migration
 proposal. The approved v2 contract is a verified archive followed by clean
 defaults and user relinking.
 

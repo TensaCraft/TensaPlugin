@@ -53,15 +53,14 @@ language: uk
 use_uuid: true
 modules:
   proxy-bridge: false
-  librelogin-auth-bridge: false
   scheduler: true
   communications: true
-  rcon-manager: false
+  rcon-manager: true
   rcon-server: false
-  request-module: false
-  player-time: false
-  command-queue: false
-  text-reader: false
+  requests: true
+  player-time: true
+  command-queue: true
+  text-reader: true
 database:
   enable: false
 storage:
@@ -243,11 +242,11 @@ $javacExe = Join-Path $resolvedJavaHome "bin\javac.exe"
 $probeSource = Join-Path $PSScriptRoot "Velocity4TextPipelineProbe.java"
 $probeClasses = Join-Path $runtimeRoot "probe-classes"
 [System.IO.Directory]::CreateDirectory($probeClasses) | Out-Null
-& $javacExe -encoding UTF-8 -d $probeClasses -cp "$($serverJar.FullName);$($pluginJar.FullName)" $probeSource
+& $javacExe -J-Xms16m -J-Xmx128m -J-XX:+UseSerialGC -encoding UTF-8 -d $probeClasses -cp "$($serverJar.FullName);$($pluginJar.FullName)" $probeSource
 if ($LASTEXITCODE -ne 0) {
     throw "Velocity 4 text compatibility probe did not compile."
 }
-$probeOutput = & $javaExe -cp "$($serverJar.FullName);$($pluginJar.FullName);$probeClasses" Velocity4TextPipelineProbe 2>&1
+$probeOutput = & $javaExe -Xms16m -Xmx128m -XX:+UseSerialGC -cp "$($serverJar.FullName);$($pluginJar.FullName);$probeClasses" Velocity4TextPipelineProbe 2>&1
 if ($LASTEXITCODE -ne 0 -or $probeOutput -notcontains "VELOCITY_TEXT_PIPELINE_COMPATIBLE") {
     $probeOutput | ForEach-Object { Write-Host $_ -ForegroundColor Red }
     throw "Built Tensa jar is binary-incompatible with Velocity 4 text events."
@@ -266,6 +265,10 @@ $startInfo.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
 $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
 [void]$startInfo.ArgumentList.Add("-Dterminal.ansi=false")
+[void]$startInfo.ArgumentList.Add("-Xmx256m")
+[void]$startInfo.ArgumentList.Add("-Xms32m")
+[void]$startInfo.ArgumentList.Add("-XX:+UseSerialGC")
+[void]$startInfo.ArgumentList.Add("-XX:ActiveProcessorCount=2")
 [void]$startInfo.ArgumentList.Add("-Dfile.encoding=UTF-8")
 [void]$startInfo.ArgumentList.Add("--enable-native-access=ALL-UNNAMED")
 [void]$startInfo.ArgumentList.Add("-jar")
@@ -299,7 +302,9 @@ try {
 
     Send-ConsoleCommand -Process $process -Command "tensa modules"
     Send-ConsoleCommand -Process $process -Command "tensa info"
-    Wait-ForOutput -Process $process -Readers $readers -Pattern 'Tensa.*version.*3\.0\.0' -TimeoutSeconds 10
+    [xml]$projectPom = Get-Content (Join-Path $projectRoot 'pom.xml')
+    $expectedVersion = [regex]::Escape([string]$projectPom.project.version)
+    Wait-ForOutput -Process $process -Readers $readers -Pattern "Tensa.*version.*$expectedVersion" -TimeoutSeconds 10
 
     $renderOutputStart = $transcript.Length
     $renderTemplate = "tparse <aqua>★</aqua> <gold>{username}</gold> проголосував за сервер на <click:open_url:'https://minecraft-ua.com/minecraft/aeronautics'><aqua>https://minecraft-ua.com/minecraft/aeronautics</aqua></click> та отримав бонус!"
@@ -337,6 +342,20 @@ try {
         throw "Scheduler produced $afterReload post-reload ticks; expected 2..5 from one active runtime."
     }
 
+    for ($index = 0; $index -lt 5; $index++) {
+        Send-ConsoleCommand -Process $process -Command "tensa reload communications"
+        Wait-ForOutput -Process $process -Readers $readers -Pattern 'Communications.*RELOADED' -TimeoutSeconds 15 -MinimumMatches ($index + 1)
+    }
+
+    Send-ConsoleCommand -Process $process -Command "tensa reload all"
+    Wait-ForOutput -Process $process -Readers $readers -Pattern 'Configuration reloaded without replacing core storage' -TimeoutSeconds 20
+    if ($transcript.ToString() -match 'LibreLogin Auth Bridge') {
+        throw "Retired LibreLogin module was loaded."
+    }
+    if (Test-Path -LiteralPath (Join-Path $pluginData 'auth-bridge')) {
+        throw "Retired auth bridge config directory was generated."
+    }
+
     $fatalPattern = '(?im)Enable failed for module|Failed to initialize a plugin|\[ERROR\]|Exception in thread|NoClassDefFoundError|LinkageError'
     if ([regex]::IsMatch($transcript.ToString(), $fatalPattern)) {
         throw "Velocity smoke log contains a fatal plugin/runtime signature."
@@ -355,7 +374,7 @@ try {
         throw "Scheduler did not report a clean shutdown."
     }
 
-    Write-Host "Velocity 4.1 smoke test PASSED: binary text probe, clean startup, v2 config generation, diagnostics, formatting, scheduler execution, five targeted reloads, no duplicate runtime, clean shutdown." -ForegroundColor Green
+    Write-Host "Velocity smoke test PASSED: binary text probe, startup, config generation, formatting, scheduler execution, five Scheduler and Communications reloads, full reload, retired auth absent, clean shutdown." -ForegroundColor Green
 } finally {
     if (-not $process.HasExited) {
         if (-not $shutdownSent) {
