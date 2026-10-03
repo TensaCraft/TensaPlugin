@@ -25,6 +25,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.UUID;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -55,6 +57,8 @@ public class EventManager {
     );
     private static final String DELAY = "[delay]";
     private static final String CONSOLE = "[console]";
+    // Guarded by EventManager.class; UUID alone cannot distinguish duplicate logins.
+    private static final Map<UUID, Player> activeSessions = new HashMap<>();
 
     public static synchronized void initialise(Path pluginPath) {
         reload();
@@ -65,6 +69,7 @@ public class EventManager {
     }
 
     public static synchronized void shutdown() {
+        activeSessions.clear();
     }
 
     private static void sendCommand(EventContext context, String command, boolean console) {
@@ -205,7 +210,9 @@ public class EventManager {
         execute(on_login_commands, context);
     }
 
-    public static void onPlayerJoin(PostLoginEvent event) {
+    public static synchronized void onPlayerJoin(PostLoginEvent event) {
+        Player player = event.getPlayer();
+        activeSessions.put(player.getUniqueId(), player);
         EventContextBuilder builder = withPlayer(context(on_join_commands.name()), event.getPlayer());
         execute(on_join_commands, builder.build());
 
@@ -213,19 +220,30 @@ public class EventManager {
             return;
         }
 
-        Tensa.userData.recordLoginAsync(UserDataService.fromPlayer(event.getPlayer()))
+        UserDataService userData = Tensa.userData;
+        userData.recordLoginAsync(UserDataService.fromPlayer(player))
                 .thenAccept(result -> Tensa.server.getScheduler()
                         .buildTask(Tensa.pluginContainer, () -> {
-                            if (Tensa.userMeta != null) {
-                                Tensa.userMeta.preloadAsync(event.getPlayer().getUniqueId());
+                            synchronized (EventManager.class) {
+                                if (activeSessions.get(player.getUniqueId()) != player
+                                        || !player.isActive() || Tensa.userData != userData) {
+                                    return;
+                                }
+                                if (Tensa.userMeta != null) {
+                                    Tensa.userMeta.preloadAsync(player.getUniqueId()).exceptionally(failure -> {
+                                        Message.error("Events: failed to preload user metadata: "
+                                                + failure.getClass().getSimpleName());
+                                        return null;
+                                    });
+                                }
+                                if (!result.firstJoin()) {
+                                    return;
+                                }
+                                EventContext firstJoinContext = withPlayer(context(on_first_join_commands.name()), player)
+                                        .put("firstJoinAt", Instant.ofEpochMilli(result.profile().firstSeenAt()).toString())
+                                        .build();
+                                execute(on_first_join_commands, firstJoinContext);
                             }
-                            if (!result.firstJoin()) {
-                                return;
-                            }
-                            EventContext firstJoinContext = withPlayer(context(on_first_join_commands.name()), event.getPlayer())
-                                    .put("firstJoinAt", Instant.ofEpochMilli(result.profile().firstSeenAt()).toString())
-                                    .build();
-                            execute(on_first_join_commands, firstJoinContext);
                         })
                         .schedule())
                 .exceptionally(ex -> {
@@ -234,7 +252,12 @@ public class EventManager {
                 });
     }
 
-    public static void onPlayerLeave(DisconnectEvent event) {
+    public static synchronized void onPlayerLeave(DisconnectEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        if (activeSessions.get(uuid) != event.getPlayer()) {
+            return;
+        }
+        activeSessions.remove(uuid);
         EventContext context = withPlayer(context(on_leave_commands.name()), event.getPlayer()).build();
         if (Tensa.userMeta != null) {
             Tensa.userMeta.forget(event.getPlayer().getUniqueId());

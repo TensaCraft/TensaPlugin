@@ -23,6 +23,7 @@ final class LegacyProxyBridgeRuntime implements AutoCloseable {
     private final Set<String> allowedServers;
     private final boolean log;
     private final Consumer<String> commandExecutor;
+    private boolean closed;
 
     LegacyProxyBridgeRuntime(
             boolean compatibilityMode,
@@ -54,12 +55,13 @@ final class LegacyProxyBridgeRuntime implements AutoCloseable {
     }
 
     @Subscribe
-    public void onPluginMessage(PluginMessageEvent event) {
+    public synchronized void onPluginMessage(PluginMessageEvent event) {
         if (!event.getIdentifier().equals(channel)) {
             return;
         }
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
+        if (closed) return;
         if (!(event.getSource() instanceof ServerConnection connection)) {
             return;
         }
@@ -115,7 +117,8 @@ final class LegacyProxyBridgeRuntime implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         Arrays.fill(token, (byte) 0);
     }
 

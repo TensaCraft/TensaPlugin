@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -168,6 +169,83 @@ class DiscordRuntimeLifecycleTest {
         runtime.reconcileLinkedRole(playerId);
         awaitCount(gateway.roleAssignments, 2);
         runtime.close();
+    }
+
+    @Test
+    void closingRuntimeShutsDownItsWebhookHttpClient() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(tempDir);
+        FakeGateway gateway = new FakeGateway();
+        DiscordWebhookClient webhook = new DiscordWebhookClient(settings);
+        DiscordLinkService links = new DiscordLinkService(new InMemoryDiscordLinkRepository(),
+                new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()), gateway, settings);
+        DiscordRuntime runtime = new DiscordRuntime(settings, gateway, links, new DiscordDelivery(gateway, webhook));
+        var clientField = DiscordWebhookClient.class.getDeclaredField("httpClient");
+        clientField.setAccessible(true);
+        java.net.http.HttpClient httpClient = (java.net.http.HttpClient) clientField.get(webhook);
+        try {
+            runtime.close();
+
+            assertThat(httpClient.awaitTermination(Duration.ofSeconds(2))).isTrue();
+        } finally {
+            httpClient.shutdownNow();
+            runtime.close();
+        }
+    }
+
+    @Test
+    void deactivationRetiresRuntimePublishedByAnInFlightRecovery() throws Exception {
+        DiscordSettings settings = DiscordTestSettings.create(tempDir);
+        var chats = new ua.co.tensa.modules.chat.data.ChatConfig();
+        chats.reloadCfg();
+        var discord = new ua.co.tensa.modules.discord.data.DiscordConfig();
+        discord.reloadCfg();
+        var chat = new ua.co.tensa.modules.chat.ProxyChatService(chats.adapter(), discord.adapter(), null);
+        var commands = new ua.co.tensa.modules.chat.ChatCommands(chats.adapter(), chat);
+        var moduleConstructor = CommunicationsModule.class.getDeclaredConstructor();
+        moduleConstructor.setAccessible(true);
+        CommunicationsModule module = moduleConstructor.newInstance();
+        Class<?> activeType = Class.forName(CommunicationsModule.class.getName() + "$ActiveRuntime");
+        var activeConstructor = activeType.getDeclaredConstructor(chat.getClass(), commands.getClass(),
+                ua.co.tensa.modules.runtime.ModuleScheduler.class);
+        activeConstructor.setAccessible(true);
+        var deactivate = CommunicationsModule.class.getDeclaredMethod("deactivate", activeType);
+        deactivate.setAccessible(true);
+        var runtimeField = activeType.getDeclaredField("discordRuntime");
+        runtimeField.setAccessible(true);
+        FakeGateway gateway = new FakeGateway();
+        DiscordLinkService links = new DiscordLinkService(new InMemoryDiscordLinkRepository(),
+                new LinkCodeRegistry(settings.linkCodeTtl(), settings.linkCodeLength()), gateway, settings);
+        DiscordRuntime runtime = new DiscordRuntime(settings, gateway, links, new DiscordDelivery(gateway, new FakeWebhook()));
+        try (var scheduler = new ua.co.tensa.modules.runtime.ModuleScheduler("recovery-lifecycle-test",
+                new ua.co.tensa.modules.runtime.ModuleScheduler.Defaults(
+                        8, 1, 8, Duration.ofSeconds(2), 1, Duration.ofMillis(1), Duration.ofMillis(10), 0))) {
+            Object active = activeConstructor.newInstance(chat, commands, scheduler);
+            CompletableFuture<Void> stopped = new CompletableFuture<>();
+            Thread shutdown = Thread.ofPlatform().daemon(true).unstarted(() -> {
+                try {
+                    deactivate.invoke(module, active);
+                    stopped.complete(null);
+                } catch (Throwable error) {
+                    stopped.completeExceptionally(error);
+                }
+            });
+            synchronized (active) {
+                // Recovery owns this monitor while starting and publishing Discord.
+                shutdown.start();
+                long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                while (!stopped.isDone() && shutdown.getState() != Thread.State.BLOCKED
+                        && System.nanoTime() < deadline) {
+                    Thread.sleep(1);
+                }
+                assertThat(stopped.isDone() || shutdown.getState() == Thread.State.BLOCKED).isTrue();
+                runtimeField.set(active, runtime);
+            }
+            stopped.get(2, TimeUnit.SECONDS);
+
+            assertThat(gateway.closed).isTrue();
+        } finally {
+            runtime.close();
+        }
     }
 
     private static ProxyChatMessage message(ProxyChatMessage.Origin origin, String channel) {

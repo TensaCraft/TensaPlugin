@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -136,10 +136,6 @@ public final class ModuleScheduler implements AutoCloseable {
             if (state.paused) {
                 return;
             }
-            if (!state.spec.condition().getAsBoolean()) {
-                scheduleNextOccurrenceLocked(state);
-                return;
-            }
             if (state.running) {
                 return;
             }
@@ -150,43 +146,72 @@ public final class ModuleScheduler implements AutoCloseable {
     }
 
     private void executeAttempt(JobState state) {
-        AtomicBoolean finished = new AtomicBoolean();
-        Future<?> worker;
-        try {
-            worker = workers.submit(() -> {
-                Throwable failure = null;
-                try {
-                    state.spec.task().run();
-                } catch (Throwable error) {
-                    failure = error;
-                }
-                if (finished.compareAndSet(false, true)) {
-                    attemptFinished(state, failure);
-                }
-            });
-        } catch (RejectedExecutionException full) {
-            rejected.incrementAndGet();
-            attemptFinished(state, full);
-            return;
-        }
-        Duration timeout = state.spec.timeout();
-        state.timeout = timer.schedule(() -> {
-            if (finished.compareAndSet(false, true)) {
-                worker.cancel(true);
-                attemptFinished(state, new java.util.concurrent.TimeoutException(
-                        "Scheduler job timed out: " + state.spec.key()));
+        Attempt attempt = new Attempt();
+        synchronized (lock) {
+            if (closed.get() || state.cancelled) {
+                state.running = false;
+                return;
             }
-        }, timeout.toNanos(), TimeUnit.NANOSECONDS);
+            state.currentAttempt = attempt;
+            attempt.worker = new FutureTask<>(() -> {
+                runAttempt(state, attempt);
+                return null;
+            });
+            try {
+                // Publish both handles before a fast worker can finish or cancellation can run.
+                attempt.timeout = timer.schedule(() -> timeOut(state, attempt),
+                        state.spec.timeout().toNanos(), TimeUnit.NANOSECONDS);
+                workers.execute(attempt.worker);
+            } catch (RejectedExecutionException full) {
+                rejected.incrementAndGet();
+                attemptFinished(state, attempt, full);
+            }
+        }
     }
 
-    private void attemptFinished(JobState state, Throwable failure) {
+    private void runAttempt(JobState state, Attempt attempt) {
+        synchronized (lock) {
+            if (closed.get() || state.cancelled || state.currentAttempt != attempt) {
+                return;
+            }
+            attempt.started = true;
+        }
+        Throwable failure = null;
+        try {
+            // Conditions may block or throw too; they belong to the bounded worker attempt.
+            if (state.spec.condition().getAsBoolean()) {
+                state.spec.task().run();
+            }
+        } catch (Throwable error) {
+            failure = error;
+        } finally {
+            attemptFinished(state, attempt, failure);
+        }
+    }
+
+    private void timeOut(JobState state, Attempt attempt) {
+        synchronized (lock) {
+            if (state.currentAttempt != attempt || closed.get() || state.cancelled) return;
+            attempt.timedOut = true;
+            attempt.worker.cancel(true);
+            workers.remove(attempt.worker);
+            // Interruption is cooperative: never start a replacement while this task still runs.
+            if (attempt.started) return;
+        }
+        attemptFinished(state, attempt, null);
+    }
+
+    private void attemptFinished(JobState state, Attempt attempt, Throwable failure) {
         Consumer<Throwable> deadLetterConsumer = null;
         Throwable deadLetterFailure = null;
         synchronized (lock) {
-            ScheduledFuture<?> timeout = state.timeout;
-            state.timeout = null;
-            if (timeout != null) {
-                timeout.cancel(false);
+            if (state.currentAttempt != attempt) return;
+            state.currentAttempt = null;
+            if (attempt.timeout != null) {
+                attempt.timeout.cancel(false);
+            }
+            if (attempt.timedOut) {
+                failure = new java.util.concurrent.TimeoutException("Scheduler job timed out: " + state.spec.key());
             }
             if (closed.get() || state.cancelled) {
                 state.running = false;
@@ -205,12 +230,7 @@ public final class ModuleScheduler implements AutoCloseable {
                 deadLetterConsumer = state.spec.deadLetter();
                 deadLetterFailure = failure;
             }
-            if (state.spec.interval().isZero()) {
-                removeLocked(state);
-            } else {
-                scheduleTriggerLocked(state, randomDuration(
-                        state.spec.interval(), state.spec.maximumInterval()));
-            }
+            scheduleNextOccurrenceLocked(state);
         }
         if (deadLetterConsumer != null) {
             try {
@@ -244,7 +264,7 @@ public final class ModuleScheduler implements AutoCloseable {
     }
 
     private void scheduleTriggerLocked(JobState state, Duration delay) {
-        if (closed.get() || state.cancelled || state.trigger != null) {
+        if (closed.get() || state.cancelled || state.paused || state.trigger != null) {
             return;
         }
         state.trigger = timer.schedule(() -> trigger(state), delay.toNanos(), TimeUnit.NANOSECONDS);
@@ -463,7 +483,7 @@ public final class ModuleScheduler implements AutoCloseable {
         private boolean cancelled;
         private int attempt;
         private ScheduledFuture<?> trigger;
-        private ScheduledFuture<?> timeout;
+        private Attempt currentAttempt;
 
         private JobState(JobSpec spec) {
             this.spec = spec;
@@ -498,9 +518,12 @@ public final class ModuleScheduler implements AutoCloseable {
                 if (cancelled) return;
                 cancelled = true;
                 if (trigger != null) trigger.cancel(false);
-                if (timeout != null) timeout.cancel(false);
+                if (currentAttempt != null) {
+                    if (currentAttempt.timeout != null) currentAttempt.timeout.cancel(false);
+                    currentAttempt.worker.cancel(true);
+                    workers.remove(currentAttempt.worker);
+                }
                 trigger = null;
-                timeout = null;
                 removeLocked(this);
             }
         }
@@ -511,5 +534,12 @@ public final class ModuleScheduler implements AutoCloseable {
                 return cancelled;
             }
         }
+    }
+
+    private static final class Attempt {
+        private FutureTask<Void> worker;
+        private ScheduledFuture<?> timeout;
+        private boolean started;
+        private boolean timedOut;
     }
 }

@@ -2,6 +2,8 @@ package ua.co.tensa.config;
 
 import ua.co.tensa.config.data.AppConfig;
 import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.config.model.YamlConfigPreflight;
+import ua.co.tensa.Tensa;
 
 import java.util.List;
 
@@ -10,15 +12,21 @@ import java.util.List;
  * YAML structure and keys remain unchanged.
  */
 public class Config {
-    private final AppConfig app;
+    private volatile AppConfig app;
 
     public Config() {
-        this.app = new AppConfig();
-        // Ensure defaults are written and fields loaded after construction
-        this.app.reloadCfg();
+        this.app = loadCandidate();
     }
 
-    public void reload() { app.reloadCfg(); }
+    public synchronized void reload() { app = loadCandidate(); }
+
+    private static AppConfig loadCandidate() {
+        // Reject broken input before the legacy YAML recovery code can replace it.
+        YamlConfigPreflight.validate(Tensa.pluginPath.resolve("config.yml"));
+        AppConfig candidate = new AppConfig();
+        candidate.reloadCfg();
+        return candidate;
+    }
 
     public YamlAdapter adapter() { return app.adapter(); }
 

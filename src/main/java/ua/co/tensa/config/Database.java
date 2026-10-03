@@ -19,6 +19,7 @@ import java.util.function.Supplier;
 public class Database {
 
     private volatile HikariDataSource dataSource;
+    private volatile boolean closed;
     private String tablePrefix;
 
     public boolean enabled = false;
@@ -41,6 +42,8 @@ public class Database {
     );
 
     public synchronized boolean connect() {
+        if (closed) return false;
+        if (dataSource != null && !dataSource.isClosed()) return true;
         String type = Tensa.config.getDatabaseType();
         tablePrefix = Tensa.config.getDatabaseTablePrefix();
 
@@ -50,7 +53,8 @@ public class Database {
         };
     }
 
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         if (dataSource != null) {
             dataSource.close();
             Message.database("POOL CLOSED", "Connection pool shutdown successfully");
@@ -83,7 +87,7 @@ public class Database {
     }
 
     public synchronized void checkConnection() {
-        if (dataSource == null || dataSource.isClosed()) {
+        if (!closed && (dataSource == null || dataSource.isClosed())) {
             connect();
         }
     }
@@ -107,7 +111,7 @@ public class Database {
             enabled = true;
             return true;
         } catch (Exception e) {
-            Message.database("CONNECTION FAILED", "H2 → " + e.getMessage());
+            Message.database("CONNECTION FAILED", "H2 → " + e.getClass().getSimpleName());
             return false;
         }
     }
@@ -181,7 +185,7 @@ public class Database {
             enabled = true;
             return true;
         } catch (Exception e) {
-            Message.database("CONNECTION FAILED", "MySQL → " + e.getMessage());
+            Message.database("CONNECTION FAILED", "MySQL → " + e.getClass().getSimpleName());
             return false;
         }
     }
@@ -196,32 +200,22 @@ public class Database {
     }
 
     private boolean executeUpdateSync(String query, Object... parameters) {
-        checkConnection();
         Integer updated = executeSync(query, parameters, PreparedStatement::executeUpdate);
         return updated != null;
     }
 
     private <T> T executeSync(String query, Object[] parameters, SQLExecutor<T> executor) {
+        if (closed) return null;
         checkConnection();
-        try (Connection conn = dataSource.getConnection();
+        HikariDataSource pool = dataSource;
+        if (closed || pool == null || pool.isClosed()) return null;
+        try (Connection conn = pool.getConnection();
              PreparedStatement stmt = prepareStatement(conn, query, parameters)) {
             return executor.execute(stmt);
         } catch (SQLException e) {
-            if (isConnectionException(e)) {
-                Message.database("RECONNECTING", "Lost connection, attempting to reconnect");
-                if (connect()) {
-                    try (Connection conn2 = dataSource.getConnection();
-                         PreparedStatement stmt2 = prepareStatement(conn2, query, parameters)) {
-                        return executor.execute(stmt2);
-                    } catch (SQLException ex) {
-                        Message.database("RETRY FAILED", ex.getMessage());
-                    }
-                } else {
-                    Message.database("RECONNECT FAILED", "Unable to re-establish connection");
-                }
-            } else {
-                Message.database("QUERY ERROR", e.getMessage());
-            }
+            // Hikari replaces broken connections. Retrying here can repeat a committed
+            // write; replacing the pool would also orphan CoreStorageService borrowers.
+            Message.database("QUERY ERROR", "failure=" + e.getClass().getSimpleName());
         }
         return null;
     }
@@ -232,13 +226,6 @@ public class Database {
                 return handler.handle(rs);
             }
         });
-    }
-
-    private boolean isConnectionException(SQLException e) {
-        return e instanceof SQLNonTransientConnectionException
-                || e instanceof SQLTransientConnectionException
-                || (e.getMessage() != null && (e.getMessage().toLowerCase().contains("socket error")
-                || e.getMessage().toLowerCase().contains("communicati")));
     }
 
     private PreparedStatement prepareStatement(Connection conn, String query, Object... parameters) throws SQLException {
@@ -328,14 +315,17 @@ public class Database {
     }
 
     public boolean tableExists(String tableName) {
+        if (closed) return false;
         checkConnection();
-        try (Connection conn = dataSource.getConnection()) {
+        HikariDataSource pool = dataSource;
+        if (closed || pool == null || pool.isClosed()) return false;
+        try (Connection conn = pool.getConnection()) {
             DatabaseMetaData dbm = conn.getMetaData();
             try (ResultSet tables = dbm.getTables(null, null, appendPrefix(tableName), null)) {
                 return tables.next();
             }
         } catch (SQLException e) {
-            Message.database("TABLE CHECK FAILED", e.getMessage());
+            Message.database("TABLE CHECK FAILED", e.getClass().getSimpleName());
             return false;
         }
     }

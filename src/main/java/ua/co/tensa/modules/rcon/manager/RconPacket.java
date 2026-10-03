@@ -44,6 +44,18 @@ public class RconPacket {
 			throw se;
 		}
 
+		if (type == SERVERDATA_AUTH) {
+			InputStream input = rcon.getSocket().getInputStream();
+			RconPacket response = readResponse(input);
+			if (response.type == SERVERDATA_RESPONSE_VALUE && response.payload.length == 0) {
+				response = readResponse(input);
+			}
+			if (response.type != SERVERDATA_AUTH_RESPONSE
+					|| response.requestId != -1 && response.requestId != rcon.getRequestId()) {
+				throw new IOException("Invalid RCON authentication response");
+			}
+			return response;
+		}
 		return readResponse(rcon);
 	}
 

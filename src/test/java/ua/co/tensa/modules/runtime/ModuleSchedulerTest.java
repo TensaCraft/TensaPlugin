@@ -13,6 +13,102 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ModuleSchedulerTest {
     @Test
+    void cancellingHandleInterruptsItsRunningWorker() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        try (ModuleScheduler scheduler = new ModuleScheduler("cancel", defaults())) {
+            ModuleScheduler.Handle handle = scheduler.schedule(ModuleScheduler.job("blocking", () -> {
+                started.countDown();
+                try {
+                    new CountDownLatch(1).await();
+                } catch (InterruptedException expected) {
+                    interrupted.countDown();
+                }
+            }).timeout(Duration.ofSeconds(30)).build());
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+            handle.cancel();
+            assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void cancellingQueuedJobPreventsItsTaskFromExecuting() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch following = new CountDownLatch(1);
+        AtomicInteger cancelledRuns = new AtomicInteger();
+        try (ModuleScheduler scheduler = new ModuleScheduler("queued", new ModuleScheduler.Defaults(
+                16, 1, 16, Duration.ofSeconds(5), 1, Duration.ZERO, Duration.ZERO, 0))) {
+            scheduler.schedule(ModuleScheduler.job("first", () -> {
+                started.countDown();
+                release.await();
+            }).build());
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+            ModuleScheduler.Handle cancelled = scheduler.schedule(
+                    ModuleScheduler.job("cancelled", cancelledRuns::incrementAndGet).build());
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (scheduler.snapshot().workerQueueDepth() == 0 && System.nanoTime() < deadline) {
+                Thread.sleep(1);
+            }
+            assertThat(scheduler.snapshot().workerQueueDepth()).isOne();
+            cancelled.cancel();
+            scheduler.schedule(ModuleScheduler.job("following", following::countDown).build());
+            release.countDown();
+            assertThat(following.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(cancelledRuns).hasValue(0);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void timedOutAttemptMustExitBeforeRetryStarts() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch retry = new CountDownLatch(1);
+        AtomicInteger attempts = new AtomicInteger();
+        try (ModuleScheduler scheduler = new ModuleScheduler("overlap", defaults())) {
+            scheduler.schedule(ModuleScheduler.job("slow", () -> {
+                if (attempts.incrementAndGet() == 1) {
+                    started.countDown();
+                    boolean done = false;
+                    while (!done) {
+                        try {
+                            release.await();
+                            done = true;
+                        } catch (InterruptedException expected) {
+                            interrupted.countDown();
+                        }
+                    }
+                } else {
+                    retry.countDown();
+                }
+            }).timeout(Duration.ofMillis(100)).attempts(2)
+                    .backoff(Duration.ZERO, Duration.ZERO).build());
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(interrupted.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(retry.await(150, TimeUnit.MILLISECONDS)).isFalse();
+            release.countDown();
+            assertThat(retry.await(2, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void throwingConditionIsAccountedForInsteadOfStrandingJob() throws Exception {
+        CountDownLatch deadLetter = new CountDownLatch(1);
+        try (ModuleScheduler scheduler = new ModuleScheduler("condition", defaults())) {
+            scheduler.schedule(ModuleScheduler.job("bad-condition", () -> { })
+                    .condition(() -> { throw new IllegalStateException("unavailable"); })
+                    .attempts(1).onDeadLetter(ignored -> deadLetter.countDown()).build());
+            assertThat(deadLetter.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(scheduler.snapshot().activeJobs()).isZero();
+        }
+    }
+
+    @Test
     void retriesWithBoundsThenCompletesWithoutDeadLetter() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
         CountDownLatch completed = new CountDownLatch(1);

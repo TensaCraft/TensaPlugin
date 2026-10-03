@@ -67,6 +67,9 @@ public final class UserMetaCommand implements SimpleCommand {
 
     @Override
     public CompletableFuture<List<String>> suggestAsync(Invocation invocation) {
+        if (!hasPermission(invocation)) {
+            return CompletableFuture.completedFuture(List.of());
+        }
         String[] args = invocation.arguments();
         if (args.length <= 1) {
             return CompletableFuture.completedFuture(SUBCOMMANDS);
@@ -84,6 +87,10 @@ public final class UserMetaCommand implements SimpleCommand {
         }
 
         UUID target = resolveSuggestionTarget(invocation.source(), args[1]);
+        if (target != null && requiresAdmin(invocation.source(), target)
+                && !invocation.source().hasPermission("tensa.meta.admin")) {
+            return CompletableFuture.completedFuture(List.of());
+        }
         java.util.ArrayList<String> out = new java.util.ArrayList<>();
         if (target != null) {
             out.addAll(service.getCached(target).keySet());

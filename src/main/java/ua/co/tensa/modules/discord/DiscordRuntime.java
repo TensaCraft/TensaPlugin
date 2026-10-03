@@ -250,7 +250,11 @@ final class DiscordRuntime implements AutoCloseable {
         if (scheduler != null) {
             scheduler.cancelScope("discord-announcements");
         }
-        gateway.close(Duration.ofSeconds(5));
+        try {
+            gateway.close(Duration.ofSeconds(5));
+        } finally {
+            delivery.close();
+        }
     }
 
     private void acceptDiscordMessage(DiscordInboundMessage message) {

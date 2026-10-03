@@ -10,7 +10,7 @@ import java.util.function.Predicate;
 
 public class Modules {
     private static final Map<String, ModuleEntry> REGISTRY = new LinkedHashMap<>();
-    private static final Object RELOAD_LOCK = new Object();
+    private static boolean stopping;
 
     public enum ReloadResult {
         RELOADED,
@@ -20,7 +20,7 @@ public class Modules {
         FAILED
     }
 
-    public Modules() {
+    private Modules() {
         REGISTRY.clear();
         ua.co.tensa.Message.info("Tensa loading modules...");
         // Auto-discover modules via ServiceLoader
@@ -35,56 +35,60 @@ public class Modules {
                         count++;
                     }
                 } catch (Throwable t) {
-                    ua.co.tensa.Message.warn("Failed to register module provider: " + p.getClass().getName() + " - " + t.getMessage());
+                    ua.co.tensa.Message.warn("Failed to register module provider: " + p.getClass().getName() + " - " + t.getClass().getSimpleName());
                 }
             }
             ua.co.tensa.Message.info("Discovered modules: " + count);
         } catch (Throwable t) {
-            ua.co.tensa.Message.warn("Module discovery failed: " + t.getMessage());
+            ua.co.tensa.Message.warn("Module discovery failed: " + t.getClass().getSimpleName());
         }
         synchronizeModules(false);
         registerCommands();
     }
 
-    public static void load() {
+    public static synchronized void load() {
+        stopping = false;
         new Modules();
     }
 
-    public static void applyConfig() {
+    public static synchronized void applyConfig() {
         synchronizeModules(false);
     }
 
-    public static java.util.List<String> reloadAll() {
+    public static synchronized java.util.List<String> reloadAll() {
         return synchronizeModules(true);
     }
 
     /** Apply config states (enable/disable) and soft-reload enabled modules. */
-    public static java.util.List<String> refresh() {
+    public static synchronized java.util.List<String> refresh() {
         return synchronizeModules(true);
     }
 
     // Snapshot view for info commands or admin tools
-    public static java.util.Map<String, ModuleEntry> getEntries() {
-        synchronized (REGISTRY) {
-            return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(REGISTRY));
-        }
+    public static synchronized java.util.Map<String, ModuleEntry> getEntries() {
+        return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(REGISTRY));
     }
 
-    public static ReloadResult reloadModule(String moduleId) {
-        synchronized (RELOAD_LOCK) {
-            try {
-                if (Tensa.config == null) {
-                    Tensa.config = new ua.co.tensa.config.Config();
-                } else {
-                    Tensa.config.reload();
-                }
-            } catch (Throwable throwable) {
-                ua.co.tensa.Message.warn("Targeted module reload rejected by root config validation: "
-                        + throwable.getClass().getSimpleName());
-                return ReloadResult.FAILED;
-            }
-            return reloadModule(REGISTRY, moduleId, Tensa.config::isModuleEnabled);
+    public static synchronized ReloadResult reloadModule(String moduleId) {
+        if (stopping) {
+            return ReloadResult.FAILED;
         }
+        try {
+            if (Tensa.config == null) {
+                Tensa.config = new ua.co.tensa.config.Config();
+            } else {
+                Tensa.config.reload();
+            }
+        } catch (Throwable throwable) {
+            ua.co.tensa.Message.warn("Targeted module reload rejected by root config validation: "
+                    + throwable.getClass().getSimpleName());
+            return ReloadResult.FAILED;
+        }
+        return reloadModule(REGISTRY, moduleId, Tensa.config::isModuleEnabled);
+    }
+
+    public static synchronized boolean isStopping() {
+        return stopping;
     }
 
     static ReloadResult reloadModule(Map<String, ? extends ModuleEntry> registry, String moduleId) {
@@ -132,18 +136,19 @@ public class Modules {
                     ? ReloadResult.RESTART_REQUIRED
                     : ReloadResult.RELOADED;
         } catch (Throwable throwable) {
-            ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + throwable.getMessage());
+            ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + throwable.getClass().getSimpleName());
             return ReloadResult.FAILED;
         }
     }
 
-    public static void disableAll() {
+    public static synchronized void disableAll() {
+        stopping = true;
         for (ModuleEntry module : REGISTRY.values()) {
             if (module.isEnabled()) {
                 try {
                     module.disable();
                 } catch (Throwable t) {
-                    ua.co.tensa.Message.warn("Module disable failed: " + module.id() + " - " + t.getMessage());
+                    ua.co.tensa.Message.warn("Module disable failed: " + module.id() + " - " + t.getClass().getSimpleName());
                 }
             }
         }
@@ -159,6 +164,9 @@ public class Modules {
     }
 
     private static java.util.List<String> synchronizeModules(boolean reloadEnabled) {
+        if (stopping) {
+            return java.util.List.of("shutdown-in-progress");
+        }
         java.util.List<String> failures = new java.util.ArrayList<>();
         for (Map.Entry<String, ModuleEntry> entry : REGISTRY.entrySet()) {
             String id = entry.getKey();
@@ -186,7 +194,7 @@ public class Modules {
                         failures.add(id);
                     }
                 } catch (Throwable t) {
-                    ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + t.getMessage());
+                    ua.co.tensa.Message.warn("Module reload failed: " + module.id() + " - " + t.getClass().getSimpleName());
                     failures.add(id);
                 }
             }

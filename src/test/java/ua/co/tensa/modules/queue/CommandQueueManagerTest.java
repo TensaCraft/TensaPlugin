@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CommandQueueManagerTest {
 
@@ -40,6 +41,93 @@ class CommandQueueManagerTest {
         Tensa.server = null;
         Tensa.pluginPath = null;
         Tensa.pluginContainer = null;
+    }
+
+    @Test
+    void failedPersistentRemovalKeepsEntryVisibleForRetry() throws Exception {
+        Tensa.server = fakeServer(List.of(), new ArrayList<>());
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("removal"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(newConfig(), storage)) {
+            QueuedCommandEntry entry = manager.enqueue("Steve", "say durable", 0, "console");
+            storage.close();
+
+            assertThatThrownBy(() -> manager.remove(entry.id())).isInstanceOf(RuntimeException.class);
+            assertThat(manager.snapshot()).containsExactly(entry);
+        }
+    }
+
+    @Test
+    void failedPersistentClearKeepsEntriesVisibleForRetry() throws Exception {
+        Tensa.server = fakeServer(List.of(), new ArrayList<>());
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("clear"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(newConfig(), storage)) {
+            QueuedCommandEntry entry = manager.enqueue("Steve", "say durable", 0, "console");
+            storage.close();
+
+            assertThatThrownBy(() -> manager.clear(null)).isInstanceOf(RuntimeException.class);
+            assertThat(manager.snapshot()).containsExactly(entry);
+        }
+    }
+
+    @Test
+    void failedPersistentDispatchKeepsEntryAndDoesNotExecuteCommand() throws Exception {
+        List<String> executed = new ArrayList<>();
+        Player player = fakePlayer("Steve", UUID.randomUUID());
+        Tensa.server = fakeServer(List.of(player), executed);
+        CommandQueueConfig config = newConfig();
+        config.requireServerConnection = false;
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("dispatch"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
+            QueuedCommandEntry entry = manager.enqueue("Steve", "say durable", 0, "console");
+            storage.close();
+
+            assertThatThrownBy(manager::dispatchDue).isInstanceOf(RuntimeException.class);
+            assertThat(manager.snapshot()).containsExactly(entry);
+            assertThat(executed).isEmpty();
+        }
+    }
+
+    @Test
+    void managerEnforcesCapacityAtMutationBoundary() throws Exception {
+        Tensa.server = fakeServer(List.of(), new ArrayList<>());
+        CommandQueueConfig config = newConfig();
+        config.maxEntries = 1;
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("capacity"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
+            QueuedCommandEntry first = manager.enqueue("Steve", "say first", 0, "console");
+            assertThatThrownBy(() -> manager.enqueue("Alex", "say second", 0, "console"))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(manager.snapshot()).containsExactly(first);
+        }
+    }
+
+    @Test
+    void uuidTargetDoesNotFallBackToDifferentPlayerWithSameName() throws Exception {
+        List<String> executed = new ArrayList<>();
+        Player original = fakePlayer("Steve", UUID.randomUUID());
+        Tensa.server = fakeServer(List.of(original), executed);
+        CommandQueueConfig config = newConfig();
+        config.requireServerConnection = false;
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("identity"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(config, storage)) {
+            manager.enqueue("Steve", "reward {player}", 0, "console");
+            Tensa.server = fakeServer(List.of(fakePlayer("Steve", UUID.randomUUID())), executed);
+
+            assertThat(manager.dispatchDue()).isZero();
+            assertThat(executed).isEmpty();
+            assertThat(manager.snapshot()).hasSize(1);
+        }
+    }
+
+    @Test
+    void rejectsDelayOverflowInsteadOfExecutingImmediately() throws Exception {
+        Tensa.server = fakeServer(List.of(), new ArrayList<>());
+        try (CoreStorageService storage = CoreStorageService.local(tempDir.resolve("delay"), "tpl_");
+             CommandQueueManager manager = new CommandQueueManager(newConfig(), storage)) {
+            assertThatThrownBy(() -> manager.enqueue("Steve", "say delayed", Long.MAX_VALUE, "console"))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(manager.snapshot()).isEmpty();
+        }
     }
 
     @Test
@@ -152,6 +240,7 @@ class CommandQueueManagerTest {
     }
 
     private CommandQueueConfig newConfig() throws Exception {
+        Tensa.pluginPath = tempDir;
         Constructor<CommandQueueConfig> constructor = CommandQueueConfig.class.getDeclaredConstructor();
         constructor.setAccessible(true);
         CommandQueueConfig config = constructor.newInstance();

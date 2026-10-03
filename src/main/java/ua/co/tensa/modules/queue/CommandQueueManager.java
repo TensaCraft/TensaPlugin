@@ -55,11 +55,19 @@ public final class CommandQueueManager implements AutoCloseable {
         }
     }
 
-    public QueuedCommandEntry enqueue(String targetInput, String command, long delaySeconds, String createdBy) {
+    public synchronized QueuedCommandEntry enqueue(String targetInput, String command, long delaySeconds, String createdBy) {
         ensureOpen();
-        long id = nextId.getAndIncrement();
+        if (entries.size() >= config.maxEntries()) {
+            throw new IllegalStateException("Command queue capacity is full");
+        }
         long createdAt = System.currentTimeMillis();
-        long notBefore = createdAt + Math.max(0L, delaySeconds) * 1000L;
+        long notBefore;
+        try {
+            notBefore = Math.addExact(createdAt, Math.multiplyExact(Math.max(0L, delaySeconds), 1000L));
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("Command queue delay is too large", overflow);
+        }
+        long id = nextId.getAndIncrement();
         ResolvedTarget target = resolveTarget(targetInput);
         QueuedCommandEntry entry = new QueuedCommandEntry(
                 id,
@@ -97,37 +105,27 @@ public final class CommandQueueManager implements AutoCloseable {
         return entries.get(id);
     }
 
-    public boolean remove(long id) {
+    public synchronized boolean remove(long id) {
         ensureOpen();
-        QueuedCommandEntry removed = entries.remove(id);
-        if (removed != null) {
-            store.delete(id);
-            return true;
-        }
-        return false;
+        return removePersisted(id);
     }
 
-    public int clear(String selector) {
+    public synchronized int clear(String selector) {
         ensureOpen();
         List<QueuedCommandEntry> matches = snapshot(selector);
         if (matches.isEmpty()) {
             return 0;
         }
         int removed = 0;
-        List<Long> ids = new ArrayList<>();
         for (QueuedCommandEntry entry : matches) {
-            if (entries.remove(entry.id(), entry)) {
-                ids.add(entry.id());
+            if (removePersisted(entry.id())) {
                 removed++;
             }
-        }
-        if (removed > 0) {
-            store.deleteAll(ids);
         }
         return removed;
     }
 
-    public DispatchResult dispatchNow(long id) {
+    public synchronized DispatchResult dispatchNow(long id) {
         ensureOpen();
         QueuedCommandEntry entry = entries.get(id);
         if (entry == null) {
@@ -137,10 +135,9 @@ public final class CommandQueueManager implements AutoCloseable {
         if (player == null) {
             return DispatchResult.targetOffline(entry);
         }
-        if (!entries.remove(id, entry)) {
+        if (!removePersisted(id)) {
             return DispatchResult.notFound(id);
         }
-        store.delete(id);
         dispatch(entry, player, "manual");
         return DispatchResult.dispatched(entry, player.getUsername());
     }
@@ -149,7 +146,7 @@ public final class CommandQueueManager implements AutoCloseable {
         return dispatchDueForPlayer(null);
     }
 
-    public int dispatchDueForPlayer(Player player) {
+    public synchronized int dispatchDueForPlayer(Player player) {
         if (closed.get()) {
             return 0;
         }
@@ -173,10 +170,9 @@ public final class CommandQueueManager implements AutoCloseable {
             if (target == null) {
                 continue;
             }
-            if (!entries.remove(entry.id(), entry)) {
+            if (!removePersisted(entry.id())) {
                 continue;
             }
-            store.delete(entry.id());
             dispatch(entry, target, "auto");
             dispatched++;
         }
@@ -225,7 +221,7 @@ public final class CommandQueueManager implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         // Persistence is handled synchronously through core storage on each mutation.
         closed.set(true);
     }
@@ -276,10 +272,7 @@ public final class CommandQueueManager implements AutoCloseable {
     private Optional<Player> findOnlinePlayer(QueuedCommandEntry entry) {
         UUID uuid = parseUuid(entry.targetUuid());
         if (uuid != null) {
-            Optional<Player> byUuid = Tensa.server.getPlayer(uuid).filter(this::isPlayerReady);
-            if (byUuid.isPresent()) {
-                return byUuid;
-            }
+            return Tensa.server.getPlayer(uuid).filter(this::isPlayerReady);
         }
 
         String name = entry.targetName();
@@ -311,6 +304,14 @@ public final class CommandQueueManager implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("Command queue runtime is closed");
         }
+    }
+
+    /** Called under this manager's mutation lock; failed storage writes leave memory untouched. */
+    private boolean removePersisted(long id) {
+        if (!entries.containsKey(id)) return false;
+        boolean deleted = store.delete(id);
+        entries.remove(id);
+        return deleted;
     }
 
     private boolean matchesPlayer(QueuedCommandEntry entry, Player player) {

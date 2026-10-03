@@ -65,7 +65,7 @@ final class ConfigBinder {
                     setComment(root, base, key.comment());
                 }
             } catch (IllegalAccessException | SerializationException e) {
-                Message.warn("Config model default write failed for " + base + ": " + e.getMessage());
+                Message.warn("Config model default write failed for " + base + ": " + e.getClass().getSimpleName());
             }
         }
 
@@ -93,7 +93,7 @@ final class ConfigBinder {
                     node.set(copyValue(value));
                     changed = true;
                 } catch (SerializationException e) {
-                    Message.warn("Config map default write failed for " + full + ": " + e.getMessage());
+                    Message.warn("Config map default write failed for " + full + ": " + e.getClass().getSimpleName());
                 }
             }
         }
@@ -164,7 +164,7 @@ final class ConfigBinder {
                     field.set(target, node.raw());
                 }
             } catch (IllegalAccessException | SerializationException e) {
-                Message.warn("Config model load failed for " + path + ": " + e.getMessage());
+                Message.warn("Config model load failed for " + path + ": " + e.getClass().getSimpleName());
             }
         }
     }

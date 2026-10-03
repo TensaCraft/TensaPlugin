@@ -74,6 +74,16 @@ public final class ReloadCommand implements SimpleCommand {
     }
 
     private static void reload(CommandSource source, String target) {
+        try {
+            reloadTarget(source, target);
+        } catch (RuntimeException failure) {
+            Message.warn("Configuration reload rejected failure=" + failure.getClass().getSimpleName());
+            Message.privateMessage(source,
+                    "<red>Reload rejected: configuration could not be validated.</red>");
+        }
+    }
+
+    private static void reloadTarget(CommandSource source, String target) {
         if ("all".equals(target)) {
             if (Tensa.config == null) {
                 Tensa.config = new Config();
@@ -101,7 +111,7 @@ public final class ReloadCommand implements SimpleCommand {
             case DISABLED -> Message.privateMessage(source,
                     "<yellow>Module is disabled:</yellow> <white>" + Message.escapeMiniMessage(target) + "</white>");
             case FAILED -> Message.privateMessage(source,
-                    "<red>Module reload failed; the previous runtime remains active:</red> <white>"
+                    "<red>Module reload failed; check the module status and server log:</red> <white>"
                             + Message.escapeMiniMessage(target) + "</white>");
         }
     }

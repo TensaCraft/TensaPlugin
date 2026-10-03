@@ -104,6 +104,45 @@ class LangYAMLTest {
     }
 
     @Test
+    void changingConfiguredLanguageReloadsTheCorrectFileWithoutRestart() throws Exception {
+        Files.writeString(tempDir.resolve("config.yml"), "language: en\n");
+        Tensa.config = new Config();
+        LangYAML english = LangYAML.getInstance();
+        Files.writeString(tempDir.resolve("config.yml"), "language: uk\n");
+        Tensa.config.reload();
+
+        LangYAML ukrainian = LangYAML.getInstance();
+
+        assertThat(ukrainian.getFilePath()).endsWith("uk.yml");
+        assertThat(ukrainian.getString("reload", "")).contains("перезавантажено");
+        assertThat(Files.readString(Path.of(english.getFilePath()))).contains("reloaded");
+    }
+
+    @Test
+    void synchronizingEnglishDefaultsDoesNotPopulateUkrainianWithEnglishText() throws Exception {
+        LangYAML english = LangYAML.getInstance();
+        Path ukrainian = tempDir.resolve("lang/uk.yml");
+        Files.writeString(ukrainian, "prefix: ''\n");
+
+        LangYAML.syncAllLanguageFiles(english.getConfig());
+
+        var saved = YamlFileIO.load(YamlFileIO.loader(ukrainian));
+        assertThat(saved.node("reload").getString()).contains("перезавантажено");
+    }
+
+    @Test
+    void corruptTranslationIsNotReplacedDuringReloadOrCatalogSync() throws Exception {
+        LangYAML english = LangYAML.getInstance();
+        Path englishFile = Path.of(english.getFilePath());
+        String broken = "no_perms: [\n";
+        Files.writeString(englishFile, broken);
+        org.assertj.core.api.Assertions.assertThatThrownBy(LangYAML::getInstance)
+                .isInstanceOf(IllegalStateException.class);
+        LangYAML.syncAllLanguageFiles(english.getConfig());
+        assertThat(Files.readString(englishFile)).isEqualTo(broken);
+    }
+
+    @Test
     void syncAllLanguageFilesPreservesExistingComments() throws Exception {
         LangYAML template = LangYAML.getInstance();
         Path customLang = tempDir.resolve("lang").resolve("custom.yml");

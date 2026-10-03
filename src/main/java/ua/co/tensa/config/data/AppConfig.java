@@ -101,6 +101,7 @@ public class AppConfig extends ConfigBase {
 
     @Override
     public synchronized void reloadCfg() {
+        validateRootValues();
         super.reloadCfg();
         Map<String, Object> supportedDefaults = discoverModuleDefaults();
         boolean migrated = migrateLegacyCommunicationsFlag();
@@ -110,6 +111,45 @@ public class AppConfig extends ConfigBase {
         changed |= removeUnsupportedModuleKeys(supportedDefaults.keySet());
         if (changed) {
             save();
+        }
+    }
+
+    @Override
+    protected boolean strictTypeValidation() {
+        return true;
+    }
+
+    private void validateRootValues() {
+        try {
+            var root = ua.co.tensa.config.model.YamlFileIO.load(
+                    ua.co.tensa.config.model.YamlFileIO.loader(java.nio.file.Path.of(FILE_PATH)));
+            Object prefix = root.node("database", "table_prefix").raw();
+            if (prefix instanceof String text && !text.isEmpty() && !text.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                throw new IllegalStateException("database.table_prefix must be a SQL identifier prefix");
+            }
+            Object language = root.node("language").raw();
+            if (language instanceof String text && !text.matches("[A-Za-z0-9_-]{1,64}")) {
+                throw new IllegalStateException("language must be a locale filename without a path");
+            }
+            Object storage = root.node("storage", "type").raw();
+            if (storage instanceof String text && !Set.of("auto", "database", "local").contains(text.toLowerCase(java.util.Locale.ROOT))) {
+                throw new IllegalStateException("storage.type must be auto, database or local");
+            }
+            Object port = root.node("database", "port").raw();
+            if (port instanceof Number number && (number.doubleValue() != number.intValue()
+                    || number.intValue() < 1 || number.intValue() > 65535)) {
+                throw new IllegalStateException("database.port must be an integer from 1 to 65535");
+            }
+            for (var entry : root.node("modules").childrenMap().entrySet()) {
+                Object value = entry.getValue().raw();
+                if (!(value instanceof Boolean)
+                        && !(value instanceof String text
+                        && ("true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text)))) {
+                    throw new IllegalStateException("Module enable flags must be true or false");
+                }
+            }
+        } catch (java.io.IOException failure) {
+            throw new IllegalStateException("Unable to read root config", failure);
         }
     }
 

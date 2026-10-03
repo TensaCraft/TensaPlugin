@@ -76,6 +76,7 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
             throw new IOException("Discord link repository contains too many account bindings");
         }
 
+        boolean committed = false;
         try (Connection connection = storage.dataSource().getConnection()) {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -90,12 +91,15 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
                 statement.setLong(5, account.linkedAt().getEpochSecond());
                 statement.executeUpdate();
                 connection.commit();
+                committed = true;
                 addToCache(account);
                 connection.setAutoCommit(autoCommit);
                 return LinkOutcome.LINKED;
             } catch (SQLException failure) {
-                rollback(connection);
-                if (isConstraintViolation(failure)) {
+                if (!committed) {
+                    rollback(connection);
+                }
+                if (!committed && isConstraintViolation(failure)) {
                     refresh();
                     LinkOutcome conflict = classify(account);
                     if (conflict != null) {
@@ -105,6 +109,10 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
                 throw failure;
             }
         } catch (SQLException | RuntimeException failure) {
+            if (committed && failure instanceof SQLException) {
+                warnCommittedCleanup("link", failure);
+                return LinkOutcome.LINKED;
+            }
             throw storageFailure("link", failure);
         }
     }
@@ -115,6 +123,7 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
         if (account == null) {
             return Optional.empty();
         }
+        boolean committed = false;
         try (Connection connection = storage.dataSource().getConnection()) {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -123,14 +132,21 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
                 statement.setString(1, playerUuid.toString());
                 statement.executeUpdate();
                 connection.commit();
+                committed = true;
                 removeFromCache(account);
                 connection.setAutoCommit(autoCommit);
                 return Optional.of(account);
             } catch (SQLException failure) {
-                rollback(connection);
+                if (!committed) {
+                    rollback(connection);
+                }
                 throw failure;
             }
         } catch (SQLException | RuntimeException failure) {
+            if (committed && failure instanceof SQLException) {
+                warnCommittedCleanup("unlink", failure);
+                return Optional.of(account);
+            }
             throw storageFailure("unlink", failure);
         }
     }
@@ -219,6 +235,13 @@ public final class JdbcDiscordLinkRepository implements DiscordLinkRepository {
         String state = failure.getSQLState();
         return failure instanceof java.sql.SQLIntegrityConstraintViolationException
                 || (state != null && state.startsWith("23"));
+    }
+
+    private static void warnCommittedCleanup(String operation, Throwable failure) {
+        // A known successful commit must not trigger role compensation merely
+        // because restoring/returning the pooled connection failed afterward.
+        ua.co.tensa.Message.warn("Discord link repository " + operation
+                + " committed; connection cleanup failed failure=" + failure.getClass().getSimpleName());
     }
 
     private static IOException storageFailure(String operation, Throwable failure) {

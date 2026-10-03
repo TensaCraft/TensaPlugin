@@ -30,12 +30,12 @@ import java.nio.file.Path;
 @Plugin(
         id = "tensa",
         name = "Tensa",
-        version = "3.0.0",
+        version = "3.1.0",
         description = "Tensa - Velocity Content Manager Plugin",
         authors = {"GIGABAIT"},
         dependencies = {
                 @Dependency(id = "papiproxybridge", optional = true),
-                @Dependency(id = "librelogin", optional = true)
+                @Dependency(id = "luckperms", optional = true)
         }
 )
 
@@ -48,7 +48,7 @@ public class Tensa {
     public static CoreStorageService storage;
     public static UserDataService userData;
     public static UserMetaService userMeta;
-    public static Config config;
+    public static volatile Config config;
     private static EventsListener coreEventsListener;
 
     @Inject
@@ -84,6 +84,15 @@ public class Tensa {
     }
 
     public static java.util.List<String> reloadPlugin() {
+        synchronized (Modules.class) {
+            if (Modules.isStopping()) {
+                return java.util.List.of("shutdown-in-progress");
+            }
+            return reloadServices();
+        }
+    }
+
+    private static java.util.List<String> reloadServices() {
         config = config == null ? new Config() : config;
         config.reload();
         Lang.initialise();
@@ -92,7 +101,7 @@ public class Tensa {
         EventManager.reload();
         java.util.List<String> failures = Modules.refresh();
         if (failures.isEmpty()) {
-            Message.info("Configuration reloaded without interrupting database or authentication sessions");
+            Message.info("Configuration reloaded without replacing core storage or player connections");
         } else {
             Message.warn("Configuration reload completed with module failures: " + String.join(", ", failures));
         }
@@ -209,11 +218,13 @@ public class Tensa {
 
     @Subscribe
     public void onShutdown(ProxyShutdownEvent event) {
-        Modules.disableAll();
-        RconServerModule.disable();
-        EventManager.shutdown();
-        closeCoreServices();
-        // Shutdown database executor pool
-        Database.shutdownExecutor();
+        synchronized (Modules.class) {
+            Modules.disableAll();
+            RconServerModule.disable();
+            EventManager.shutdown();
+            closeCoreServices();
+            // Shutdown database executor pool
+            Database.shutdownExecutor();
+        }
     }
 }

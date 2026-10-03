@@ -16,6 +16,25 @@ class AppConfigCommunicationsMigrationTest {
     Path tempDir;
 
     @Test
+    void removesRetiredAuthFlagWithoutTouchingExistingBridgeFile() throws Exception {
+        Tensa.pluginPath = tempDir;
+        Files.writeString(tempDir.resolve("config.yml"), """
+                modules:
+                  librelogin-auth-bridge: true
+                  communications: false
+                """);
+        Path oldConfig = tempDir.resolve("auth-bridge/config.yml");
+        Files.createDirectories(oldConfig.getParent());
+        Files.writeString(oldConfig, "retired: retained-for-operator\n");
+        Config config = new Config();
+        assertThat(config.getModules()).doesNotContain("librelogin-auth-bridge");
+        assertThat(config.isModuleEnabled("communications")).isFalse();
+        var saved = YamlConfigurationLoader.builder().path(tempDir.resolve("config.yml")).build().load();
+        assertThat(saved.node("modules", "librelogin-auth-bridge").virtual()).isTrue();
+        assertThat(Files.readString(oldConfig)).isEqualTo("retired: retained-for-operator\n");
+    }
+
+    @Test
     void preservesDisabledLegacyStateBeforeRemovingOldFlags() throws Exception {
         Tensa.pluginPath = tempDir;
         Files.writeString(tempDir.resolve("config.yml"), """
@@ -31,7 +50,8 @@ class AppConfigCommunicationsMigrationTest {
         assertThat(saved.node("modules", "communications").getBoolean()).isFalse();
         assertThat(saved.node("modules", "chat-manager").virtual()).isTrue();
         assertThat(saved.node("modules", "discord").virtual()).isTrue();
-        assertThat(config.getModules()).contains("librelogin-auth-bridge", "proxy-bridge", "scheduler");
+        assertThat(config.getModules()).contains("proxy-bridge", "scheduler")
+                .doesNotContain("librelogin-auth-bridge");
     }
 
     @Test

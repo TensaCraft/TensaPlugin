@@ -61,10 +61,10 @@ public abstract class YamlBackedFile {
                 }
             } catch (Exception e) {
                 String impact = created ? "Generated file may be incomplete." : "Existing file was not replaced.";
-                Message.error("Failed to update config " + FILE_PATH + ": " + e.getMessage() + ". " + impact);
+                Message.error("Failed to update config " + FILE_PATH + ": " + e.getClass().getSimpleName() + ". " + impact);
             }
         } catch (IOException e) {
-            Message.error("Failed to access config " + FILE_PATH + ": " + e.getMessage());
+            Message.error("Failed to access config " + FILE_PATH + ": " + e.getClass().getSimpleName());
         } finally {
             firstLoad = false;
             dirty = false;
@@ -90,7 +90,7 @@ public abstract class YamlBackedFile {
             dirty = false;
         } catch (IOException | RuntimeException e) {
             String impact = created ? "Generated file was not completed." : "Existing file was not replaced.";
-            Message.error("Failed to save config " + FILE_PATH + ": " + e.getMessage() + ". " + impact);
+            Message.error("Failed to save config " + FILE_PATH + ": " + e.getClass().getSimpleName() + ". " + impact);
         }
     }
 
@@ -98,7 +98,7 @@ public abstract class YamlBackedFile {
         try {
             if (Files.exists(filePath)) {
                 Path backup = ConfigBackupStore.moveCorrupt(filePath);
-                Message.warn("Config parse error for " + FILE_PATH + ": " + cause.getMessage()
+                Message.warn("Config parse error for " + FILE_PATH + ": " + cause.getClass().getSimpleName()
                         + ". Latest invalid copy saved under backups/corrupt at " + backup.getFileName());
             }
 
@@ -112,7 +112,7 @@ public abstract class YamlBackedFile {
                 dirty = false;
             }
         } catch (Exception ex) {
-            Message.error("Failed to recover config " + FILE_PATH + ": " + ex.getMessage());
+            Message.error("Failed to recover config " + FILE_PATH + ": " + ex.getClass().getSimpleName());
         }
     }
 
@@ -148,7 +148,7 @@ public abstract class YamlBackedFile {
             YamlFileIO.saveValidated(loader, yamlFile, filePath);
             dirty = false;
         } catch (IOException e) {
-            Message.error(e.getMessage());
+            Message.error(e.getClass().getSimpleName());
         }
     }
 
@@ -251,7 +251,7 @@ public abstract class YamlBackedFile {
         try {
             node.set(copyValue(value));
         } catch (SerializationException e) {
-            Message.warn("Failed to write config value in " + FILE_PATH + ": " + e.getMessage());
+            Message.warn("Failed to write config value in " + FILE_PATH + ": " + e.getClass().getSimpleName());
         }
     }
 

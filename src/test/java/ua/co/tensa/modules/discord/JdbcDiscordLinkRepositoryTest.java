@@ -5,12 +5,19 @@ import org.junit.jupiter.api.io.TempDir;
 import ua.co.tensa.core.storage.CoreStorageService;
 
 import java.nio.file.Path;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.UUID;
+import javax.sql.DataSource;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JdbcDiscordLinkRepositoryTest {
@@ -96,6 +103,79 @@ class JdbcDiscordLinkRepositoryTest {
                     .isInstanceOf(java.io.IOException.class)
                     .hasMessageContaining("too many account bindings");
         }
+    }
+
+    @Test
+    void committedLinkRemainsSuccessfulWhenConnectionCleanupFails() throws Exception {
+        for (String cleanup : java.util.List.of("setAutoCommit", "close")) {
+            try (CoreStorageService database = CoreStorageService.local(tempDir.resolve("link-" + cleanup), "tpl_");
+                 CoreStorageService faulty = CoreStorageService.external(failCleanupAfterCommit(database.dataSource(), cleanup), "tpl_")) {
+                DiscordLinkRepository links = new JdbcDiscordLinkRepository(faulty, 100);
+                links.initialize();
+                LinkedAccount account = account("00000000-0000-0000-0000-000000000001", "10000000000000001");
+
+                assertThatCode(() -> assertThat(links.link(account)).isEqualTo(DiscordLinkRepository.LinkOutcome.LINKED))
+                        .doesNotThrowAnyException();
+
+                assertThat(links.findByPlayer(account.playerUuid())).contains(account);
+                DiscordLinkRepository persisted = new JdbcDiscordLinkRepository(database, 100);
+                persisted.initialize();
+                assertThat(persisted.findByPlayer(account.playerUuid())).contains(account);
+            }
+        }
+    }
+
+    @Test
+    void committedUnlinkRemainsSuccessfulWhenConnectionCleanupFails() throws Exception {
+        for (String cleanup : java.util.List.of("setAutoCommit", "close")) {
+            try (CoreStorageService database = CoreStorageService.local(tempDir.resolve("unlink-" + cleanup), "tpl_");
+                 CoreStorageService faulty = CoreStorageService.external(failCleanupAfterCommit(database.dataSource(), cleanup), "tpl_")) {
+                DiscordLinkRepository persisted = new JdbcDiscordLinkRepository(database, 100);
+                persisted.initialize();
+                LinkedAccount account = account("00000000-0000-0000-0000-000000000001", "10000000000000001");
+                persisted.link(account);
+                DiscordLinkRepository links = new JdbcDiscordLinkRepository(faulty, 100);
+                links.initialize();
+
+                assertThatCode(() -> assertThat(links.unlink(account.playerUuid())).contains(account))
+                        .doesNotThrowAnyException();
+
+                assertThat(links.findByPlayer(account.playerUuid())).isEmpty();
+                persisted.initialize();
+                assertThat(persisted.findByPlayer(account.playerUuid())).isEmpty();
+            }
+        }
+    }
+
+    private static DataSource failCleanupAfterCommit(DataSource delegate, String cleanupMethod) {
+        return (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(), new Class<?>[]{DataSource.class},
+                (ignored, method, args) -> {
+                    Object result;
+                    try {
+                        result = method.invoke(delegate, args);
+                    } catch (InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                    if (!(result instanceof Connection connection)) {
+                        return result;
+                    }
+                    AtomicBoolean committed = new AtomicBoolean();
+                    return Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class},
+                            (proxy, operation, arguments) -> {
+                                Object value;
+                                try {
+                                    value = operation.invoke(connection, arguments);
+                                } catch (InvocationTargetException error) {
+                                    throw error.getCause();
+                                }
+                                if (operation.getName().equals("commit")) {
+                                    committed.set(true);
+                                } else if (committed.get() && operation.getName().equals(cleanupMethod)) {
+                                    throw new SQLException("simulated post-commit cleanup failure");
+                                }
+                                return value;
+                            });
+                });
     }
 
     private static LinkedAccount account(String playerUuid, String discordId) {

@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -34,6 +35,7 @@ public class HttpRequest {
 	private static final Object HTTP_LOCK = new Object();
 	private static volatile ExecutorService httpExecutor;
 	private static volatile HttpClient client;
+	private static final Set<CompletableFuture<Result>> pendingRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	private static final int MAX_ATTEMPTS = 2;
 	private static final int MAX_PENDING_REQUESTS = 256;
@@ -55,29 +57,38 @@ public class HttpRequest {
 	}
 
 	public CompletableFuture<Result> sendAsync() {
-		try {
-			return CompletableFuture.supplyAsync(() -> {
-				try {
-					return send();
-				} catch (Exception e) {
-					throw new CompletionException(e);
-				}
-			}, executor());
-		} catch (RejectedExecutionException rejected) {
-			return CompletableFuture.failedFuture(
-					new IllegalStateException("HTTP request queue is full", rejected)
-			);
+		synchronized (HTTP_LOCK) {
+			try {
+				HttpClient transport = client();
+				CompletableFuture<Result> result = CompletableFuture.supplyAsync(() -> {
+					try {
+						return send(transport);
+					} catch (Exception e) {
+						throw new CompletionException(e);
+					}
+				}, executor());
+				pendingRequests.add(result);
+				result.whenComplete((value, failure) -> pendingRequests.remove(result));
+				return result;
+			} catch (RejectedExecutionException rejected) {
+				return CompletableFuture.failedFuture(
+						new IllegalStateException("HTTP request queue is full", rejected));
+			}
 		}
 	}
 
 	public Result send() throws Exception {
+		return send(client());
+	}
+
+	private Result send(HttpClient transport) throws Exception {
 		String type = getMethod();
 		int maxAttempts = shouldRetry(type) ? MAX_ATTEMPTS : 1;
 		IOException lastError = null;
 
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
-				return send(type);
+				return send(type, transport);
 			} catch (IOException e) {
 				lastError = e;
 				if (attempt < maxAttempts) {
@@ -94,15 +105,15 @@ public class HttpRequest {
 		throw new IllegalStateException("HTTP request failed without a specific exception.");
 	}
 
-	private Result send(String type) throws IOException {
+	private Result send(String type, HttpClient transport) throws IOException {
 		return switch (type) {
-			case POST -> sendPost();
-			case GET -> sendGet();
+			case POST -> sendPost(transport);
+			case GET -> sendGet(transport);
 			default -> throw new IllegalArgumentException("Unsupported HTTP method: " + method);
 		};
 	}
 
-	private Result sendPost() throws IOException {
+	private Result sendPost(HttpClient transport) throws IOException {
 		java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(URI.create(url))
 				.timeout(RESPONSE_TIMEOUT)
 				.header("Accept", "application/json")
@@ -111,10 +122,10 @@ public class HttpRequest {
 				.POST(java.net.http.HttpRequest.BodyPublishers.ofString(getFormBody()))
 				.build();
 
-		return processResponse(execute(request));
+		return processResponse(execute(transport, request));
 	}
 
-	private Result sendGet() throws IOException {
+	private Result sendGet(HttpClient transport) throws IOException {
 		java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(URI.create(getUrlWithParams()))
 				.timeout(RESPONSE_TIMEOUT)
 				.header("Accept", "application/json")
@@ -122,12 +133,12 @@ public class HttpRequest {
 				.GET()
 				.build();
 
-		return processResponse(execute(request));
+		return processResponse(execute(transport, request));
 	}
 
-	private HttpResponse<String> execute(java.net.http.HttpRequest request) throws IOException {
+	private HttpResponse<String> execute(HttpClient transport, java.net.http.HttpRequest request) throws IOException {
 		try {
-			return client().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+			return transport.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("HTTP request interrupted.", e);
@@ -218,15 +229,24 @@ public class HttpRequest {
 
 	public static void shutdown() {
 		ExecutorService executorToShutdown;
+		HttpClient clientToShutdown;
+		java.util.List<CompletableFuture<Result>> requestsToCancel;
 		synchronized (HTTP_LOCK) {
 			executorToShutdown = httpExecutor;
+			clientToShutdown = client;
+			requestsToCancel = java.util.List.copyOf(pendingRequests);
+			pendingRequests.clear();
 			httpExecutor = null;
 			client = null;
+		}
+		requestsToCancel.forEach(request -> request.cancel(true));
+		if (clientToShutdown != null) {
+			clientToShutdown.shutdownNow();
 		}
 		if (executorToShutdown == null) {
 			return;
 		}
-		executorToShutdown.shutdown();
+		executorToShutdown.shutdownNow();
 		try {
 			if (!executorToShutdown.awaitTermination(5, TimeUnit.SECONDS)) {
 				executorToShutdown.shutdownNow();
@@ -255,7 +275,6 @@ public class HttpRequest {
 						},
 						new ThreadPoolExecutor.AbortPolicy()
 				);
-				client = null;
 			}
 			return httpExecutor;
 		}
@@ -266,7 +285,6 @@ public class HttpRequest {
 			if (client == null) {
 				client = HttpClient.newBuilder()
 						.connectTimeout(CONNECT_TIMEOUT)
-						.executor(executor())
 						.followRedirects(HttpClient.Redirect.NORMAL)
 						.build();
 			}

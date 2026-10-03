@@ -13,13 +13,16 @@ public class LangYAML extends YamlBackedFile {
 
     private static LangYAML instance;
 
-    private LangYAML() {
-        super("lang" + File.separator + getLangFile() + ".yml");
+    private LangYAML(String locale) {
+        super("lang" + File.separator + locale + ".yml");
     }
 
-    public static LangYAML getInstance() {
-        if (instance == null) {
-            instance = new LangYAML();
+    public static synchronized LangYAML getInstance() {
+        String locale = configuredLocale();
+        var expected = Tensa.pluginPath.resolve("lang").resolve(locale + ".yml").toAbsolutePath().normalize();
+        ua.co.tensa.config.model.YamlConfigPreflight.validate(expected);
+        if (instance == null || !java.nio.file.Path.of(instance.getFilePath()).equals(expected)) {
+            instance = new LangYAML(locale);
         }
         return instance;
     }
@@ -39,6 +42,13 @@ public class LangYAML extends YamlBackedFile {
         for (java.io.File file : files) {
             try {
                 java.nio.file.Path path = file.toPath();
+                ua.co.tensa.config.model.YamlConfigPreflight.validate(path);
+                String locale = file.getName().substring(0, file.getName().length() - 4);
+                // Each supported catalog must fill its own translations before applying
+                // extra keys from the active catalog. Existing manual translations win.
+                if ("en".equalsIgnoreCase(locale) || "uk".equalsIgnoreCase(locale)) {
+                    new LangYAML(locale);
+                }
                 YamlConfigurationLoader loader = YamlFileIO.loader(path);
                 CommentedConfigurationNode yf = YamlFileIO.load(loader);
                 boolean changed = mergeMissingScalarValues(template, yf, keys);
@@ -46,7 +56,7 @@ public class LangYAML extends YamlBackedFile {
                     YamlFileIO.saveValidated(loader, yf, path);
                 }
             } catch (Exception e) {
-                Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getMessage());
+                Message.warn("Failed to sync lang file " + file.getName() + ": " + e.getClass().getSimpleName());
             }
         }
     }
@@ -313,7 +323,7 @@ public class LangYAML extends YamlBackedFile {
                 markDirty();
             }
         } catch (Exception e) {
-            Message.warn("Failed to load bundled language defaults for " + getLangFile() + ": " + e.getMessage());
+            Message.warn("Failed to load bundled language defaults for " + getLangFile() + ": " + e.getClass().getSimpleName());
         }
     }
 
@@ -374,7 +384,12 @@ public class LangYAML extends YamlBackedFile {
                 .replace("<dark_gray>", "<#667085>").replace("</dark_gray>", "</#667085>");
     }
 
-    private static String getLangFile() {
+    private String getLangFile() {
+        String name = java.nio.file.Path.of(getFilePath()).getFileName().toString();
+        return name.substring(0, name.length() - 4);
+    }
+
+    private static String configuredLocale() {
         String lang = Tensa.config != null ? Tensa.config.getLang() : "en";
         if (lang == null || lang.isEmpty()) {
             return "en";

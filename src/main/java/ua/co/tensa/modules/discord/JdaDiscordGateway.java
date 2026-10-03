@@ -138,7 +138,7 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         activate(event.getJDA());
     }
 
-    private void activate(JDA connectedJda) {
+    private synchronized void activate(JDA connectedJda) {
         if (!isCurrentConnection(connectedJda)) {
             return;
         }
@@ -171,20 +171,22 @@ final class JdaDiscordGateway extends ListenerAdapter implements DiscordGateway 
         slashState.set("registering");
         slashCommandRegistrar.ensureRegistered(new JdaGuildCommands(configuredGuild))
                 .whenComplete((result, error) -> {
-                    if (!isCurrentConnection(connectedJda)) {
-                        return;
+                    synchronized (this) {
+                        if (!isCurrentConnection(connectedJda)) {
+                            return;
+                        }
+                        if (error != null) {
+                            slashCommandReady.set(false);
+                            slashState.set("failed");
+                            Message.warn("Discord guild command /" + settings.linkCommandName()
+                                    + " is unavailable: " + DiscordDiagnostics.describe(error));
+                            return;
+                        }
+                        slashCommandReady.set(true);
+                        slashState.set("ready");
+                        String action = result.changed() ? "registered and verified" : "verified";
+                        Message.info("Discord guild command /" + settings.linkCommandName() + " " + action);
                     }
-                    if (error != null) {
-                        slashCommandReady.set(false);
-                        slashState.set("failed");
-                        Message.warn("Discord guild command /" + settings.linkCommandName()
-                                + " is unavailable: " + DiscordDiagnostics.describe(error));
-                        return;
-                    }
-                    slashCommandReady.set(true);
-                    slashState.set("ready");
-                    String action = result.changed() ? "registered and verified" : "verified";
-                    Message.info("Discord guild command /" + settings.linkCommandName() + " " + action);
                 });
         readyHandler.run();
         Message.info("Discord gateway connected for the configured guild");

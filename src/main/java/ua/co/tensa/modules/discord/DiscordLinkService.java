@@ -47,6 +47,8 @@ final class DiscordLinkService implements AutoCloseable {
     private final DiscordSettings settings;
     private final ThreadPoolExecutor executor;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final java.util.Set<CompletableFuture<?>> pendingRequests =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final AtomicReference<CompletableFuture<Void>> roleReconciliation = new AtomicReference<>();
     private final java.util.concurrent.ConcurrentHashMap<UUID, CompletableFuture<Void>> playerRoleChecks =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -166,23 +168,23 @@ final class DiscordLinkService implements AutoCloseable {
         for (LinkedAccount account : store.all()) {
             chain = chain.thenCompose(ignored -> {
                 if (closed.get()) return CompletableFuture.completedFuture(null);
-                CompletableFuture<Void> role = settings.linkedRoleId().isBlank()
-                        ? CompletableFuture.completedFuture(null)
-                        : gateway.assignLinkedRole(account.discordUserId());
-                return role.handle((value, error) -> {
-                            if (error != null) failures.incrementAndGet();
-                            return null;
-                        })
-                        .thenCompose(value -> gateway.syncNickname(account.discordUserId(), account.playerName()))
-                        .handle((result, error) -> {
-                            if (error != null) {
-                                Message.warn("Discord nickname sync failed result=FAILED failure="
-                                        + safeFailureClass(error));
-                            } else {
-                                logNicknameResult(result);
-                            }
-                            return null;
-                        });
+                // Serialize side effects with link/unlink and revalidate the startup
+                // snapshot when this account reaches the bounded worker queue.
+                return submit(() -> {
+                    if (closed.get() || !store.findByPlayer(account.playerUuid()).filter(account::equals).isPresent()) {
+                        return null;
+                    }
+                    try {
+                        assignConfiguredRole(account.discordUserId());
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw interrupted;
+                    } catch (Exception error) {
+                        failures.incrementAndGet();
+                    }
+                    syncNickname(account);
+                    return null;
+                });
             });
         }
         chain.whenComplete((ignored, error) -> {
@@ -336,8 +338,13 @@ final class DiscordLinkService implements AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalStateException("Discord linking service is closed"));
         }
         CompletableFuture<T> future = new CompletableFuture<>();
+        pendingRequests.add(future);
+        future.whenComplete((ignored, error) -> pendingRequests.remove(future));
         try {
             executor.execute(() -> {
+                if (future.isDone()) {
+                    return;
+                }
                 try {
                     future.complete(task.get());
                 } catch (Throwable e) {
@@ -369,6 +376,10 @@ final class DiscordLinkService implements AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             executor.shutdownNow();
+        } finally {
+            // shutdownNow drops queued Runnables; their callers must not retain
+            // futures that can never complete after this runtime is retired.
+            pendingRequests.forEach(future -> future.cancel(false));
         }
     }
 

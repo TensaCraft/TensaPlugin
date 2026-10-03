@@ -19,7 +19,8 @@ public class RequestCommand implements SimpleCommand {
         CommandSource sender = invocation.source();
         String[] args = invocation.arguments();
         try {
-            YamlAdapter config = RequestsModule.configByTrigger(invocation.alias());
+            RequestsModule.RequestDefinition definition = RequestsModule.requestDefinition(invocation.alias());
+            YamlAdapter config = definition.config();
             if (config == null) {
                 Message.sendLang(sender, Lang.no_command);
                 return;
@@ -28,13 +29,14 @@ public class RequestCommand implements SimpleCommand {
                 Message.sendLang(sender, Lang.no_perms);
                 return;
             }
-            runCommand(config, args, sender);
+            RequestsModule.runIfCurrent(definition.generation(),
+                    () -> runCommand(config, args, sender, definition.generation()));
         } catch (Exception e) {
             Message.error("Requests: execution error - " + e.getClass().getSimpleName());
         }
     }
 
-    private void runCommand(YamlAdapter config, String[] args, CommandSource sender) {
+    private void runCommand(YamlAdapter config, String[] args, CommandSource sender, long generation) {
         Map<String, String> params = placeholderPrepare(args, sender);
         Map<String, Object> rawParams = config.getSection("parameters");
         Map<String, String> parameters = parsePlaceholders(rawParams, params);
@@ -47,9 +49,9 @@ public class RequestCommand implements SimpleCommand {
         String url = parsePlaceholder(config.getString("url", ""), params);
         String method = config.getString("method", "GET");
         HttpRequest req = new HttpRequest(url, method, parameters);
-        req.sendAsync().whenComplete((resp, throwable) ->
-                scheduleOnProxy(() -> handleRequestResult(config, sender, url, method, parameters, params, resp, throwable))
-        );
+        req.sendAsync().whenComplete((resp, throwable) -> RequestsModule.runIfCurrent(generation,
+                () -> scheduleOnProxy(() -> RequestsModule.runIfCurrent(generation,
+                        () -> handleRequestResult(config, sender, url, method, parameters, params, resp, throwable)))));
     }
 
     private void handleRequestResult(

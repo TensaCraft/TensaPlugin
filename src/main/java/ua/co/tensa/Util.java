@@ -17,7 +17,8 @@ import java.util.stream.Collectors;
 import static ua.co.tensa.Tensa.server;
 
 public class Util {
-    public record RegisteredCommand(String primary, String alias, String className, String module, SimpleCommand handler) {}
+    public record RegisteredCommand(String primary, String alias, String className, String module,
+                                    SimpleCommand handler, CommandMeta metadata) {}
 
     private static final java.util.LinkedHashMap<String, RegisteredCommand> REGISTERED = new java.util.LinkedHashMap<>();
 
@@ -48,6 +49,10 @@ public class Util {
         }
 
         CommandManager commandManager = server.getCommandManager();
+        if (commandManager.hasCommand(primary)
+                || (!secondary.isBlank() && commandManager.hasCommand(secondary))) {
+            throw new IllegalStateException("Command alias already belongs to another plugin");
+        }
         var builder = commandManager.metaBuilder(primary)
                 .plugin(Tensa.pluginContainer);
         if (!secondary.isBlank()) {
@@ -58,7 +63,7 @@ public class Util {
         String className = CommandClass.getClass().getName();
         String module = inferModuleFromClass(className);
         // Track in registry (deduplicate by primary name)
-        REGISTERED.put(primary, new RegisteredCommand(primary, secondary, className, module, CommandClass));
+        REGISTERED.put(primary, new RegisteredCommand(primary, secondary, className, module, CommandClass, commandMeta));
     }
     
     public static synchronized void unregisterCommand(String string) {
@@ -76,8 +81,11 @@ public class Util {
         }
 
         for (RegisteredCommand command : registeredCommands) {
-            commandManager.unregister(command.primary());
-            if (command.alias() != null && !command.alias().isBlank()) {
+            if (commandManager.getCommandMeta(command.primary()) == command.metadata()) {
+                commandManager.unregister(command.primary());
+            }
+            if (command.alias() != null && !command.alias().isBlank()
+                    && commandManager.getCommandMeta(command.alias()) == command.metadata()) {
                 commandManager.unregister(command.alias());
             }
             REGISTERED.remove(command.primary());

@@ -127,7 +127,8 @@ public final class ProxyChatService {
 
         Settings current = settings;
         ChannelDefinition definition = resolveChannel(channel);
-        if (!definition.enabled()) {
+        if (!definition.enabled()
+                || (!definition.permission().isBlank() && !player.hasPermission(definition.permission()))) {
             return false;
         }
         String message = ProxyChatText.normalize(rawMessage);

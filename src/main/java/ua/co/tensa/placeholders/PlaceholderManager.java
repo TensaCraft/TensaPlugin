@@ -17,8 +17,8 @@ public class PlaceholderManager {
     private static final Map<String, BiFunction<Player, String, String>> rawPrefixResolvers = new ConcurrentHashMap<>();
     private static final Map<String, BiFunction<Player, String, String>> anglePrefixResolvers = new ConcurrentHashMap<>();
 
-    private static PlaceholderProvider papiProvider;
-    private static LuckPermsPlaceholderProvider luckPermsProvider;
+    private static volatile PlaceholderProvider papiProvider;
+    private static volatile LuckPermsPlaceholderProvider luckPermsProvider;
 
     public static void initialise() {
         reload();
@@ -141,7 +141,7 @@ public class PlaceholderManager {
                 return replaced;
             });
         }
-        return java.util.concurrent.CompletableFuture.completedFuture(resolveText(player, input));
+        return java.util.concurrent.CompletableFuture.completedFuture(replaceAnglePlaceholders(player, raw));
     }
 
     private static String replaceAnglePlaceholders(Player player, String input) {
@@ -154,10 +154,14 @@ public class PlaceholderManager {
         // replace standard keys and namespaced variants
         // use exact match replacement to avoid breaking MiniMessage tags
         for (String key : custom.keySet()) {
-            out = replaceExactTag(out, key, val.apply(key));
             String namespaced = namespacedKey(key);
+            if (!out.contains("<" + key + ">") && !out.contains("<" + namespaced + ">")) {
+                continue;
+            }
+            String replacement = val.apply(key);
+            out = replaceExactTag(out, key, replacement);
             if (!namespaced.equals(key)) {
-                out = replaceExactTag(out, namespaced, val.apply(key));
+                out = replaceExactTag(out, namespaced, replacement);
             }
         }
         // replace registered angle prefix placeholders, e.g. <meta_key>

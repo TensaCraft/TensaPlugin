@@ -38,7 +38,7 @@ public class Message {
         }
         TextPipeline.renderAsync(recipient, applyDesignPalette(message)).thenAccept(component -> sendResolved(recipient, component))
                 .exceptionally(throwable -> {
-            warn("Message delivery failed: " + throwable.getMessage());
+            warn("Message delivery failed: " + throwable.getClass().getSimpleName());
             return null;
         });
     }

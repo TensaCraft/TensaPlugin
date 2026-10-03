@@ -56,8 +56,8 @@ public enum Lang {
 
     public static class LangConfig {
 
-        public static String prefix;
-        private static CommentedConfigurationNode config;
+        public static volatile String prefix;
+        private static volatile CommentedConfigurationNode config;
 
 
         public static void initialise() {

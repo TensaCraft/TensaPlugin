@@ -2,7 +2,7 @@ package ua.co.tensa.modules.discord;
 
 import java.util.concurrent.CompletableFuture;
 
-final class DiscordDelivery {
+final class DiscordDelivery implements AutoCloseable {
     private final DiscordGateway gateway;
     private final DiscordWebhookDelivery webhook;
 
@@ -42,6 +42,11 @@ final class DiscordDelivery {
         return message.preferWebhook()
                 ? webhook.configured(message.route())
                 : gateway.isReady(message.route());
+    }
+
+    @Override
+    public void close() {
+        webhook.close();
     }
 
     private CompletableFuture<Void> fallbackOnRejectedResponse(

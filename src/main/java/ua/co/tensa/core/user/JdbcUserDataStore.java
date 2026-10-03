@@ -1,6 +1,7 @@
 package ua.co.tensa.core.user;
 
 import ua.co.tensa.Message;
+import ua.co.tensa.core.storage.CoreStorageService;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -182,7 +183,7 @@ final class JdbcUserDataStore implements UserDataStore {
                 }
             }
         } catch (SQLException e) {
-            Message.database("USER META LOAD FAILED", e.getMessage());
+            throw new IllegalStateException("User metadata load failed: " + CoreStorageService.sqlFailureDetails(e), e);
         }
         return values;
     }
@@ -201,8 +202,7 @@ final class JdbcUserDataStore implements UserDataStore {
                 return rs.next() ? Optional.ofNullable(rs.getString(1)) : Optional.empty();
             }
         } catch (SQLException e) {
-            Message.database("USER META GET FAILED", e.getMessage());
-            return Optional.empty();
+            throw new IllegalStateException("User metadata query failed: " + CoreStorageService.sqlFailureDetails(e), e);
         }
     }
 
@@ -279,7 +279,7 @@ final class JdbcUserDataStore implements UserDataStore {
                 }
             }
         } catch (SQLException e) {
-            Message.database("USER TOP FAILED", e.getMessage());
+            throw new IllegalStateException("User leaderboard query failed: " + CoreStorageService.sqlFailureDetails(e), e);
         }
         return profiles;
     }
@@ -292,7 +292,7 @@ final class JdbcUserDataStore implements UserDataStore {
         try {
             closeable.close();
         } catch (Exception e) {
-            Message.database("USER STORE CLOSE FAILED", e.getMessage());
+            Message.database("USER STORE CLOSE FAILED", e.getClass().getSimpleName());
         }
     }
 
@@ -304,8 +304,7 @@ final class JdbcUserDataStore implements UserDataStore {
                 return rs.next() ? Optional.of(profile(rs)) : Optional.empty();
             }
         } catch (SQLException e) {
-            Message.database("USER QUERY FAILED", e.getMessage());
-            return Optional.empty();
+            throw new IllegalStateException("User query failed: " + CoreStorageService.sqlFailureDetails(e), e);
         }
     }
 
@@ -334,7 +333,7 @@ final class JdbcUserDataStore implements UserDataStore {
              Statement statement = connection.createStatement()) {
             statement.execute(sql);
         } catch (SQLException e) {
-            throw new IllegalStateException("Failed to initialize user data table: " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to initialize user data table: " + CoreStorageService.sqlFailureDetails(e), e);
         }
     }
 
@@ -344,7 +343,7 @@ final class JdbcUserDataStore implements UserDataStore {
             bind(statement, values);
             statement.executeUpdate();
         } catch (SQLException e) {
-            throw new IllegalStateException("User data update failed: " + e.getMessage(), e);
+            throw new IllegalStateException("User data update failed: " + CoreStorageService.sqlFailureDetails(e), e);
         }
     }
 

@@ -38,11 +38,25 @@ public class RequestsModule {
     public static final ModuleEntry ENTRY = IMPL;
 
     private static volatile List<RequestConfig> configs = List.of();
+    private static long generation;
 
     private static Path requestsDir() { return Tensa.pluginPath.resolve("requests"); }
 
     public static void load() {
-        configs = loadConfigs();
+        installConfigs(loadConfigs());
+    }
+
+    private static synchronized void installConfigs(List<RequestConfig> next) {
+        generation++;
+        configs = next;
+    }
+
+    static synchronized RequestDefinition requestDefinition(String trigger) {
+        return new RequestDefinition(configByTrigger(trigger), generation);
+    }
+
+    static synchronized void runIfCurrent(long expectedGeneration, Runnable action) {
+        if (generation == expectedGeneration) action.run();
     }
 
     private static List<RequestConfig> loadConfigs() {
@@ -88,7 +102,7 @@ public class RequestsModule {
 
     private static Runtime activate(Plan plan) {
         List<String> registered = new ArrayList<>();
-        configs = plan.configs();
+        installConfigs(plan.configs());
         try {
             for (Map<String, String> triggerMap : plan.triggers()) {
                 String trigger = triggerMap.get("trigger");
@@ -98,16 +112,16 @@ public class RequestsModule {
             return new Runtime(List.copyOf(registered));
         } catch (RuntimeException failure) {
             AbstractModule.unregisterCommands(registered.toArray(String[]::new));
-            configs = List.of();
+            installConfigs(List.of());
             throw failure;
         }
     }
 
     private static void deactivate(Runtime runtime) {
+        installConfigs(List.of());
         if (runtime != null) {
             AbstractModule.unregisterCommands(runtime.commands().toArray(String[]::new));
         }
-        configs = List.of();
     }
 
     public static void enable() { IMPL.enable(); }
@@ -207,5 +221,8 @@ public class RequestsModule {
     }
 
     private record Runtime(List<String> commands) {
+    }
+
+    record RequestDefinition(YamlAdapter config, long generation) {
     }
 }

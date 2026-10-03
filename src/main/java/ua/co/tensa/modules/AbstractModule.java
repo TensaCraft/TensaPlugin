@@ -39,11 +39,11 @@ public abstract class AbstractModule implements ModuleEntry {
             enabled = true;
             if (logStatus) ModuleStatusLogger.enabled(id, title);
         } catch (Throwable t) {
-            ua.co.tensa.Message.error("Enable failed for module '" + id + "': " + t.getMessage());
+            ua.co.tensa.Message.error("Enable failed for module '" + id + "': " + t.getClass().getSimpleName());
             try {
                 onDisable();
             } catch (Throwable cleanupError) {
-                ua.co.tensa.Message.warn("Enable cleanup failed for module '" + id + "': " + cleanupError.getMessage());
+                ua.co.tensa.Message.warn("Enable cleanup failed for module '" + id + "': " + cleanupError.getClass().getSimpleName());
             } finally {
                 unregisterAllListeners();
                 cancelAllTasks();
@@ -61,7 +61,7 @@ public abstract class AbstractModule implements ModuleEntry {
         try {
             onDisable();
         } catch (Throwable t) {
-            ua.co.tensa.Message.warn("Disable failed for module '" + id + "': " + t.getMessage());
+            ua.co.tensa.Message.warn("Disable failed for module '" + id + "': " + t.getClass().getSimpleName());
         } finally {
             unregisterAllListeners();
             cancelAllTasks();
@@ -119,11 +119,11 @@ public abstract class AbstractModule implements ModuleEntry {
                                 + "' and rollback could not restore the runtime; module is disabled");
                         return false;
                     }
-                    ua.co.tensa.Message.warn("Soft reload rejected for '" + id + "': " + t.getMessage()
+                    ua.co.tensa.Message.warn("Soft reload rejected for '" + id + "': " + t.getClass().getSimpleName()
                             + "; keeping the active runtime");
                     return false;
                 }
-                ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getMessage()
+                ua.co.tensa.Message.warn("Soft reload failed for '" + id + "': " + t.getClass().getSimpleName()
                         + "; restarting module");
             }
         }

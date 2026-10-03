@@ -17,6 +17,31 @@ class YamlBackedFileTest {
     Path tempDir;
 
     @Test
+    void syntaxDiagnosticsNeverPrintYamlValues() throws IOException {
+        Tensa.pluginPath = tempDir;
+        Path file = tempDir.resolve("private.yml");
+        Files.writeString(file, "token: 'AUDIT_PRIVATE_SENTINEL\n next: [broken\n");
+        java.util.List<String> messages = new java.util.ArrayList<>();
+        var previous = Tensa.server;
+        var console = (com.velocitypowered.api.proxy.ConsoleCommandSource) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{com.velocitypowered.api.proxy.ConsoleCommandSource.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("sendMessage")) messages.add(java.util.Arrays.toString(args));
+                    return null;
+                });
+        try {
+            Tensa.server = (com.velocitypowered.api.proxy.ProxyServer) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class<?>[]{com.velocitypowered.api.proxy.ProxyServer.class},
+                    (proxy, method, args) -> method.getName().equals("getConsoleCommandSource") ? console : null);
+            new TestYamlFile("private.yml");
+            assertThat(messages).isNotEmpty();
+            assertThat(String.join("\n", messages)).doesNotContain("AUDIT_PRIVATE_SENTINEL");
+        } finally {
+            Tensa.server = previous;
+        }
+    }
+
+    @Test
     void reloadAddsMissingDefaultsWithoutDroppingExistingCommentsOrMiniMessage() throws IOException {
         Tensa.pluginPath = tempDir;
         Path file = tempDir.resolve("config.yml");

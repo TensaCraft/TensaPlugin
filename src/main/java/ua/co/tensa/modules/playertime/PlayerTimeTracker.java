@@ -71,8 +71,12 @@ public class PlayerTimeTracker {
             T key,
             Supplier<CompletableFuture<Long>> loader
     ) {
-        return requests.computeIfAbsent(key, ignored -> {
-            CompletableFuture<Long> tracked = new CompletableFuture<>();
+        CompletableFuture<Long> tracked = new CompletableFuture<>();
+        CompletableFuture<Long> existing = requests.putIfAbsent(key, tracked);
+        if (existing != null) {
+            return existing;
+        }
+        try {
             loader.get().whenComplete((value, throwable) -> {
                 requests.remove(key, tracked);
                 if (throwable != null) {
@@ -81,8 +85,11 @@ public class PlayerTimeTracker {
                     tracked.complete(value);
                 }
             });
-            return tracked;
-        });
+        } catch (RuntimeException failure) {
+            requests.remove(key, tracked);
+            tracked.completeExceptionally(failure);
+        }
+        return tracked;
     }
 
     private String normalizeName(String value) {

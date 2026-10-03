@@ -17,7 +17,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public class RconManagerModule {
-    private static ExecutorService commandExecutor;
+    private static volatile ExecutorService commandExecutor;
+    private static final java.util.Set<CompletableFuture<?>> pendingCommands = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static volatile RconManagerSettings settings = RconManagerSettings.empty();
 
     private static final ModuleEntry IMPL = new AbstractModule(
@@ -73,12 +74,15 @@ public class RconManagerModule {
         return new ArrayList<>(settings.tabComplete());
     }
 
-    public static <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+    public static synchronized <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
         try {
-            return CompletableFuture.supplyAsync(supplier, executor());
+            CompletableFuture<T> result = CompletableFuture.supplyAsync(supplier, executor());
+            pendingCommands.add(result);
+            result.whenComplete((value, failure) -> pendingCommands.remove(result));
+            return result;
         } catch (RejectedExecutionException rejected) {
             return CompletableFuture.failedFuture(
-                    new IllegalStateException("RCON command queue is full", rejected)
+                    new IllegalStateException("RCON runtime is stopped or its command queue is full", rejected)
             );
         }
     }
@@ -88,7 +92,7 @@ public class RconManagerModule {
 
     private static synchronized ExecutorService executor() {
         if (commandExecutor == null || commandExecutor.isShutdown()) {
-            commandExecutor = createExecutor();
+            throw new RejectedExecutionException("RCON manager is not active");
         }
         return commandExecutor;
     }
@@ -127,7 +131,9 @@ public class RconManagerModule {
             return;
         }
 
-        commandExecutor.shutdown();
+        pendingCommands.forEach(command -> command.cancel(true));
+        pendingCommands.clear();
+        commandExecutor.shutdownNow();
         try {
             if (!commandExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 commandExecutor.shutdownNow();

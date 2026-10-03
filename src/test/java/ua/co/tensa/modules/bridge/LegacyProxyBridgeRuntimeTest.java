@@ -107,6 +107,22 @@ class LegacyProxyBridgeRuntimeTest {
     }
 
     @Test
+    void closedRuntimeDoesNotAuthenticateAnErasedToken() {
+        List<String> commands = new ArrayList<>();
+        LegacyProxyBridgeRuntime runtime = runtime(List.of("aero"), commands);
+        Player player = proxy(Player.class,
+                (ignored, method, args) -> defaultValue(method.getReturnType()));
+        runtime.close();
+
+        PluginMessageEvent event = event(connection("aero", player), player, CHANNEL,
+                "\0".repeat(TOKEN.length()) + ":say denied");
+        runtime.onPluginMessage(event);
+
+        assertThat(event.getResult().isAllowed()).isFalse();
+        assertThat(commands).isEmpty();
+    }
+
+    @Test
     void rejectsUnsafeOrImplicitCompatibilityConfiguration() {
         assertThatThrownBy(() -> new LegacyProxyBridgeRuntime(
                 false,

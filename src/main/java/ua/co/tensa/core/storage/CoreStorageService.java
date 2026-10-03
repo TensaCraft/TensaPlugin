@@ -31,7 +31,7 @@ public final class CoreStorageService implements AutoCloseable {
             throw new IllegalArgumentException("dataSource must not be null");
         }
         this.dataSource = dataSource;
-        this.tablePrefix = tablePrefix == null ? "" : tablePrefix;
+        this.tablePrefix = validatePrefix(tablePrefix);
         this.closeable = closeable;
     }
 
@@ -55,6 +55,7 @@ public final class CoreStorageService implements AutoCloseable {
     }
 
     public static CoreStorageService local(Path databaseFile, String tablePrefix) {
+        validatePrefix(tablePrefix);
         HikariDataSource dataSource = localDataSource(databaseFile);
         return new CoreStorageService(dataSource, tablePrefix, dataSource);
     }
@@ -111,7 +112,7 @@ public final class CoreStorageService implements AutoCloseable {
                 return rs.next();
             }
         } catch (SQLException e) {
-            throw new IllegalStateException("Core storage column check failed: " + e.getMessage(), e);
+            throw new IllegalStateException("Core storage column check failed: " + sqlFailureDetails(e), e);
         }
     }
 
@@ -120,7 +121,7 @@ public final class CoreStorageService implements AutoCloseable {
              Statement statement = connection.createStatement()) {
             statement.execute(sql);
         } catch (SQLException e) {
-            throw new IllegalStateException("Core storage statement failed: " + e.getMessage(), e);
+            throw new IllegalStateException("Core storage statement failed: " + sqlFailureDetails(e), e);
         }
     }
 
@@ -130,7 +131,7 @@ public final class CoreStorageService implements AutoCloseable {
             bind(statement, values);
             return statement.executeUpdate();
         } catch (SQLException e) {
-            throw new IllegalStateException("Core storage update failed: " + e.getMessage(), e);
+            throw new IllegalStateException("Core storage update failed: " + sqlFailureDetails(e), e);
         }
     }
 
@@ -142,7 +143,7 @@ public final class CoreStorageService implements AutoCloseable {
                 return handler.handle(rs);
             }
         } catch (SQLException e) {
-            throw new IllegalStateException("Core storage query failed: " + e.getMessage(), e);
+            throw new IllegalStateException("Core storage query failed: " + sqlFailureDetails(e), e);
         }
     }
 
@@ -154,7 +155,7 @@ public final class CoreStorageService implements AutoCloseable {
         try {
             closeable.close();
         } catch (Exception e) {
-            Message.database("CORE STORAGE CLOSE FAILED", e.getMessage());
+            Message.database("CORE STORAGE CLOSE FAILED", e.getClass().getSimpleName());
         }
     }
 
@@ -189,6 +190,19 @@ public final class CoreStorageService implements AutoCloseable {
             throw new IllegalArgumentException("Storage table name contains unsupported characters: " + logicalName);
         }
         return normalized;
+    }
+
+    private static String validatePrefix(String prefix) {
+        String value = prefix == null ? "" : prefix;
+        if (!value.isEmpty() && !value.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            throw new IllegalArgumentException("Storage table prefix contains unsupported characters");
+        }
+        return value;
+    }
+
+    /** JDBC exception text may contain query parameters, credentials, or row data. */
+    public static String sqlFailureDetails(SQLException failure) {
+        return "SQLState=" + failure.getSQLState() + ", code=" + failure.getErrorCode();
     }
 
     private void bind(PreparedStatement statement, Object... values) throws SQLException {

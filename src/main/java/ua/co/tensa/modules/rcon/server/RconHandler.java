@@ -3,6 +3,8 @@ package ua.co.tensa.modules.rcon.server;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
@@ -141,7 +143,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
                         String responseMessage;
                         if (throwable != null) {
                             if (RconServerModule.isErrorLoggingEnabled()) {
-                                ua.co.tensa.Message.rcon("EXECUTION ERROR", throwable.getMessage());
+                                ua.co.tensa.Message.rcon("EXECUTION ERROR", throwable.getClass().getSimpleName());
                             }
                             responseMessage = Lang.unknown_error.getClean();
                         } else if (commandSuccess) {
@@ -152,7 +154,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
                         if (!commandSuccess) {
                             if (RconServerModule.isErrorLoggingEnabled()) {
-                                String errorMsg = String.format(Lang.error_executing.getClean() + " %s (%s)", payload, responseMessage);
+                                String errorMsg = String.format(Lang.error_executing.getClean() + " %s (%s)", commandLabel, responseMessage);
                                 ua.co.tensa.Message.info(String.format("RCON Error from %s: %s", ip, errorMsg));
                                 responseMessage = errorMsg;
                             } else {
@@ -230,11 +232,20 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
+        if (event instanceof IdleStateEvent idle && idle.state() == IdleState.READER_IDLE) {
+            ctx.close();
+        } else {
+            super.userEventTriggered(ctx, event);
+        }
+    }
+
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         if (cause instanceof java.net.SocketException && "Connection reset".equalsIgnoreCase(cause.getMessage())) {
             // Common when remote closes abruptly; suppress noisy stacktrace
         } else {
-            ua.co.tensa.Message.rcon("PIPELINE ERROR", cause.getMessage());
+            ua.co.tensa.Message.rcon("PIPELINE ERROR", cause.getClass().getSimpleName());
         }
         try { ctx.close(); } catch (Throwable ignored) {}
     }

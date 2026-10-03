@@ -145,6 +145,10 @@ public final class CommunicationsModule extends AbstractModule {
             throw new IllegalStateException("Discord link repository could not be initialized safely", exception);
         }
 
+        // Complete fallible storage setup before allocating transport resources
+        // whose lifetime will only be owned once the runtime is constructed.
+        DiscordWebhookBindingRepository webhookBindings = new DiscordWebhookBindingRepository(Tensa.storage);
+        webhookBindings.initialize();
         JdaDiscordGateway gateway = new JdaDiscordGateway(settings, active.scheduler);
         DiscordLinkService linkService = new DiscordLinkService(
                 store,
@@ -154,8 +158,6 @@ public final class CommunicationsModule extends AbstractModule {
                 settings
         );
         DiscordWebhookClient webhookClient = new DiscordWebhookClient(settings);
-        DiscordWebhookBindingRepository webhookBindings = new DiscordWebhookBindingRepository(Tensa.storage);
-        webhookBindings.initialize();
         DiscordWebhookProvisioner webhookProvisioner = new DiscordWebhookProvisioner(
                 settings, gateway, webhookClient, webhookBindings, active.scheduler, metrics);
         DiscordRuntime discord = new DiscordRuntime(
@@ -216,7 +218,12 @@ public final class CommunicationsModule extends AbstractModule {
         if (active == null) {
             return;
         }
-        active.closed = true;
+        // A recovery publishes listeners, commands and the Discord runtime
+        // while holding this monitor. Wait for that ownership transfer before
+        // inspecting and retiring its resources.
+        synchronized (active) {
+            active.closed = true;
+        }
         active.chatCommands().unregister();
         if (active.discordCommandRegistered) {
             unregisterCommands("discord");

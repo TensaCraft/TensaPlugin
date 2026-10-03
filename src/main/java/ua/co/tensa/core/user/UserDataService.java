@@ -8,8 +8,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -22,15 +24,17 @@ public final class UserDataService implements AutoCloseable {
     private final UserDataStore store;
     private final CoreStorageService ownedStorage;
     private final ExecutorService executor;
+    private final Set<CompletableFuture<?>> pendingOperations = ConcurrentHashMap.newKeySet();
 
     private UserDataService(UserDataStore store, CoreStorageService ownedStorage) {
         this.store = store;
         this.ownedStorage = ownedStorage;
         this.store.initialize();
-        int workers = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors()));
+        // Login/disconnect and metadata mutations must reach storage in submission order.
+        // A bounded FIFO worker also makes reads submitted after a write observe that write.
         this.executor = new ThreadPoolExecutor(
-                workers,
-                workers,
+                1,
+                1,
                 0L,
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(MAX_PENDING_OPERATIONS),
@@ -205,13 +209,15 @@ public final class UserDataService implements AutoCloseable {
 
     @Override
     public void close() {
-        executor.shutdown();
+        synchronized (executor) {
+            executor.shutdown();
+        }
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
+                stopPendingOperations();
             }
         } catch (InterruptedException e) {
-            executor.shutdownNow();
+            stopPendingOperations();
             Thread.currentThread().interrupt();
         }
         store.close();
@@ -237,7 +243,12 @@ public final class UserDataService implements AutoCloseable {
 
     private <T> CompletableFuture<T> supplyAsync(Supplier<T> operation) {
         try {
-            return CompletableFuture.supplyAsync(operation, executor);
+            synchronized (executor) {
+                CompletableFuture<T> result = CompletableFuture.supplyAsync(operation, executor);
+                pendingOperations.add(result);
+                result.whenComplete((value, failure) -> pendingOperations.remove(result));
+                return result;
+            }
         } catch (RejectedExecutionException rejected) {
             return CompletableFuture.failedFuture(
                     new IllegalStateException("User data operation queue is full", rejected)
@@ -246,12 +257,16 @@ public final class UserDataService implements AutoCloseable {
     }
 
     private CompletableFuture<Void> runAsync(Runnable operation) {
-        try {
-            return CompletableFuture.runAsync(operation, executor);
-        } catch (RejectedExecutionException rejected) {
-            return CompletableFuture.failedFuture(
-                    new IllegalStateException("User data operation queue is full", rejected)
-            );
+        return supplyAsync(() -> {
+            operation.run();
+            return null;
+        });
+    }
+
+    private void stopPendingOperations() {
+        executor.shutdownNow();
+        for (CompletableFuture<?> pending : pendingOperations) {
+            pending.completeExceptionally(new IllegalStateException("User data service stopped before the operation completed"));
         }
     }
 

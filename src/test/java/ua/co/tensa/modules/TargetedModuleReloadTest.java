@@ -12,7 +12,7 @@ class TargetedModuleReloadTest {
     @Test
     void repeatedTargetedReloadNeverTouchesOtherModule() {
         CountingModule communications = new CountingModule("communications", true, 0, 12);
-        CountingModule authentication = new CountingModule("librelogin-auth-bridge", true, 7, 12);
+        CountingModule authentication = new CountingModule("player-time", true, 7, 12);
         Map<String, ModuleEntry> modules = new LinkedHashMap<>();
         modules.put(communications.id(), communications);
         modules.put(authentication.id(), authentication);
@@ -53,7 +53,7 @@ class TargetedModuleReloadTest {
     @Test
     void restartRequiredModuleDoesNotReportAppliedReload() {
         CountingModule authentication = new CountingModule(
-                "librelogin-auth-bridge", true, 7, 12, true
+                "example-restart-required", true, 7, 12, true
         );
 
         assertThat(Modules.reloadModule(

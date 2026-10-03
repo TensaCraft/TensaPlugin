@@ -142,6 +142,11 @@ final class DiscordWebhookClient implements DiscordWebhookDelivery {
                 : Optional.empty();
     }
 
+    @Override
+    public void close() {
+        httpClient.shutdownNow();
+    }
+
     static final class RejectedResponseException extends IllegalStateException {
         private final int statusCode;
 

@@ -11,17 +11,22 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HttpRequestTest {
 
     private HttpServer server;
+    private java.util.concurrent.ExecutorService serverExecutor;
     private String baseUrl;
 
     @BeforeEach
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        serverExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        server.setExecutor(serverExecutor);
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         server.start();
     }
@@ -30,6 +35,31 @@ class HttpRequestTest {
     void tearDown() {
         HttpRequest.shutdown();
         server.stop(0);
+        serverExecutor.shutdownNow();
+    }
+
+    @Test
+    void concurrentRequestsDoNotStarveHttpClientTransport() throws Exception {
+        int workers = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));
+        CountDownLatch ready = new CountDownLatch(workers);
+        CountDownLatch completed = new CountDownLatch(workers);
+        server.createContext("/parallel", exchange -> {
+            ready.countDown();
+            try {
+                if (!ready.await(2, TimeUnit.SECONDS)) throw new IOException("Requests did not arrive together");
+                respond(exchange, 200, "{\"status\":\"ok\"}");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException(interrupted);
+            }
+        });
+        for (int index = 0; index < workers; index++) {
+            new HttpRequest(baseUrl + "/parallel", "GET", Map.of()).sendAsync().thenAccept(result -> {
+                if (result.isSuccess()) completed.countDown();
+            });
+        }
+        assertThat(ready.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(completed.await(3, TimeUnit.SECONDS)).isTrue();
     }
 
     @Test
@@ -69,6 +99,51 @@ class HttpRequestTest {
         assertThat(response).isNotNull();
         assertThat(response.json()).isNotNull();
         assertThat(response.json().getAsJsonObject().get("query").getAsString()).isEqualTo("player+name=A+B");
+    }
+
+    @Test
+    void shutdownCompletesQueuedRequestFutures() throws Exception {
+        java.util.concurrent.ExecutorService blocked = java.util.concurrent.Executors.newFixedThreadPool(2);
+        CountDownLatch started = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        var field = HttpRequest.class.getDeclaredField("httpExecutor");
+        field.setAccessible(true);
+        field.set(null, blocked);
+        try {
+            for (int index = 0; index < 2; index++) {
+                blocked.submit(() -> {
+                    started.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+            var queued = new HttpRequest(baseUrl + "/queued", "GET", Map.of()).sendAsync();
+
+            HttpRequest.shutdown();
+
+            assertThat(queued).isDone();
+        } finally {
+            release.countDown();
+            blocked.shutdownNow();
+        }
+    }
+
+    @Test
+    void shutdownClosesTheOwnedHttpTransport() throws Exception {
+        server.createContext("/close", exchange -> respond(exchange, 200, "{}"));
+        new HttpRequest(baseUrl + "/close", "GET", Map.of()).send();
+        var field = HttpRequest.class.getDeclaredField("client");
+        field.setAccessible(true);
+        java.net.http.HttpClient transport = (java.net.http.HttpClient) field.get(null);
+        new HttpRequest(baseUrl + "/close", "GET", Map.of()).sendAsync().get(2, TimeUnit.SECONDS);
+
+        HttpRequest.shutdown();
+
+        assertThat(transport.awaitTermination(java.time.Duration.ofSeconds(1))).isTrue();
     }
 
     @Test

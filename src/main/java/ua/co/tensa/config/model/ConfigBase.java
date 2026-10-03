@@ -48,7 +48,7 @@ public abstract class ConfigBase extends YamlBackedFile {
                 markDirty();
             }
         } catch (Exception e) {
-            Message.warn("Failed to write defaults for model " + getClass().getSimpleName() + ": " + e.getMessage());
+            Message.warn("Failed to write defaults for model " + getClass().getSimpleName() + ": " + e.getClass().getSimpleName());
             if (strictTypeValidation()) {
                 bindingFailure = new IllegalStateException("Failed to prepare config defaults", e);
                 return;
@@ -58,7 +58,7 @@ public abstract class ConfigBase extends YamlBackedFile {
         try {
             binder.loadFromYaml(getConfig());
         } catch (Exception e) {
-            Message.warn("Failed to load model values for " + getClass().getSimpleName() + ": " + e.getMessage());
+            Message.warn("Failed to load model values for " + getClass().getSimpleName() + ": " + e.getClass().getSimpleName());
             if (strictTypeValidation()) {
                 bindingFailure = new IllegalStateException("Failed to bind config values", e);
             }
