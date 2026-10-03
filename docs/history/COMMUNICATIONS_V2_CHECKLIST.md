@@ -1,4 +1,8 @@
-# Communications v2 implementation checklist
+# Historical Communications v2 implementation checklist
+
+Archived implementation record, not the current feature specification.
+See [the current audit](../PLUGIN_AUDIT.md) for supported behavior, remaining
+limitations and the operator-controlled rollout gate.
 
 ## Current follow-up: 2026-10-03
 

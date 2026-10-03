@@ -1,7 +1,21 @@
-target/
-.idea/
-dependency-reduced-pom.xml
+# Maven build output
+/target/
+/dependency-reduced-pom.xml
+
+# Local IDE state
+/.idea/
+*.iml
+
+# Local tools and generated analysis caches
+/.code-review-graph/
 /scripts/
 /.dev/
 /CLAUDE.md
 /.claude/
+
+# JVM crash diagnostics and operating-system metadata
+hs_err_pid*.log
+replay_pid*.log
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -14,6 +14,19 @@ the proxy. Tensa no longer supplies its signed authorization leases. Discord
 linking, chat, achievements/deaths and the opt-in command bridge are independent.
 See [the current audit and rollout notes](docs/PLUGIN_AUDIT.md).
 
+## Repository layout
+
+- `src/` — plugin sources, bundled defaults and tests.
+- `docs/` — [documentation index](docs/README.md), protocols, migration and audit.
+- `.run/` — [local Velocity test tools](.run/README.md); runtime data is ignored.
+- `.github/workflows/` — CI configuration.
+- `pom.xml` — Maven build and dependency configuration.
+- `target/` — generated build output; `target/Tensa.jar` is the distributable.
+
+IDE files, runtime configs, downloaded server JARs, analysis caches and diagnostic
+logs are local-only. The old implementation checklist is retained under
+[`docs/history/`](docs/history/COMMUNICATIONS_V2_CHECKLIST.md), not as an active root TODO.
+
 ## Dev Server
 - Run the local Velocity dev server from the project root with `.\.run\run-velocity.cmd`.
 - The script builds `target/Tensa.jar`, downloads the matching Velocity runtime from Fill v3, copies the plugin into `.run/velocity/plugins/`, and starts the proxy.

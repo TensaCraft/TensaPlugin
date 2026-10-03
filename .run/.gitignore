@@ -1,5 +1,5 @@
-velocity/
-velocity-smoke/
-audit-*.log
-hs_err_pid*.log
-replay_pid*.log
+# Downloaded runtimes and their private configs/data are never source files.
+velocity*/
+
+# Local verification logs and JVM crash diagnostics.
+*.log

@@ -94,8 +94,9 @@ checks are retained as acceptance tests rather than presented as bug reproductio
 - Packaged `Tensa.jar`: **19,899,096 bytes**, plugin version **3.1.0**.
   SHA-256: `280b7a2f3f7fe9422619555428559d393a3af4e5680d139ed0187c6a974d5508`.
 - JAR inspection confirmed no retired auth classes/LibreLogin dependency and no
-  bundled Velocity API, Adventure or Netty classes. Test reports remain under
-  `target/surefire-reports`; local verification logs use `.run/audit-*.log`.
+  bundled Velocity API, Adventure or Netty classes. Verification wrote test
+  reports under `target/surefire-reports` and logs under `.run/audit-*.log`.
+  These generated files are not versioned and may be archived during local cleanup.
 - Changed source and staged diff passed credential-pattern checks without printing
   secret values. This is a targeted scan, not proof that every possible secret
   format is detectable.
@@ -153,7 +154,7 @@ for duplicated scheduler ticks and retired auth artifacts, and verifies shutdown
    does not install it or restart a game/proxy process.
 2. Verify no backend still depends on the retired signed auth lease. If one does,
    disable/remove its TensaProxy auth guard first. See
-   [auth retirement notes](AUTH_BRIDGE_PROTOCOL.md).
+   [auth retirement notes](AUTH_BRIDGE_REMOVAL.md).
 3. Back up the installed Tensa JAR and plugin data. In an explicitly authorized
    maintenance window, stop the actual Velocity process, replace only the
    receiver JAR, then start it. Do not hot-swap the JAR.
