@@ -146,6 +146,13 @@ for duplicated scheduler ticks and retired auth artifacts, and verifies shutdown
    disconnects clear normal online-session caches. Optimistic metadata writes are
    not durability acknowledgements. Safe outer SQL messages retain original
    exception causes for debugging, so do not publish raw driver stack traces.
+10. After publishing the updated default branch on 2026-10-03, GitHub reported
+    four open dependency advisories for bundled MariaDB Connector/J **3.5.7**
+    (three medium, one low), with **3.5.9** listed as the first patched version.
+    See [Dependabot alerts](https://github.com/TensaCraft/TensaPlugin/security/dependabot).
+    The Maven dependency-analysis success above is not a vulnerability scan.
+    A driver update and JDBC verification remain required; the documentation-only
+    cleanup did not rebuild or replace the already published v3.1.0 JAR.
 
 ## Safe rollout and rollback
 
