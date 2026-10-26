@@ -30,7 +30,7 @@ import java.nio.file.Path;
 @Plugin(
         id = "tensa",
         name = "Tensa",
-        version = "3.1.0",
+        version = BuildInfo.VERSION,
         description = "Tensa - Velocity Content Manager Plugin",
         authors = {"GIGABAIT"},
         dependencies = {

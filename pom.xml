@@ -44,6 +44,8 @@
         <maven.dependency.plugin.version>3.9.0</maven.dependency.plugin.version>
         <maven.jar.plugin.version>3.5.0</maven.jar.plugin.version>
         <maven.shade.plugin.version>3.6.2</maven.shade.plugin.version>
+        <templating.maven.plugin.version>3.0.0</templating.maven.plugin.version>
+        <git.commit.id.plugin.version>9.0.1</git.commit.id.plugin.version>
     </properties>
 
     <repositories>
@@ -237,6 +239,46 @@
 
         <plugins>
             <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>${git.commit.id.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>build-identity</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <offline>true</offline>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <generateGitPropertiesFile>false</generateGitPropertiesFile>
+                    <abbrevLength>7</abbrevLength>
+                    <includeOnlyProperties>
+                        <includeOnlyProperty>^git\.commit\.id(\.abbrev)?$</includeOnlyProperty>
+                        <includeOnlyProperty>^git\.dirty$</includeOnlyProperty>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <!-- Filters src/main/java-templates so @Plugin(version) carries the source revision. -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>templating-maven-plugin</artifactId>
+                <version>${templating.maven.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>build-info</id>
+                        <goals>
+                            <goal>filter-sources</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
                 <version>${maven.resources.plugin.version}</version>
@@ -351,6 +393,14 @@
 
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Implementation-Title>${project.name}</Implementation-Title>
+                                        <Implementation-Version>${project.version}+${git.commit.id.abbrev}</Implementation-Version>
+                                        <Git-Commit>${git.commit.id}</Git-Commit>
+                                        <Git-Dirty>${git.dirty}</Git-Dirty>
+                                    </manifestEntries>
+                                </transformer>
                             </transformers>
 
                             <filters>
@@ -385,6 +435,20 @@
     </build>
 
     <profiles>
+        <profile>
+            <!-- Builds outside a Git checkout (e.g. a source archive) still get a well-formed identity. -->
+            <id>no-git</id>
+            <activation>
+                <file>
+                    <missing>${basedir}/.git</missing>
+                </file>
+            </activation>
+            <properties>
+                <git.commit.id>unknown</git.commit.id>
+                <git.commit.id.abbrev>unknown</git.commit.id.abbrev>
+                <git.dirty>unknown</git.dirty>
+            </properties>
+        </profile>
         <profile>
             <id>skip-tests</id>
             <properties>
