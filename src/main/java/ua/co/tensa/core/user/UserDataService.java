@@ -2,6 +2,7 @@ package ua.co.tensa.core.user;
 
 import com.velocitypowered.api.proxy.Player;
 import ua.co.tensa.core.storage.CoreStorageService;
+import ua.co.tensa.core.net.ClientAddress;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -234,7 +235,7 @@ public final class UserDataService implements AutoCloseable {
                 .map(address -> address.getHostString())
                 .orElse("");
         return UserLoginData.builder(player.getUniqueId(), player.getUsername())
-                .ip(player.getRemoteAddress() == null ? "" : player.getRemoteAddress().getHostString())
+                .ip(ClientAddress.ip(player.getRemoteAddress()))
                 .virtualHost(host)
                 .protocolVersion(String.valueOf(player.getProtocolVersion()))
                 .server(server)

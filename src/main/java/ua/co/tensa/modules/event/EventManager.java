@@ -17,6 +17,7 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
+import ua.co.tensa.core.net.ClientAddress;
 import ua.co.tensa.core.user.UserDataService;
 import ua.co.tensa.text.TextPipeline;
 
@@ -156,9 +157,9 @@ public class EventManager {
         InetSocketAddress remoteAddress = connection.getRemoteAddress();
         if (remoteAddress != null) {
             builder
-                    .put("ip", safe(remoteAddress.getHostString()))
+                    .put("ip", safe(ClientAddress.ip(remoteAddress)))
                     .put("port", Integer.toString(remoteAddress.getPort()))
-                    .put("address", safe(remoteAddress.getHostString()) + ":" + remoteAddress.getPort());
+                    .put("address", safe(ClientAddress.ipAndPort(remoteAddress)));
         }
 
         connection.getVirtualHost().ifPresent(virtualHost -> builder.put("host", safe(virtualHost.getHostString())));

@@ -8,10 +8,10 @@ import io.netty.handler.timeout.IdleStateEvent;
 import ua.co.tensa.Message;
 import ua.co.tensa.Tensa;
 import ua.co.tensa.config.Lang;
+import ua.co.tensa.core.net.ClientAddress;
 
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
 public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
@@ -107,7 +107,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
 			sendResponse(ctx, FAILURE, TYPE_COMMAND, "");
 			return;
 		}
-		String ip = ctx.channel().remoteAddress().toString().replace("/", "");
+		String ip = ClientAddress.ipAndPort(ctx.channel().remoteAddress());
         String commandLabel = commandLabel(payload);
         // Optional debug logging (configurable to prevent spam)
         if (RconServerModule.isDebugEnabled()) {
@@ -196,10 +196,7 @@ public class RconHandler extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     static String remoteAddressKey(SocketAddress address) {
-        if (address instanceof InetSocketAddress inet) {
-            return inet.getAddress() == null ? inet.getHostString() : inet.getAddress().getHostAddress();
-        }
-        return address == null ? "unknown" : address.toString();
+        return address == null ? "unknown" : ClientAddress.ip(address);
     }
 
     private void sendResponse(ChannelHandlerContext ctx, int requestId, int type, String payload) {

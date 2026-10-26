@@ -9,6 +9,7 @@ import ua.co.tensa.Tensa;
 import ua.co.tensa.Util;
 import ua.co.tensa.config.Lang;
 import ua.co.tensa.config.model.YamlAdapter;
+import ua.co.tensa.core.net.ClientAddress;
 
 import java.util.*;
 
@@ -215,7 +216,7 @@ public class RequestCommand implements SimpleCommand {
         if (sender instanceof Player player) {
             params.put("player_name", player.getUsername());
             params.put("player_uuid", player.getUniqueId().toString());
-            params.put("player_ip", player.getRemoteAddress().getAddress().toString().replace("/", ""));
+            params.put("player_ip", ClientAddress.ip(player.getRemoteAddress()));
             params.put("server", player.getCurrentServer()
                     .map(connection -> connection.getServerInfo().getName())
                     .orElse("Not server connected"));
